@@ -13,11 +13,9 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     /// The execution environment for the unit.
     public enum RuntimeType: String, Codable, Equatable, Sendable {
         /// A native macOS binary launched directly.
-        case binary
-        /// An OCI / Docker container.
-        case container
-        /// A script executed via an interpreter (bash, python, etc.).
-        case script
+        case native
+        /// A Python application managed by Haven's built-in Python adapter.
+        case python
     }
 
     /// Unique identifier, e.g. `"haven.unit.test-web"`.
@@ -30,7 +28,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     public let runtimeType: RuntimeType
 
     /// Path or image reference used to install / pull the unit.
-    /// For `binary` this is a filesystem path; for `container` an image name.
+    /// For `native` this is a filesystem path; for `python` a package or script path.
     public let installSource: String
 
     /// Command and arguments used to launch the unit.
@@ -114,7 +112,7 @@ extension RuntimeUnit {
     public static let testDBExample = RuntimeUnit(
         id: "haven.unit.test-db",
         bundleID: "haven.bundle.test-library-basic",
-        runtimeType: .binary,
+        runtimeType: .native,
         installSource: "/opt/haven/bin/test-db",
         launchArguments: [
             "/opt/haven/bin/test-db",
@@ -135,7 +133,7 @@ extension RuntimeUnit {
     public static let testWorkerExample = RuntimeUnit(
         id: "haven.unit.test-worker",
         bundleID: "haven.bundle.test-library-basic",
-        runtimeType: .binary,
+        runtimeType: .native,
         installSource: "/opt/haven/bin/test-worker",
         launchArguments: [
             "/opt/haven/bin/test-worker",
@@ -152,7 +150,7 @@ extension RuntimeUnit {
     public static let testWebExample = RuntimeUnit(
         id: "haven.unit.test-web",
         bundleID: "haven.bundle.test-library-basic",
-        runtimeType: .binary,
+        runtimeType: .native,
         installSource: "/opt/haven/bin/test-web",
         launchArguments: [
             "/opt/haven/bin/test-web",

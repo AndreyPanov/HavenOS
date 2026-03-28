@@ -74,7 +74,7 @@ extension StrictJSONDecoder {
     ]
 
     static let bundleKeys: Set<String> = [
-        "id", "name", "capabilityIDs", "runtimeUnitIDs", "settings"
+        "id", "name", "capabilityID", "runtimeUnitIDs", "settings"
     ]
 
     static let runtimeUnitKeys: Set<String> = [

@@ -247,7 +247,7 @@ final class PlannerTests: XCTestCase {
         let strictBundle = Bundle(
             id: "haven.bundle.strict",
             name: "Strict",
-            capabilityIDs: ["haven.capability.test-library"],
+            capabilityID: "haven.capability.test-library",
             runtimeUnitIDs: [],
             settings: [
                 SettingField(
@@ -283,18 +283,18 @@ final class PlannerTests: XCTestCase {
 
     func testDependencyCycleThrows() {
         let unitA = RuntimeUnit(
-            id: "unit.a", bundleID: "b", runtimeType: .binary,
+            id: "unit.a", bundleID: "b", runtimeType: .native,
             installSource: "/bin/a", launchArguments: ["/bin/a"],
             dependsOn: ["unit.b"]
         )
         let unitB = RuntimeUnit(
-            id: "unit.b", bundleID: "b", runtimeType: .binary,
+            id: "unit.b", bundleID: "b", runtimeType: .native,
             installSource: "/bin/b", launchArguments: ["/bin/b"],
             dependsOn: ["unit.a"]
         )
         let bundle = Bundle(
             id: "b", name: "B",
-            capabilityIDs: ["cap"],
+            capabilityID: "cap",
             runtimeUnitIDs: ["unit.a", "unit.b"]
         )
         let cap = Capability(id: "cap", name: "Cap", version: "1.0.0")
@@ -326,22 +326,22 @@ final class PlannerTests: XCTestCase {
     func testTopologicalOrdering() throws {
         // C depends on B, B depends on A → order should be A, B, C
         let unitA = RuntimeUnit(
-            id: "unit.a", bundleID: "b", runtimeType: .binary,
+            id: "unit.a", bundleID: "b", runtimeType: .native,
             installSource: "/bin/a", launchArguments: ["/bin/a"]
         )
         let unitB = RuntimeUnit(
-            id: "unit.b", bundleID: "b", runtimeType: .binary,
+            id: "unit.b", bundleID: "b", runtimeType: .native,
             installSource: "/bin/b", launchArguments: ["/bin/b"],
             dependsOn: ["unit.a"]
         )
         let unitC = RuntimeUnit(
-            id: "unit.c", bundleID: "b", runtimeType: .binary,
+            id: "unit.c", bundleID: "b", runtimeType: .native,
             installSource: "/bin/c", launchArguments: ["/bin/c"],
             dependsOn: ["unit.b"]
         )
         let bundle = Bundle(
             id: "b", name: "B",
-            capabilityIDs: ["cap"],
+            capabilityID: "cap",
             runtimeUnitIDs: ["unit.c", "unit.a", "unit.b"] // intentionally out of order
         )
         let cap = Capability(id: "cap", name: "Cap", version: "1.0.0")

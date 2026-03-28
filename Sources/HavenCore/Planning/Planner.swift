@@ -31,9 +31,9 @@ public enum Planner {
             throw PlanningError.capabilityNotFound(id: capabilityID)
         }
 
-        // 2. Find the first bundle that implements this capability
+        // 2. Find the bundle that implements this capability
         guard let bundle = registry.bundlesByID.values.first(
-            where: { $0.capabilityIDs.contains(capabilityID) }
+            where: { $0.capabilityID == capabilityID }
         ) else {
             throw PlanningError.bundleNotFound(capabilityID: capabilityID)
         }

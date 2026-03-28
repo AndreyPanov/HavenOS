@@ -1,8 +1,8 @@
 import Foundation
 
-/// A named collection of capabilities that form a deployable unit.
+/// A named collection of runtime units that implements a single capability.
 ///
-/// A bundle is the implementation of one or more capabilities.
+/// A bundle is the deployable implementation of exactly one capability.
 /// Everything in a bundle is resolved, scheduled, and torn down
 /// as a group.
 ///
@@ -15,8 +15,8 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     /// Human-readable display name.
     public let name: String
 
-    /// IDs of the capabilities this bundle implements.
-    public let capabilityIDs: [String]
+    /// ID of the capability this bundle implements.
+    public let capabilityID: String
 
     /// IDs of the runtime units that belong to this bundle.
     public let runtimeUnitIDs: [String]
@@ -27,13 +27,13 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     public init(
         id: String,
         name: String,
-        capabilityIDs: [String],
+        capabilityID: String,
         runtimeUnitIDs: [String] = [],
         settings: [SettingField] = []
     ) {
         self.id = id
         self.name = name
-        self.capabilityIDs = capabilityIDs
+        self.capabilityID = capabilityID
         self.runtimeUnitIDs = runtimeUnitIDs
         self.settings = settings
     }
@@ -42,7 +42,7 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        capabilityIDs = try c.decode([String].self, forKey: .capabilityIDs)
+        capabilityID = try c.decode(String.self, forKey: .capabilityID)
         runtimeUnitIDs = try c.decodeIfPresent([String].self, forKey: .runtimeUnitIDs) ?? []
         settings = try c.decodeIfPresent([SettingField].self, forKey: .settings) ?? []
     }
@@ -50,7 +50,7 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     /// Validates that the bundle is well-formed.
     ///
     /// - id and name must be non-empty.
-    /// - Must reference at least one capability ID.
+    /// - capabilityID must be non-empty.
     /// - All setting fields must individually validate.
     public func validate() throws {
         if id.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -59,11 +59,8 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         if name.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("Bundle name must not be empty.")
         }
-        if capabilityIDs.isEmpty {
-            throw ValidationError("Bundle must reference at least one capability ID.")
-        }
-        for capID in capabilityIDs where capID.trimmingCharacters(in: .whitespaces).isEmpty {
-            throw ValidationError("Bundle capability ID must not be empty.")
+        if capabilityID.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw ValidationError("Bundle capabilityID must not be empty.")
         }
         for setting in settings {
             try setting.validate()
@@ -78,7 +75,7 @@ extension Bundle {
     public static let testLibraryBasicExample = Bundle(
         id: "haven.bundle.test-library-basic",
         name: "Test Library (Basic)",
-        capabilityIDs: ["haven.capability.test-library"],
+        capabilityID: "haven.capability.test-library",
         runtimeUnitIDs: [
             "haven.unit.test-db",
             "haven.unit.test-worker",

@@ -1,7 +1,7 @@
 {
     "id": "haven.bundle.orphan",
     "name": "Orphan Bundle",
-    "capabilityIDs": ["haven.capability.nonexistent"],
+    "capabilityID": "haven.capability.nonexistent",
     "runtimeUnitIDs": ["haven.unit.ghost"],
     "settings": []
 }

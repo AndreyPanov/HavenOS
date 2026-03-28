@@ -13,8 +13,8 @@ Capability → Bundle → RuntimeUnit
 ```
 
 - **Capability** — a user-facing feature ("Test Library", "DNS Resolver"). Identified by reverse-DNS ID. This is what users see and choose.
-- **Bundle** — a deployable implementation of one or more capabilities. Groups settings and references to runtime units.
-- **RuntimeUnit** — a single launchable process (binary, container, or script). Owns lifecycle, port, healthcheck, dependencies.
+- **Bundle** — a deployable implementation of exactly one capability. Groups settings and references to runtime units.
+- **RuntimeUnit** — a single launchable process (native binary or Python app). Owns lifecycle, port, healthcheck, dependencies.
 
 Users think in capabilities. Haven resolves everything else.
 
@@ -76,8 +76,8 @@ Pure value types with Codable, Equatable, Sendable, validation, and static examp
 | File | Type | Notes |
 |---|---|---|
 | `Capability.swift` | `Capability` | ID, name, version, summary. Example: `.testLibraryExample` |
-| `Bundle.swift` | `Bundle` | ID, name, capabilityIDs, runtimeUnitIDs, settings. Custom `init(from:)` for optional fields. Example: `.testLibraryBasicExample` |
-| `RuntimeUnit.swift` | `RuntimeUnit` | ID, bundleID, runtimeType (binary/container/script), installSource, launchArguments, healthcheck, dependsOn, port, environment. Custom `init(from:)`. Examples: `.testDBExample`, `.testWorkerExample`, `.testWebExample` |
+| `Bundle.swift` | `Bundle` | ID, name, capabilityID (singular), runtimeUnitIDs, settings. Custom `init(from:)` for optional fields. Example: `.testLibraryBasicExample` |
+| `RuntimeUnit.swift` | `RuntimeUnit` | ID, bundleID, runtimeType (native/python), installSource, launchArguments, healthcheck, dependsOn, port, environment. Custom `init(from:)`. Examples: `.testDBExample`, `.testWorkerExample`, `.testWebExample` |
 | `Healthcheck.swift` | `Healthcheck` | type (http/tcp/exec), target, intervalSeconds, retries |
 | `SettingField.swift` | `SettingField` | key, label, fieldType (string/integer/boolean/path), defaultValue, required. Regex-validated key |
 | `ServiceRecord.swift` | `ServiceRecord` | Read-only aggregate of capability + bundle + units. Example: `.testLibraryExample` |

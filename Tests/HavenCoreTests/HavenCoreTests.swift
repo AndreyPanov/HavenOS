@@ -151,36 +151,36 @@ final class BundleTests: XCTestCase {
     }
 
     func testValidationFailsOnEmptyID() {
-        let bundle = Bundle(id: "", name: "B", capabilityIDs: ["cap.x"])
+        let bundle = Bundle(id: "", name: "B", capabilityID: "cap.x")
         XCTAssertThrowsError(try bundle.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
         }
     }
 
     func testValidationFailsOnEmptyName() {
-        let bundle = Bundle(id: "b.1", name: "", capabilityIDs: ["cap.x"])
+        let bundle = Bundle(id: "b.1", name: "", capabilityID: "cap.x")
         XCTAssertThrowsError(try bundle.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("name") == true)
         }
     }
 
-    func testValidationFailsOnEmptyCapabilityIDs() {
-        let bundle = Bundle(id: "b.1", name: "B", capabilityIDs: [])
+    func testValidationFailsOnEmptyCapabilityID() {
+        let bundle = Bundle(id: "b.1", name: "B", capabilityID: "")
         XCTAssertThrowsError(try bundle.validate()) { error in
-            XCTAssertTrue((error as? ValidationError)?.message.contains("capability") == true)
+            XCTAssertTrue((error as? ValidationError)?.message.contains("capabilityID") == true)
         }
     }
 
     func testValidationFailsOnBlankCapabilityID() {
-        let bundle = Bundle(id: "b.1", name: "B", capabilityIDs: ["  "])
+        let bundle = Bundle(id: "b.1", name: "B", capabilityID: "  ")
         XCTAssertThrowsError(try bundle.validate()) { error in
-            XCTAssertTrue((error as? ValidationError)?.message.contains("capability") == true)
+            XCTAssertTrue((error as? ValidationError)?.message.contains("capabilityID") == true)
         }
     }
 
     func testValidationCascadesToSettings() {
         let badSetting = SettingField(key: "123", label: "Bad", fieldType: .string)
-        let bundle = Bundle(id: "b.1", name: "B", capabilityIDs: ["cap.x"], settings: [badSetting])
+        let bundle = Bundle(id: "b.1", name: "B", capabilityID: "cap.x", settings: [badSetting])
         XCTAssertThrowsError(try bundle.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("identifier") == true)
         }
@@ -203,7 +203,7 @@ final class RuntimeUnitTests: XCTestCase {
     }
 
     func testValidationFailsOnEmptyID() {
-        let unit = RuntimeUnit(id: "", bundleID: "b", runtimeType: .binary,
+        let unit = RuntimeUnit(id: "", bundleID: "b", runtimeType: .native,
                                installSource: "/bin/x", launchArguments: ["/bin/x"])
         XCTAssertThrowsError(try unit.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
@@ -211,7 +211,7 @@ final class RuntimeUnitTests: XCTestCase {
     }
 
     func testValidationFailsOnEmptyBundleID() {
-        let unit = RuntimeUnit(id: "u.1", bundleID: "", runtimeType: .binary,
+        let unit = RuntimeUnit(id: "u.1", bundleID: "", runtimeType: .native,
                                installSource: "/bin/x", launchArguments: ["/bin/x"])
         XCTAssertThrowsError(try unit.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("bundleID") == true)
@@ -219,7 +219,7 @@ final class RuntimeUnitTests: XCTestCase {
     }
 
     func testValidationFailsOnEmptyInstallSource() {
-        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .binary,
+        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .native,
                                installSource: "", launchArguments: ["/bin/x"])
         XCTAssertThrowsError(try unit.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("installSource") == true)
@@ -227,7 +227,7 @@ final class RuntimeUnitTests: XCTestCase {
     }
 
     func testValidationFailsOnEmptyLaunchArguments() {
-        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .binary,
+        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .native,
                                installSource: "/bin/x", launchArguments: [])
         XCTAssertThrowsError(try unit.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("launchArguments") == true)
@@ -236,7 +236,7 @@ final class RuntimeUnitTests: XCTestCase {
 
     func testValidationCascadesToHealthcheck() {
         let badHC = Healthcheck(type: .http, target: "", intervalSeconds: 30, retries: 3)
-        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .binary,
+        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .native,
                                installSource: "/bin/x", launchArguments: ["/bin/x"],
                                healthcheck: badHC)
         XCTAssertThrowsError(try unit.validate()) { error in
@@ -245,9 +245,8 @@ final class RuntimeUnitTests: XCTestCase {
     }
 
     func testRuntimeTypeEnumCoverage() {
-        XCTAssertEqual(RuntimeUnit.RuntimeType.binary.rawValue, "binary")
-        XCTAssertEqual(RuntimeUnit.RuntimeType.container.rawValue, "container")
-        XCTAssertEqual(RuntimeUnit.RuntimeType.script.rawValue, "script")
+        XCTAssertEqual(RuntimeUnit.RuntimeType.native.rawValue, "native")
+        XCTAssertEqual(RuntimeUnit.RuntimeType.python.rawValue, "python")
     }
 }
 

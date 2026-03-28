@@ -50,13 +50,11 @@ public struct ListCommand: ParsableCommand {
         let example = Bundle(
             id: "com.example.demo",
             name: "Demo Bundle",
-            capabilityIDs: ["cap.echo"]
+            capabilityID: "cap.echo"
         )
         print("Bundle: \(example.name) [\(example.id)]")
         if verbose {
-            for capID in example.capabilityIDs {
-                print("  Capability: \(capID)")
-            }
+            print("  Capability: \(example.capabilityID)")
         }
     }
 }

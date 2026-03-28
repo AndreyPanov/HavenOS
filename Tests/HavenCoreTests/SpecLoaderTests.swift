@@ -35,7 +35,7 @@ final class SpecLoaderTests: XCTestCase {
         XCTAssertEqual(registry.bundlesByID.count, 1)
         let bundle = try XCTUnwrap(registry.bundlesByID["haven.bundle.test-library-basic"])
         XCTAssertEqual(bundle.name, "Test Library (Basic)")
-        XCTAssertEqual(bundle.capabilityIDs, ["haven.capability.test-library"])
+        XCTAssertEqual(bundle.capabilityID, "haven.capability.test-library")
         XCTAssertEqual(bundle.runtimeUnitIDs, [
             "haven.unit.test-db",
             "haven.unit.test-worker",
@@ -48,7 +48,7 @@ final class SpecLoaderTests: XCTestCase {
 
         let db = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.test-db"])
         XCTAssertEqual(db.bundleID, "haven.bundle.test-library-basic")
-        XCTAssertEqual(db.runtimeType, .binary)
+        XCTAssertEqual(db.runtimeType, .native)
         XCTAssertEqual(db.installSource, "/opt/haven/bin/test-db")
         XCTAssertNotNil(db.healthcheck)
 

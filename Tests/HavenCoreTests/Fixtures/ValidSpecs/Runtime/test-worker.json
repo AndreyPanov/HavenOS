@@ -1,7 +1,7 @@
 {
     "id": "haven.unit.test-worker",
     "bundleID": "haven.bundle.test-library-basic",
-    "runtimeType": "binary",
+    "runtimeType": "native",
     "installSource": "/opt/haven/bin/test-worker",
     "launchArguments": [
         "/opt/haven/bin/test-worker",
