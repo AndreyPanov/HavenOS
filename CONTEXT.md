@@ -34,6 +34,29 @@ Haven must fully manage all service dependencies internally. Users must never be
 
 - Commit after every change.
 
+## Execution Philosophy
+
+Haven does not directly "run commands" as a primary model.
+
+Instead, Haven:
+
+1. Plans desired service state (Planner)
+2. Prepares artifacts and environments (Installer / RuntimeAdapters)
+3. Delegates execution to the OS (launchd on macOS)
+
+Haven is a planner and orchestrator, not a long-running process supervisor.
+
+All runtime-specific behavior (Python, native binaries, etc.) must be encapsulated inside RuntimeAdapters.
+
+No user-facing flow should expose:
+- pip
+- python
+- brew
+- PATH
+- launchctl
+
+These are implementation details only.
+
 ## Module Map
 
 | Module | Path | Purpose |
