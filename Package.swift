@@ -21,6 +21,14 @@ let package = Package(
             path: "Sources/HavenCore"
         ),
 
+        // MARK: - Executor
+
+        .target(
+            name: "HavenExecutor",
+            dependencies: ["HavenCore", "HavenRuntimes", "HavenLaunchd"],
+            path: "Sources/HavenExecutor"
+        ),
+
         // MARK: - CLI (library + thin executable)
 
         /// All command definitions live here so they are importable by tests.
@@ -28,6 +36,8 @@ let package = Package(
             name: "HavenCLIKit",
             dependencies: [
                 "HavenCore",
+                "HavenExecutor",
+                "HavenLaunchd",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "Sources/HavenCLIKit"
@@ -88,6 +98,11 @@ let package = Package(
             name: "HavenInstallerTests",
             dependencies: ["HavenInstaller"],
             path: "Tests/HavenInstallerTests"
+        ),
+        .testTarget(
+            name: "HavenExecutorTests",
+            dependencies: ["HavenExecutor", "HavenLaunchd", "HavenRuntimes"],
+            path: "Tests/HavenExecutorTests"
         ),
         .testTarget(
             name: "HavenCLITests",
