@@ -65,7 +65,7 @@ These are implementation details only.
 | `HavenCLIKit` | `Sources/HavenCLIKit/` | CLI command definitions (ArgumentParser), importable by tests |
 | `HavenCLI` | `Sources/HavenCLI/` | Thin executable entry point (`havenctl`) |
 | `HavenLaunchd` | `Sources/HavenLaunchd/` | launchd / ServiceManagement integration *(stub)* |
-| `HavenRuntimes` | `Sources/HavenRuntimes/` | Runtime adapter protocol + built-in adapters *(stub)* |
+| `HavenRuntimes` | `Sources/HavenRuntimes/` | Runtime adapter protocol + built-in adapters (native, Python) |
 
 ## HavenCore Internal Structure
 
@@ -126,6 +126,26 @@ Filesystem layout and persistent state store. Thread-safe, atomic writes.
 | `AtomicFileWriter.swift` | `AtomicFileWriter` | Temp file + rename, creates parent dirs |
 | `FileStateStore.swift` | `FileStateStore` | JSON-backed, NSLock for thread safety, ISO 8601 dates, tolerates missing file |
 
+## HavenRuntimes Internal Structure (`Sources/HavenRuntimes/`)
+
+Runtime adapter layer that prepares RuntimeUnits for launch. Encapsulates all runtime-specific behavior so upper layers never need to know how native vs Python services differ.
+
+| File | Type | Notes |
+|---|---|---|
+| `RuntimeAdapter.swift` | `RuntimeAdapter` | Protocol: `prepare(unit:plannedUnit:serviceLayout:)` → `PreparedRuntime`, `teardown(preparedRuntime:serviceLayout:)` |
+| `PreparedRuntime.swift` | `PreparedRuntime` | Launch-ready output: executableURL, arguments, environment, workingDirectory, managedDirectories, runtimeType, healthcheck, port, dependsOn |
+| `NativeRuntimeAdapter.swift` | `NativeRuntimeAdapter` | Prepares native macOS binaries — resolves executable path from installSource, passes through planned args/env |
+| `PythonRuntimeAdapter.swift` | `PythonRuntimeAdapter` | Prepares Haven-managed Python apps — computes per-unit venv under `run/venvs/<unit-id>/`, sets VIRTUAL_ENV, controlled PATH, python3 as interpreter |
+| `RuntimeAdapterRegistry.swift` | `RuntimeAdapterRegistry` | Resolves adapter by `RuntimeType`, convenience `prepare()`, `makeDefault()` factory |
+| `RuntimeAdapterError.swift` | `RuntimeAdapterError` | Service-oriented errors: missingInstallSource, executableNotFound, missingLaunchArguments, unsupportedRuntimeType, environmentSetupFailed |
+
+Key design rules:
+- Adapters are pure preparation — no process execution, no filesystem I/O, no downloads
+- `PreparedRuntime` is runtime-agnostic — execution layer treats all runtimes identically
+- Python venvs live under `run/venvs/<unit-id>/` within the service directory
+- PATH is controlled (venv bin + `/usr/bin:/bin`) — no user PATH leakage
+- Error cases use service-oriented language, never mention pip/brew/venv/PATH
+
 ## Filesystem Layout
 
 Under the Haven base directory:
@@ -141,6 +161,9 @@ Under the Haven base directory:
       config/              ← configuration files
       logs/                ← log files
       run/                 ← runtime state (PIDs, sockets)
+        venvs/             ← Python venvs (only for python units)
+          <unit-id>/       ← per-unit virtual environment
+            bin/python3    ← Haven-managed interpreter
 ```
 
 ## Test Structure
@@ -152,8 +175,9 @@ Under the Haven base directory:
 | `PlannerTests.swift` | 14 | Planning: success, placeholder expansion (env/args/healthcheck), port override, directory layout, errors (missing cap/bundle/unit, required settings, cycles), topological order, default settings, template context |
 | `StateTests.swift` | 29 | HavenPaths (7), ServiceDirectoryLayout (5), StoredServiceState (2), FileStateStore (15 — empty load, save/reload, upsert, remove, atomic write, thread safety) |
 | `HavenCLITests.swift` | 3 | CLI flag parsing |
+| `RuntimeAdapterTests.swift` | 26 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (7 — type, success, venv paths, empty source/args, PATH isolation, teardown), PreparedRuntime (2 — equality), RuntimeAdapterError (3 — equality, no tooling leaks) |
 
-**Total: 90 tests, all passing.**
+**Total: 116 tests, all passing.**
 
 Test fixtures use a synthetic `test-library` capability (not real third-party apps):
 - Capability: `haven.capability.test-library`
@@ -169,6 +193,6 @@ Test fixtures use a synthetic `test-library` capability (not real third-party ap
 - No install/download execution logic
 - No process execution or lifecycle management
 - No launchd integration (stub module exists)
-- No runtime adapters (stub module exists)
+- No actual venv creation or package installation (adapters compute paths but don't touch filesystem)
 - No UI
 - No networking

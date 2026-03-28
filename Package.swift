@@ -67,6 +67,11 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "HavenRuntimesTests",
+            dependencies: ["HavenRuntimes"],
+            path: "Tests/HavenRuntimesTests"
+        ),
+        .testTarget(
             name: "HavenCLITests",
             dependencies: [
                 "HavenCLIKit",
