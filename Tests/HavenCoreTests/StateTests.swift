@@ -33,6 +33,7 @@ final class HavenPathsTests: XCTestCase {
         XCTAssertEqual(dirs, [
             "/tmp/haven-test/State",
             "/tmp/haven-test/Downloads",
+            "/tmp/haven-test/Installed",
             "/tmp/haven-test/Services",
         ])
     }

@@ -56,6 +56,14 @@ let package = Package(
             path: "Sources/HavenRuntimes"
         ),
 
+        // MARK: - Artifact installer
+
+        .target(
+            name: "HavenInstaller",
+            dependencies: ["HavenCore"],
+            path: "Sources/HavenInstaller"
+        ),
+
         // MARK: - Tests
 
         .testTarget(
@@ -75,6 +83,11 @@ let package = Package(
             name: "HavenLaunchdTests",
             dependencies: ["HavenLaunchd", "HavenRuntimes"],
             path: "Tests/HavenLaunchdTests"
+        ),
+        .testTarget(
+            name: "HavenInstallerTests",
+            dependencies: ["HavenInstaller"],
+            path: "Tests/HavenInstallerTests"
         ),
         .testTarget(
             name: "HavenCLITests",

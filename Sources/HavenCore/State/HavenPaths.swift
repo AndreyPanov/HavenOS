@@ -7,6 +7,7 @@ import Foundation
 /// State/
 ///   services.json
 /// Downloads/
+/// Installed/<runtime-unit-id>/
 /// Services/<capability-id>/
 ///   data/
 ///   config/
@@ -37,6 +38,11 @@ public struct HavenPaths: Equatable, Sendable {
         base.appendingPathComponent("Downloads")
     }
 
+    /// `<base>/Installed/` — extracted artifacts, one subdirectory per runtime unit.
+    public var installedDirectory: URL {
+        base.appendingPathComponent("Installed")
+    }
+
     /// `<base>/Services/` — root of all per-capability service directories.
     public var servicesDirectory: URL {
         base.appendingPathComponent("Services")
@@ -60,6 +66,6 @@ public struct HavenPaths: Equatable, Sendable {
 
     /// The top-level directories that should exist under the base.
     public var topLevelDirectories: [URL] {
-        [stateDirectory, downloadsDirectory, servicesDirectory]
+        [stateDirectory, downloadsDirectory, installedDirectory, servicesDirectory]
     }
 }

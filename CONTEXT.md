@@ -65,6 +65,7 @@ These are implementation details only.
 | `HavenCLIKit` | `Sources/HavenCLIKit/` | CLI command definitions (ArgumentParser), importable by tests |
 | `HavenCLI` | `Sources/HavenCLI/` | Thin executable entry point (`havenctl`) |
 | `HavenLaunchd` | `Sources/HavenLaunchd/` | launchd job modeling + execution controller — plist generation, lifecycle management via launchctl |
+| `HavenInstaller` | `Sources/HavenInstaller/` | Artifact fetch, cache, and placement — downloads, extracts, and installs service artifacts into Haven-managed directories |
 | `HavenRuntimes` | `Sources/HavenRuntimes/` | Runtime adapter protocol + built-in adapters (native, Python) |
 
 ## HavenCore Internal Structure
@@ -116,7 +117,7 @@ Filesystem layout and persistent state store. Thread-safe, atomic writes.
 
 | File | Type | Notes |
 |---|---|---|
-| `HavenPaths.swift` | `HavenPaths` | Resolves all paths from a base URL: `State/`, `Downloads/`, `Services/`, `State/services.json` |
+| `HavenPaths.swift` | `HavenPaths` | Resolves all paths from a base URL: `State/`, `Downloads/`, `Installed/`, `Services/`, `State/services.json` |
 | `ServiceDirectoryLayout.swift` | `ServiceDirectoryLayout` | Codable value type for `Services/<cap-id>/{data,config,logs,run}` |
 | `ServiceStatus.swift` | `ServiceStatus` | Enum: installed, running, stopped, failed |
 | `StoredServiceState.swift` | `StoredServiceState` | capabilityID, bundleID, installedAt, updatedAt, status, resolvedSettings, portAssignments, runtimeUnitIDs, directoryLayout |
@@ -145,6 +146,34 @@ Key design rules:
 - Python venvs live under `run/venvs/<unit-id>/` within the service directory
 - PATH is controlled (venv bin + `/usr/bin:/bin`) — no user PATH leakage
 - Error cases use service-oriented language, never mention pip/brew/venv/PATH
+
+## HavenInstaller Internal Structure (`Sources/HavenInstaller/`)
+
+Artifact installer layer that fetches, caches, and places service artifacts in Haven-managed directories. Handles local files and remote downloads, supports executables and archives.
+
+| File | Type | Notes |
+|---|---|---|
+| `ArtifactSource.swift` | `ArtifactSource` | Enum: `.local(URL)`, `.remote(URL)`. String convenience init (http/https → remote, else → local) |
+| `ArtifactFormat.swift` | `ArtifactFormat` | Enum: `.executable`, `.zip`, `.tarGz`. Static `detect(from:)` for extension-based detection |
+| `ArtifactDescriptor.swift` | `ArtifactDescriptor` | unitID + source + format — describes what to install and where to get it |
+| `ArtifactInstallResult.swift` | `ArtifactInstallResult` | unitID + installDirectory + wasCached — result of a successful installation |
+| `ArtifactInstallerError.swift` | `ArtifactInstallerError` | 6 cases: sourceFileNotFound, downloadFailed, extractionFailed, unsupportedFormat, artifactNotFound, installFailed |
+| `DownloadClient.swift` | `DownloadClient` | Protocol: `download(from:) → URL`. Enables mock-based testing |
+| `URLSessionDownloadClient.swift` | `URLSessionDownloadClient` | Production implementation via URLSession.shared.downloadTask |
+| `ArchiveExtractor.swift` | `ArchiveExtractor` | Protocol: `extract(archiveURL:to:format:)`. Enables mock-based testing |
+| `ProcessArchiveExtractor.swift` | `ProcessArchiveExtractor` | Production implementation: `/usr/bin/ditto -xk` for ZIP, `/usr/bin/tar -xzf` for tar.gz |
+| `ArtifactCache.swift` | `ArtifactCache` | Manages `<base>/Installed/<unit-id>/` directories. isCached, remove, prepareCleanDirectory |
+| `ArtifactInstaller.swift` | `ArtifactInstaller` | Primary API: `install(descriptor:)` → `ArtifactInstallResult`, `uninstall(unitID:)`. Orchestrates cache check → source resolution → extraction/copy |
+
+Key design rules:
+- Install directories are deterministic: `<base>/Installed/<unit-id>/`
+- Cache check avoids duplicate extraction — if directory exists and is non-empty, returns immediately
+- `DownloadClient` and `ArchiveExtractor` protocols enable fully isolated mock-based testing
+- Uses macOS built-in tools only (`ditto`, `tar`) — no Homebrew or external dependencies
+- Cleans up partial extractions on failure
+- Cleans up downloaded temp files for remote sources after install
+- Error cases use service-oriented language — no ditto/tar/unzip in case names
+- Convenience initializer accepts `HavenPaths` to derive cache root and downloads directory
 
 ## HavenLaunchd Internal Structure (`Sources/HavenLaunchd/`)
 
@@ -192,6 +221,9 @@ Under the Haven base directory:
   State/
     services.json          ← persisted service state
   Downloads/               ← temporary download staging
+  Installed/
+    <runtime-unit-id>/     ← one per installed runtime unit
+      ...                  ← extracted archive contents or copied executable
   Services/
     <capability-id>/       ← one per installed capability
       data/                ← persistent data
@@ -215,8 +247,9 @@ Under the Haven base directory:
 | `RuntimeAdapterTests.swift` | 26 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (7 — type, success, venv paths, empty source/args, PATH isolation, teardown), PreparedRuntime (2 — equality), RuntimeAdapterError (3 — equality, no tooling leaks) |
 | `LaunchdJobTests.swift` | 34 | LaunchdLabel (5 — prefix, generation, determinism, uniqueness), LaunchdKeepAlivePolicy (5 — plist values, shouldInclude, equality), LaunchdJob native (4 — make, log paths, env passthrough, custom keepAlive), LaunchdJob python (2 — make, log paths), Plist encoding (12 — required keys, label, args, runAtLoad, empty/nonempty env, keepAlive variants, XML validity, round-trip, env round-trip), Equality (2), LogPath (4 — stdout, stderr, under logs, deterministic) |
 | `LaunchdControllerTests.swift` | 50 | LaunchdPaths (7 — default dir, custom dir, plist path, determinism, uniqueness, extension, equality), LaunchdJobStatus (6 — running/stopped/installed/notFound, equality/inequality), LaunchdControllerError (3 — equality, inequality, no tooling leaks), LaunchctlResult (3 — succeeded, failed, equality), Install (5 — writes plist, valid plist content, calls bootstrap, bootstrap failure, client throws), Uninstall (4 — calls bootout, removes plist, tolerates missing plist, bootout failure), Start/Stop (6 — calls client, failure cases, client throws), Status (6 — running, stopped, installed when plist exists, notFound, calls print, client throws), Status parsing (6 — running with PID, stopped, PID overrides state, empty output, whitespace, label preserved), Integration (2 — install-then-uninstall, creates directory), ProcessLaunchctlClient (2 — domain target, service target) |
+| `ArtifactInstallerTests.swift` | 41 | ArtifactSource (6 — local, remote, string init http/https/local, equality), ArtifactFormat (4 — detect zip, tar.gz, unknown, equality), ArtifactDescriptor (2 — properties, equality), ArtifactInstallResult (2 — properties, equality), ArtifactInstallerError (3 — equality, inequality, no tooling leaks), ArtifactCache (8 — install dir, not cached, cached after content, empty dir not cached, remove, remove nonexistent, prepare clean removes existing, deterministic), Installer executable (2 — local executable, not found error), Installer archive (3 — zip, tar.gz, extraction failure cleanup), Installer cache (2 — cache hit avoids extraction, uninstall removes), Installer download (2 — remote URL, download failure error), Installer paths (2 — deterministic directory, HavenPaths convenience init), HavenPaths installed (2 — directory path, in top-level), ProcessArchiveExtractor (3 — real zip, real tar.gz, invalid archive error) |
 
-**Total: 200 tests, all passing.**
+**Total: 241 tests, all passing.**
 
 Test fixtures use a synthetic `test-library` capability (not real third-party apps):
 - Capability: `haven.capability.test-library`
@@ -229,8 +262,7 @@ Test fixtures use a synthetic `test-library` capability (not real third-party ap
 
 ## What Does Not Exist Yet
 
-- No install/download execution logic
 - No actual venv creation or package installation (adapters compute paths but don't touch filesystem)
 - No end-to-end orchestration (plan → prepare → install → start pipeline)
 - No UI
-- No networking
+- No networking (URLSessionDownloadClient exists but no orchestration layer uses it yet)
