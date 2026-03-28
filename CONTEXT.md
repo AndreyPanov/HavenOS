@@ -30,6 +30,10 @@ Haven must fully manage all service dependencies internally. Users must never be
 - UI and user-facing errors must never mention pip, brew, venv, PATH, launchctl, or similar implementation details unless shown in an advanced diagnostics view.
 - User-facing language should describe services, not tooling. Say "The service failed to start" not "python3 returned exit code 1".
 
+### Workflow
+
+- Commit after every change.
+
 ## Module Map
 
 | Module | Path | Purpose |
