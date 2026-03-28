@@ -1,0 +1,22 @@
+{
+    "id": "haven.bundle.navidrome-single",
+    "name": "Navidrome (Single)",
+    "capabilityIDs": ["haven.capability.music"],
+    "runtimeUnitIDs": ["haven.unit.navidrome"],
+    "settings": [
+        {
+            "key": "music_path",
+            "label": "Music library path",
+            "fieldType": "path",
+            "defaultValue": "/srv/music",
+            "required": true
+        },
+        {
+            "key": "port",
+            "label": "HTTP port",
+            "fieldType": "integer",
+            "defaultValue": "4533",
+            "required": false
+        }
+    ]
+}

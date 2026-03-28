@@ -1,0 +1,6 @@
+{
+    "id": "haven.capability.bad",
+    "name": "Bad",
+    "version": "1.0.0",
+    "bogusField": "should not be here"
+}

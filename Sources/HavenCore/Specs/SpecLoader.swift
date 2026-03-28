@@ -1,0 +1,225 @@
+import Foundation
+
+/// Loads, decodes, and validates spec JSON files from a directory tree.
+///
+/// Expected layout under the root URL:
+/// ```
+/// <root>/
+///   Capabilities/   *.json  →  Capability
+///   Bundles/         *.json  →  Bundle
+///   Runtime/         *.json  →  RuntimeUnit
+/// ```
+///
+/// Usage:
+/// ```swift
+/// let result = SpecLoader.load(from: specsRootURL)
+/// if result.succeeded {
+///     let registry = result.registry!
+///     // use registry.capabilitiesByID, etc.
+/// } else {
+///     for issue in result.issues { print(issue) }
+/// }
+/// ```
+public enum SpecLoader {
+
+    // MARK: - Public API
+
+    /// Load all specs from the given root directory.
+    ///
+    /// The loader never throws. All problems are returned as
+    /// ``SpecLoadIssue`` values inside the result.
+    public static func load(from rootURL: URL) -> SpecLoadResult {
+        var issues: [SpecLoadIssue] = []
+
+        let capabilities = decodeSpecs(
+            Capability.self,
+            directory: rootURL.appendingPathComponent("Capabilities"),
+            knownKeys: StrictJSONDecoder.capabilityKeys,
+            issues: &issues
+        )
+        let bundles = decodeSpecs(
+            Bundle.self,
+            directory: rootURL.appendingPathComponent("Bundles"),
+            knownKeys: StrictJSONDecoder.bundleKeys,
+            issues: &issues
+        )
+        let runtimeUnits = decodeSpecs(
+            RuntimeUnit.self,
+            directory: rootURL.appendingPathComponent("Runtime"),
+            knownKeys: StrictJSONDecoder.runtimeUnitKeys,
+            issues: &issues
+        )
+
+        // --- Duplicate ID detection ---
+        let capsByID = deduplicateByID(capabilities, kind: "Capability", issues: &issues)
+        let bundlesByID = deduplicateByID(bundles, kind: "Bundle", issues: &issues)
+        let unitsByID = deduplicateByID(runtimeUnits, kind: "RuntimeUnit", issues: &issues)
+
+        // --- Cross-reference validation ---
+        crossValidate(
+            capsByID: capsByID,
+            bundlesByID: bundlesByID,
+            unitsByID: unitsByID,
+            issues: &issues
+        )
+
+        // --- Per-model validation ---
+        validateAll(capsByID.values, issues: &issues)
+        validateAll(bundlesByID.values, issues: &issues)
+        validateAll(unitsByID.values, issues: &issues)
+
+        if issues.isEmpty {
+            let registry = SpecRegistry(
+                capabilitiesByID: capsByID,
+                bundlesByID: bundlesByID,
+                runtimeUnitsByID: unitsByID
+            )
+            return SpecLoadResult(registry: registry, issues: [])
+        } else {
+            return SpecLoadResult(registry: nil, issues: issues)
+        }
+    }
+
+    // MARK: - Internals
+
+    /// Read every `.json` file in `directory`, strict-decode each one.
+    private static func decodeSpecs<T: Decodable & Identifiable>(
+        _ type: T.Type,
+        directory: URL,
+        knownKeys: Set<String>,
+        issues: inout [SpecLoadIssue]
+    ) -> [T] where T.ID == String {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else {
+            // Directory may not exist — that is fine (no specs of this kind).
+            return []
+        }
+
+        let jsonFiles = contents
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        var results: [T] = []
+        for fileURL in jsonFiles {
+            let filename = fileURL.lastPathComponent
+            guard let data = try? Data(contentsOf: fileURL) else {
+                issues.append(SpecLoadIssue(
+                    kind: .malformedJSON,
+                    source: filename,
+                    detail: "Could not read file."
+                ))
+                continue
+            }
+            let (value, fileIssues) = StrictJSONDecoder.decode(
+                type, from: data, knownKeys: knownKeys, source: filename
+            )
+            issues.append(contentsOf: fileIssues)
+            if let value { results.append(value) }
+        }
+        return results
+    }
+
+    /// Collect items into a dictionary keyed by ID, flagging duplicates.
+    private static func deduplicateByID<T: Identifiable>(
+        _ items: [T],
+        kind: String,
+        issues: inout [SpecLoadIssue]
+    ) -> [String: T] where T.ID == String {
+        var dict: [String: T] = [:]
+        for item in items {
+            if dict[item.id] != nil {
+                issues.append(SpecLoadIssue(
+                    kind: .duplicateID,
+                    source: item.id,
+                    detail: "Duplicate \(kind) ID '\(item.id)'."
+                ))
+            } else {
+                dict[item.id] = item
+            }
+        }
+        return dict
+    }
+
+    /// Verify cross-references between the three spec types.
+    private static func crossValidate(
+        capsByID: [String: Capability],
+        bundlesByID: [String: Bundle],
+        unitsByID: [String: RuntimeUnit],
+        issues: inout [SpecLoadIssue]
+    ) {
+        // Bundle → Capability
+        for bundle in bundlesByID.values {
+            for capID in bundle.capabilityIDs {
+                if capsByID[capID] == nil {
+                    issues.append(SpecLoadIssue(
+                        kind: .missingReference,
+                        source: bundle.id,
+                        detail: "Bundle references unknown capability '\(capID)'."
+                    ))
+                }
+            }
+            // Bundle → RuntimeUnit
+            for unitID in bundle.runtimeUnitIDs {
+                if unitsByID[unitID] == nil {
+                    issues.append(SpecLoadIssue(
+                        kind: .missingReference,
+                        source: bundle.id,
+                        detail: "Bundle references unknown runtime unit '\(unitID)'."
+                    ))
+                }
+            }
+        }
+
+        // RuntimeUnit → Bundle
+        for unit in unitsByID.values {
+            if bundlesByID[unit.bundleID] == nil {
+                issues.append(SpecLoadIssue(
+                    kind: .missingReference,
+                    source: unit.id,
+                    detail: "RuntimeUnit references unknown bundle '\(unit.bundleID)'."
+                ))
+            }
+        }
+    }
+
+    /// Run each model's own `validate()` and collect failures.
+    private static func validateAll<T: Identifiable>(
+        _ items: some Collection<T>,
+        issues: inout [SpecLoadIssue]
+    ) where T.ID == String {
+        for item in items {
+            // Use protocol witness to call validate() where available.
+            if let validatable = item as? any Validatable {
+                do {
+                    try validatable.validate()
+                } catch let error as ValidationError {
+                    issues.append(SpecLoadIssue(
+                        kind: .validationFailure,
+                        source: item.id,
+                        detail: error.message
+                    ))
+                } catch {
+                    issues.append(SpecLoadIssue(
+                        kind: .validationFailure,
+                        source: item.id,
+                        detail: error.localizedDescription
+                    ))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Validatable protocol
+
+/// Internal protocol so SpecLoader can call `validate()` generically.
+protocol Validatable {
+    func validate() throws
+}
+
+extension Capability: Validatable {}
+extension Bundle: Validatable {}
+extension RuntimeUnit: Validatable {}

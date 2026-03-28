@@ -1,50 +1,291 @@
 import XCTest
 import HavenCore
 
+// MARK: - Capability Tests
+
 final class CapabilityTests: XCTestCase {
+
     func testInitStoresProperties() {
-        let cap = Capability(id: "cap.test", name: "Test", version: "1.0.0")
+        let cap = Capability(id: "cap.test", name: "Test", version: "1.0.0", summary: "A test.")
         XCTAssertEqual(cap.id, "cap.test")
         XCTAssertEqual(cap.name, "Test")
         XCTAssertEqual(cap.version, "1.0.0")
+        XCTAssertEqual(cap.summary, "A test.")
     }
 
-    func testEqualityIsIdBased() {
+    func testEquality() {
         let a = Capability(id: "cap.x", name: "X", version: "1.0.0")
         let b = Capability(id: "cap.x", name: "X", version: "1.0.0")
         XCTAssertEqual(a, b)
     }
+
+    func testCodableRoundTrip() throws {
+        let original = Capability.musicExample
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(Capability.self, from: data)
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testValidationSuccess() {
+        XCTAssertNoThrow(try Capability.musicExample.validate())
+    }
+
+    func testValidationFailsOnEmptyID() {
+        let cap = Capability(id: "", name: "X", version: "1.0.0")
+        XCTAssertThrowsError(try cap.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyName() {
+        let cap = Capability(id: "cap.x", name: "  ", version: "1.0.0")
+        XCTAssertThrowsError(try cap.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("name") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyVersion() {
+        let cap = Capability(id: "cap.x", name: "X", version: "")
+        XCTAssertThrowsError(try cap.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("version") == true)
+        }
+    }
 }
+
+// MARK: - SettingField Tests
+
+final class SettingFieldTests: XCTestCase {
+
+    func testCodableRoundTrip() throws {
+        let field = SettingField(key: "port", label: "Port", fieldType: .integer, defaultValue: "8080")
+        let data = try JSONEncoder().encode(field)
+        let decoded = try JSONDecoder().decode(SettingField.self, from: data)
+        XCTAssertEqual(field, decoded)
+    }
+
+    func testValidationSuccess() {
+        let field = SettingField(key: "music_path", label: "Music Path", fieldType: .path)
+        XCTAssertNoThrow(try field.validate())
+    }
+
+    func testValidationFailsOnEmptyKey() {
+        let field = SettingField(key: "", label: "Label", fieldType: .string)
+        XCTAssertThrowsError(try field.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("key") == true)
+        }
+    }
+
+    func testValidationFailsOnInvalidIdentifier() {
+        let field = SettingField(key: "123bad", label: "Label", fieldType: .string)
+        XCTAssertThrowsError(try field.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("identifier") == true)
+        }
+    }
+
+    func testValidationFailsOnKeyWithSpaces() {
+        let field = SettingField(key: "bad key", label: "Label", fieldType: .string)
+        XCTAssertThrowsError(try field.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("identifier") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyLabel() {
+        let field = SettingField(key: "ok_key", label: "  ", fieldType: .string)
+        XCTAssertThrowsError(try field.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("label") == true)
+        }
+    }
+}
+
+// MARK: - Healthcheck Tests
+
+final class HealthcheckTests: XCTestCase {
+
+    func testCodableRoundTrip() throws {
+        let hc = Healthcheck(type: .http, target: "http://localhost:8080/health")
+        let data = try JSONEncoder().encode(hc)
+        let decoded = try JSONDecoder().decode(Healthcheck.self, from: data)
+        XCTAssertEqual(hc, decoded)
+    }
+
+    func testValidationSuccess() {
+        let hc = Healthcheck(type: .tcp, target: "localhost:5432", intervalSeconds: 10, retries: 2)
+        XCTAssertNoThrow(try hc.validate())
+    }
+
+    func testValidationFailsOnEmptyTarget() {
+        let hc = Healthcheck(type: .exec, target: "")
+        XCTAssertThrowsError(try hc.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("target") == true)
+        }
+    }
+
+    func testValidationFailsOnZeroInterval() {
+        let hc = Healthcheck(type: .http, target: "http://localhost", intervalSeconds: 0)
+        XCTAssertThrowsError(try hc.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("intervalSeconds") == true)
+        }
+    }
+
+    func testValidationFailsOnZeroRetries() {
+        let hc = Healthcheck(type: .http, target: "http://localhost", retries: 0)
+        XCTAssertThrowsError(try hc.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("retries") == true)
+        }
+    }
+}
+
+// MARK: - Bundle Tests
 
 final class BundleTests: XCTestCase {
-    func testStoresCapabilities() {
-        let cap = Capability(id: "cap.a", name: "A", version: "1.0.0")
-        let bundle = Bundle(id: "bundle.test", name: "Test Bundle", capabilities: [cap])
-        XCTAssertEqual(bundle.capabilities.count, 1)
-        XCTAssertEqual(bundle.capabilities.first?.id, "cap.a")
+
+    func testCodableRoundTrip() throws {
+        let original = Bundle.navidromeSingleExample
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(Bundle.self, from: data)
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testValidationSuccess() {
+        XCTAssertNoThrow(try Bundle.navidromeSingleExample.validate())
+    }
+
+    func testValidationFailsOnEmptyID() {
+        let bundle = Bundle(id: "", name: "B", capabilityIDs: ["cap.x"])
+        XCTAssertThrowsError(try bundle.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyName() {
+        let bundle = Bundle(id: "b.1", name: "", capabilityIDs: ["cap.x"])
+        XCTAssertThrowsError(try bundle.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("name") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyCapabilityIDs() {
+        let bundle = Bundle(id: "b.1", name: "B", capabilityIDs: [])
+        XCTAssertThrowsError(try bundle.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("capability") == true)
+        }
+    }
+
+    func testValidationFailsOnBlankCapabilityID() {
+        let bundle = Bundle(id: "b.1", name: "B", capabilityIDs: ["  "])
+        XCTAssertThrowsError(try bundle.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("capability") == true)
+        }
+    }
+
+    func testValidationCascadesToSettings() {
+        let badSetting = SettingField(key: "123", label: "Bad", fieldType: .string)
+        let bundle = Bundle(id: "b.1", name: "B", capabilityIDs: ["cap.x"], settings: [badSetting])
+        XCTAssertThrowsError(try bundle.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("identifier") == true)
+        }
     }
 }
 
+// MARK: - RuntimeUnit Tests
+
 final class RuntimeUnitTests: XCTestCase {
-    private func makeUnit() -> RuntimeUnit {
-        let bundle = Bundle(id: "b", name: "B", capabilities: [])
-        return RuntimeUnit(id: "unit.1", bundle: bundle)
+
+    func testCodableRoundTrip() throws {
+        let original = RuntimeUnit.navidromeExample
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: data)
+        XCTAssertEqual(original, decoded)
     }
 
-    func testInitialStateIsIdle() {
-        XCTAssertEqual(makeUnit().state, .idle)
+    func testValidationSuccess() {
+        XCTAssertNoThrow(try RuntimeUnit.navidromeExample.validate())
     }
 
-    func testStartTransitionsToRunning() {
-        var unit = makeUnit()
-        unit.start()
-        XCTAssertEqual(unit.state, .running)
+    func testValidationFailsOnEmptyID() {
+        let unit = RuntimeUnit(id: "", bundleID: "b", runtimeType: .binary,
+                               installSource: "/bin/x", launchArguments: ["/bin/x"])
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
+        }
     }
 
-    func testStopTransitionsToStopped() {
-        var unit = makeUnit()
-        unit.start()
-        unit.stop()
-        XCTAssertEqual(unit.state, .stopped)
+    func testValidationFailsOnEmptyBundleID() {
+        let unit = RuntimeUnit(id: "u.1", bundleID: "", runtimeType: .binary,
+                               installSource: "/bin/x", launchArguments: ["/bin/x"])
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("bundleID") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyInstallSource() {
+        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .binary,
+                               installSource: "", launchArguments: ["/bin/x"])
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("installSource") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyLaunchArguments() {
+        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .binary,
+                               installSource: "/bin/x", launchArguments: [])
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("launchArguments") == true)
+        }
+    }
+
+    func testValidationCascadesToHealthcheck() {
+        let badHC = Healthcheck(type: .http, target: "", intervalSeconds: 30, retries: 3)
+        let unit = RuntimeUnit(id: "u.1", bundleID: "b", runtimeType: .binary,
+                               installSource: "/bin/x", launchArguments: ["/bin/x"],
+                               healthcheck: badHC)
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("target") == true)
+        }
+    }
+
+    func testRuntimeTypeEnumCoverage() {
+        XCTAssertEqual(RuntimeUnit.RuntimeType.binary.rawValue, "binary")
+        XCTAssertEqual(RuntimeUnit.RuntimeType.container.rawValue, "container")
+        XCTAssertEqual(RuntimeUnit.RuntimeType.script.rawValue, "script")
+    }
+}
+
+// MARK: - ServiceRecord Tests
+
+final class ServiceRecordTests: XCTestCase {
+
+    func testCodableRoundTrip() throws {
+        let original = ServiceRecord.musicExample
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(ServiceRecord.self, from: data)
+        XCTAssertEqual(original, decoded)
+    }
+
+    func testValidationSuccess() {
+        XCTAssertNoThrow(try ServiceRecord.musicExample.validate())
+    }
+
+    func testValidationFailsOnEmptyID() {
+        let record = ServiceRecord(
+            id: "",
+            capability: .musicExample,
+            bundle: .navidromeSingleExample,
+            units: [.navidromeExample]
+        )
+        XCTAssertThrowsError(try record.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
+        }
+    }
+
+    func testValidationCascadesToChildren() {
+        let badCap = Capability(id: "", name: "X", version: "1.0.0")
+        let record = ServiceRecord(
+            id: "r.1",
+            capability: badCap,
+            bundle: .navidromeSingleExample,
+            units: [.navidromeExample]
+        )
+        XCTAssertThrowsError(try record.validate())
     }
 }

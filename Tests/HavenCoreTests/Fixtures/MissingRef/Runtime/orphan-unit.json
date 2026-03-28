@@ -1,0 +1,7 @@
+{
+    "id": "haven.unit.orphan",
+    "bundleID": "haven.bundle.nonexistent",
+    "runtimeType": "binary",
+    "installSource": "/bin/x",
+    "launchArguments": ["/bin/x"]
+}

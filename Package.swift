@@ -61,7 +61,10 @@ let package = Package(
         .testTarget(
             name: "HavenCoreTests",
             dependencies: ["HavenCore"],
-            path: "Tests/HavenCoreTests"
+            path: "Tests/HavenCoreTests",
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
         .testTarget(
             name: "HavenCLITests",
