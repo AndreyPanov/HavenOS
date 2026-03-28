@@ -6,8 +6,8 @@ import Foundation
 /// the lifecycle (start / stop) and is managed by a runtime adapter
 /// (see `HavenRuntimes`).
 ///
-/// Example: `"navidrome"` is a runtime unit — a single Navidrome
-/// server process that serves the music library.
+/// Example: `"test-web"` is a runtime unit — a web server process
+/// that depends on a worker and a database.
 public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
 
     /// The execution environment for the unit.
@@ -20,7 +20,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         case script
     }
 
-    /// Unique identifier, e.g. `"haven.unit.navidrome"`.
+    /// Unique identifier, e.g. `"haven.unit.test-web"`.
     public let id: String
 
     /// ID of the bundle this unit belongs to.
@@ -107,30 +107,69 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-// MARK: - Example
+// MARK: - Examples
 
 extension RuntimeUnit {
-    /// Example: a Navidrome binary runtime unit.
-    public static let navidromeExample = RuntimeUnit(
-        id: "haven.unit.navidrome",
-        bundleID: "haven.bundle.navidrome-single",
+    /// Example: a database runtime unit with no dependencies.
+    public static let testDBExample = RuntimeUnit(
+        id: "haven.unit.test-db",
+        bundleID: "haven.bundle.test-library-basic",
         runtimeType: .binary,
-        installSource: "/opt/haven/bin/navidrome",
+        installSource: "/opt/haven/bin/test-db",
         launchArguments: [
-            "/opt/haven/bin/navidrome",
-            "--configfile", "${config_dir}/navidrome.toml",
+            "/opt/haven/bin/test-db",
+            "--datadir", "${data_dir}/db",
+        ],
+        healthcheck: Healthcheck(
+            type: .tcp,
+            target: "localhost:5432",
+            intervalSeconds: 10,
+            retries: 3
+        ),
+        environment: [
+            "DB_DATA": "${data_path}",
+        ]
+    )
+
+    /// Example: a worker runtime unit that depends on the database.
+    public static let testWorkerExample = RuntimeUnit(
+        id: "haven.unit.test-worker",
+        bundleID: "haven.bundle.test-library-basic",
+        runtimeType: .binary,
+        installSource: "/opt/haven/bin/test-worker",
+        launchArguments: [
+            "/opt/haven/bin/test-worker",
+            "--config", "${config_dir}/worker.toml",
+        ],
+        dependsOn: ["haven.unit.test-db"],
+        environment: [
+            "WORKER_DATA": "${data_path}",
+            "WORKER_LOGS": "${logs_dir}",
+        ]
+    )
+
+    /// Example: a web server runtime unit that depends on the worker.
+    public static let testWebExample = RuntimeUnit(
+        id: "haven.unit.test-web",
+        bundleID: "haven.bundle.test-library-basic",
+        runtimeType: .binary,
+        installSource: "/opt/haven/bin/test-web",
+        launchArguments: [
+            "/opt/haven/bin/test-web",
+            "--port", "${port}",
         ],
         healthcheck: Healthcheck(
             type: .http,
-            target: "http://localhost:${port}/ping",
+            target: "http://localhost:${port}/health",
             intervalSeconds: 15,
             retries: 3
         ),
-        port: 4533,
+        dependsOn: ["haven.unit.test-worker"],
+        port: 8080,
         environment: [
-            "ND_MUSICFOLDER": "${music_path}",
-            "ND_DATAFOLDER": "${data_dir}",
-            "ND_PORT": "${port}",
+            "WEB_PORT": "${port}",
+            "WEB_DATA": "${data_path}",
+            "WEB_LOGS": "${logs_dir}",
         ]
     )
 }

@@ -6,10 +6,10 @@ import Foundation
 /// Everything in a bundle is resolved, scheduled, and torn down
 /// as a group.
 ///
-/// Example: `"navidrome-single"` is a bundle that implements
-/// the `"music"` capability using a single Navidrome instance.
+/// Example: `"test-library-basic"` is a bundle that implements
+/// the `"test-library"` capability using three runtime units.
 public struct Bundle: Identifiable, Codable, Equatable, Sendable {
-    /// Unique identifier, e.g. `"haven.bundle.navidrome-single"`.
+    /// Unique identifier, e.g. `"haven.bundle.test-library-basic"`.
     public let id: String
 
     /// Human-readable display name.
@@ -74,25 +74,29 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
 // MARK: - Example
 
 extension Bundle {
-    /// Example: a single-instance Navidrome bundle implementing the music capability.
-    public static let navidromeSingleExample = Bundle(
-        id: "haven.bundle.navidrome-single",
-        name: "Navidrome (Single)",
-        capabilityIDs: ["haven.capability.music"],
-        runtimeUnitIDs: ["haven.unit.navidrome"],
+    /// Example: a test library bundle with three runtime units.
+    public static let testLibraryBasicExample = Bundle(
+        id: "haven.bundle.test-library-basic",
+        name: "Test Library (Basic)",
+        capabilityIDs: ["haven.capability.test-library"],
+        runtimeUnitIDs: [
+            "haven.unit.test-db",
+            "haven.unit.test-worker",
+            "haven.unit.test-web",
+        ],
         settings: [
             SettingField(
-                key: "music_path",
-                label: "Music library path",
+                key: "data_path",
+                label: "Data directory path",
                 fieldType: .path,
-                defaultValue: "/srv/music",
+                defaultValue: "/srv/data",
                 required: true
             ),
             SettingField(
                 key: "port",
                 label: "HTTP port",
                 fieldType: .integer,
-                defaultValue: "4533"
+                defaultValue: "8080"
             ),
         ]
     )

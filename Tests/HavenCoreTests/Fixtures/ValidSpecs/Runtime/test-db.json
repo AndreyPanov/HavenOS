@@ -1,0 +1,20 @@
+{
+    "id": "haven.unit.test-db",
+    "bundleID": "haven.bundle.test-library-basic",
+    "runtimeType": "binary",
+    "installSource": "/opt/haven/bin/test-db",
+    "launchArguments": [
+        "/opt/haven/bin/test-db",
+        "--datadir",
+        "${data_dir}/db"
+    ],
+    "healthcheck": {
+        "type": "tcp",
+        "target": "localhost:5432",
+        "intervalSeconds": 10,
+        "retries": 3
+    },
+    "environment": {
+        "DB_DATA": "${data_path}"
+    }
+}

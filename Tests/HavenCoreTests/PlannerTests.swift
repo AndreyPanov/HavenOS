@@ -7,60 +7,63 @@ final class PlannerTests: XCTestCase {
 
     private let baseDir = URL(fileURLWithPath: "/tmp/haven-test")
 
-    /// Build a registry from the standard music/navidrome examples.
+    /// Build a registry from the standard test-library examples.
     private func makeStandardRegistry() -> SpecRegistry {
         SpecRegistry(
             capabilitiesByID: [
-                "haven.capability.music": .musicExample
+                "haven.capability.test-library": .testLibraryExample
             ],
             bundlesByID: [
-                "haven.bundle.navidrome-single": .navidromeSingleExample
+                "haven.bundle.test-library-basic": .testLibraryBasicExample
             ],
             runtimeUnitsByID: [
-                "haven.unit.navidrome": .navidromeExample
+                "haven.unit.test-db": .testDBExample,
+                "haven.unit.test-worker": .testWorkerExample,
+                "haven.unit.test-web": .testWebExample,
             ]
         )
     }
 
     // MARK: - Successful planning
 
-    func testSuccessfulPlanForMusic() throws {
+    func testSuccessfulPlanForTestLibrary() throws {
         let registry = makeStandardRegistry()
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/my/music"],
+            settings: ["data_path": "/my/data"],
             baseDirectory: baseDir
         )
 
         let svc = plan.service
 
         // Capability
-        XCTAssertEqual(svc.capability.id, "haven.capability.music")
-        XCTAssertEqual(svc.capability.name, "Music")
+        XCTAssertEqual(svc.capability.id, "haven.capability.test-library")
+        XCTAssertEqual(svc.capability.name, "Test Library")
 
         // Bundle
-        XCTAssertEqual(svc.bundle.id, "haven.bundle.navidrome-single")
+        XCTAssertEqual(svc.bundle.id, "haven.bundle.test-library-basic")
 
         // Resolved settings: user override + default
-        XCTAssertEqual(svc.resolvedSettings["music_path"], "/my/music")
-        XCTAssertEqual(svc.resolvedSettings["port"], "4533")
+        XCTAssertEqual(svc.resolvedSettings["data_path"], "/my/data")
+        XCTAssertEqual(svc.resolvedSettings["port"], "8080")
 
         // Directory layout
-        XCTAssertTrue(svc.directoryLayout.serviceRoot.path.contains("haven.capability.music"))
+        XCTAssertTrue(svc.directoryLayout.serviceRoot.path.contains("haven.capability.test-library"))
         XCTAssertTrue(svc.directoryLayout.data.path.hasSuffix("data"))
         XCTAssertTrue(svc.directoryLayout.config.path.hasSuffix("config"))
         XCTAssertTrue(svc.directoryLayout.logs.path.hasSuffix("logs"))
         XCTAssertTrue(svc.directoryLayout.run.path.hasSuffix("run"))
 
-        // Single runtime unit
-        XCTAssertEqual(svc.units.count, 1)
-        let unit = svc.units[0]
-        XCTAssertEqual(unit.spec.id, "haven.unit.navidrome")
+        // Three runtime units in topological order
+        XCTAssertEqual(svc.units.count, 3)
+        XCTAssertEqual(svc.units[0].spec.id, "haven.unit.test-db")
+        XCTAssertEqual(svc.units[1].spec.id, "haven.unit.test-worker")
+        XCTAssertEqual(svc.units[2].spec.id, "haven.unit.test-web")
 
-        // Port
-        XCTAssertEqual(unit.port?.number, 4533)
-        XCTAssertEqual(unit.port?.source, .spec)
+        // Port on the web unit
+        XCTAssertEqual(svc.units[2].port?.number, 8080)
+        XCTAssertEqual(svc.units[2].port?.source, .spec)
     }
 
     // MARK: - Placeholder expansion
@@ -68,59 +71,61 @@ final class PlannerTests: XCTestCase {
     func testPlaceholderExpansionInEnvironment() throws {
         let registry = makeStandardRegistry()
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/srv/tunes"],
+            settings: ["data_path": "/srv/testdata"],
             baseDirectory: baseDir
         )
 
-        let unit = plan.service.units[0]
+        // Check the web unit (units[2] after topological sort)
+        let webUnit = plan.service.units[2]
 
-        // Environment should have expanded ${music_path}
-        XCTAssertEqual(unit.resolvedEnvironment["ND_MUSICFOLDER"], "/srv/tunes")
+        // Environment should have expanded ${port}
+        XCTAssertEqual(webUnit.resolvedEnvironment["WEB_PORT"], "8080")
 
-        // ${data_dir} should resolve to the planned data directory
+        // ${data_path} should resolve to user-provided value
+        XCTAssertEqual(webUnit.resolvedEnvironment["WEB_DATA"], "/srv/testdata")
+
+        // ${logs_dir} should resolve to the planned logs directory
         XCTAssertEqual(
-            unit.resolvedEnvironment["ND_DATAFOLDER"],
-            plan.service.directoryLayout.data.path
+            webUnit.resolvedEnvironment["WEB_LOGS"],
+            plan.service.directoryLayout.logs.path
         )
-
-        // ${port} should resolve to "4533"
-        XCTAssertEqual(unit.resolvedEnvironment["ND_PORT"], "4533")
     }
 
     func testPlaceholderExpansionInLaunchArguments() throws {
         let registry = makeStandardRegistry()
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/srv/tunes"],
+            settings: ["data_path": "/srv/testdata"],
             baseDirectory: baseDir
         )
 
-        let unit = plan.service.units[0]
+        // Check the worker unit (units[1]) — has --config ${config_dir}/worker.toml
+        let workerUnit = plan.service.units[1]
         let configDir = plan.service.directoryLayout.config.path
 
-        // --configfile ${config_dir}/navidrome.toml should be expanded
         XCTAssertTrue(
-            unit.resolvedLaunchArguments.contains("\(configDir)/navidrome.toml"),
-            "Expected expanded config path, got: \(unit.resolvedLaunchArguments)"
+            workerUnit.resolvedLaunchArguments.contains("\(configDir)/worker.toml"),
+            "Expected expanded config path, got: \(workerUnit.resolvedLaunchArguments)"
         )
     }
 
     func testPlaceholderExpansionInHealthcheck() throws {
         let registry = makeStandardRegistry()
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/srv/tunes"],
+            settings: ["data_path": "/srv/testdata"],
             baseDirectory: baseDir
         )
 
-        let unit = plan.service.units[0]
+        // The web unit has a healthcheck with ${port}
+        let webUnit = plan.service.units[2]
         XCTAssertEqual(
-            unit.resolvedHealthcheck?.target,
-            "http://localhost:4533/ping"
+            webUnit.resolvedHealthcheck?.target,
+            "http://localhost:8080/health"
         )
     }
 
@@ -129,17 +134,18 @@ final class PlannerTests: XCTestCase {
     func testPortOverrideViaSetting() throws {
         let registry = makeStandardRegistry()
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/srv/music", "port": "9999"],
+            settings: ["data_path": "/srv/data", "port": "9999"],
             baseDirectory: baseDir
         )
 
-        let unit = plan.service.units[0]
-        XCTAssertEqual(unit.port?.number, 9999)
-        XCTAssertEqual(unit.port?.source, .settingOverride)
+        // The web unit is the one with a spec port
+        let webUnit = plan.service.units[2]
+        XCTAssertEqual(webUnit.port?.number, 9999)
+        XCTAssertEqual(webUnit.port?.source, .settingOverride)
         // Environment should use overridden port
-        XCTAssertEqual(unit.resolvedEnvironment["ND_PORT"], "9999")
+        XCTAssertEqual(webUnit.resolvedEnvironment["WEB_PORT"], "9999")
     }
 
     // MARK: - Default directory layout
@@ -147,16 +153,16 @@ final class PlannerTests: XCTestCase {
     func testDefaultDirectoryLayout() throws {
         let registry = makeStandardRegistry()
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/srv/music"],
+            settings: ["data_path": "/srv/data"],
             baseDirectory: baseDir
         )
 
         let layout = plan.service.directoryLayout
         let expectedRoot = baseDir
             .appendingPathComponent("Services")
-            .appendingPathComponent("haven.capability.music")
+            .appendingPathComponent("haven.capability.test-library")
 
         XCTAssertEqual(layout.serviceRoot, expectedRoot)
         XCTAssertEqual(layout.data, expectedRoot.appendingPathComponent("data"))
@@ -189,20 +195,20 @@ final class PlannerTests: XCTestCase {
     func testMissingBundleThrows() {
         // Registry has the capability but no bundle that implements it
         let registry = SpecRegistry(
-            capabilitiesByID: ["haven.capability.music": .musicExample],
+            capabilitiesByID: ["haven.capability.test-library": .testLibraryExample],
             bundlesByID: [:],
             runtimeUnitsByID: [:]
         )
         XCTAssertThrowsError(
             try Planner.planInstall(
-                capabilityID: "haven.capability.music",
+                capabilityID: "haven.capability.test-library",
                 registry: registry,
                 baseDirectory: baseDir
             )
         ) { error in
             XCTAssertEqual(
                 error as? PlanningError,
-                .bundleNotFound(capabilityID: "haven.capability.music")
+                .bundleNotFound(capabilityID: "haven.capability.test-library")
             )
         }
     }
@@ -210,25 +216,25 @@ final class PlannerTests: XCTestCase {
     // MARK: - Error: missing runtime unit
 
     func testMissingRuntimeUnitThrows() {
-        // Bundle references a unit that's not in the registry
+        // Bundle references units that are not in the registry
         let registry = SpecRegistry(
-            capabilitiesByID: ["haven.capability.music": .musicExample],
-            bundlesByID: ["haven.bundle.navidrome-single": .navidromeSingleExample],
+            capabilitiesByID: ["haven.capability.test-library": .testLibraryExample],
+            bundlesByID: ["haven.bundle.test-library-basic": .testLibraryBasicExample],
             runtimeUnitsByID: [:] // no units!
         )
         XCTAssertThrowsError(
             try Planner.planInstall(
-                capabilityID: "haven.capability.music",
+                capabilityID: "haven.capability.test-library",
                 registry: registry,
-                settings: ["music_path": "/srv/music"],
+                settings: ["data_path": "/srv/data"],
                 baseDirectory: baseDir
             )
         ) { error in
             XCTAssertEqual(
                 error as? PlanningError,
                 .runtimeUnitNotFound(
-                    id: "haven.unit.navidrome",
-                    bundleID: "haven.bundle.navidrome-single"
+                    id: "haven.unit.test-db",
+                    bundleID: "haven.bundle.test-library-basic"
                 )
             )
         }
@@ -237,13 +243,11 @@ final class PlannerTests: XCTestCase {
     // MARK: - Error: required setting missing
 
     func testRequiredSettingMissingThrows() {
-        let registry = makeStandardRegistry()
-        // music_path is required but not provided and has a default
-        // — but let's make a bundle with a required field with no default
+        // Make a bundle with a required field with no default
         let strictBundle = Bundle(
             id: "haven.bundle.strict",
             name: "Strict",
-            capabilityIDs: ["haven.capability.music"],
+            capabilityIDs: ["haven.capability.test-library"],
             runtimeUnitIDs: [],
             settings: [
                 SettingField(
@@ -255,15 +259,15 @@ final class PlannerTests: XCTestCase {
                 )
             ]
         )
-        let registry2 = SpecRegistry(
-            capabilitiesByID: ["haven.capability.music": .musicExample],
+        let registry = SpecRegistry(
+            capabilitiesByID: ["haven.capability.test-library": .testLibraryExample],
             bundlesByID: ["haven.bundle.strict": strictBundle],
             runtimeUnitsByID: [:]
         )
         XCTAssertThrowsError(
             try Planner.planInstall(
-                capabilityID: "haven.capability.music",
-                registry: registry2,
+                capabilityID: "haven.capability.test-library",
+                registry: registry,
                 settings: [:], // no settings provided
                 baseDirectory: baseDir
             )
@@ -366,16 +370,16 @@ final class PlannerTests: XCTestCase {
 
     func testDefaultSettingsUsedWhenNotOverridden() throws {
         let registry = makeStandardRegistry()
-        // Only provide music_path (required). Port has a default of "4533".
+        // Only provide data_path (required). Port has a default of "8080".
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/data/songs"],
+            settings: ["data_path": "/data/files"],
             baseDirectory: baseDir
         )
 
-        XCTAssertEqual(plan.service.resolvedSettings["port"], "4533")
-        XCTAssertEqual(plan.service.resolvedSettings["music_path"], "/data/songs")
+        XCTAssertEqual(plan.service.resolvedSettings["port"], "8080")
+        XCTAssertEqual(plan.service.resolvedSettings["data_path"], "/data/files")
     }
 
     // MARK: - Template context contains directory paths
@@ -383,13 +387,14 @@ final class PlannerTests: XCTestCase {
     func testTemplateContextContainsDirectoryPaths() throws {
         let registry = makeStandardRegistry()
         let plan = try Planner.planInstall(
-            capabilityID: "haven.capability.music",
+            capabilityID: "haven.capability.test-library",
             registry: registry,
-            settings: ["music_path": "/music"],
+            settings: ["data_path": "/testdata"],
             baseDirectory: baseDir
         )
 
-        let ctx = plan.service.units[0].templateContext
+        // Check the web unit (units[2]) which has a port
+        let ctx = plan.service.units[2].templateContext
         let layout = plan.service.directoryLayout
 
         XCTAssertEqual(ctx.values["data_dir"], layout.data.path)
@@ -397,7 +402,7 @@ final class PlannerTests: XCTestCase {
         XCTAssertEqual(ctx.values["logs_dir"], layout.logs.path)
         XCTAssertEqual(ctx.values["run_dir"], layout.run.path)
         XCTAssertEqual(ctx.values["service_root"], layout.serviceRoot.path)
-        XCTAssertEqual(ctx.values["music_path"], "/music")
-        XCTAssertEqual(ctx.values["port"], "4533")
+        XCTAssertEqual(ctx.values["data_path"], "/testdata")
+        XCTAssertEqual(ctx.values["port"], "8080")
     }
 }

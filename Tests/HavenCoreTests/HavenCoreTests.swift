@@ -20,14 +20,14 @@ final class CapabilityTests: XCTestCase {
     }
 
     func testCodableRoundTrip() throws {
-        let original = Capability.musicExample
+        let original = Capability.testLibraryExample
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(Capability.self, from: data)
         XCTAssertEqual(original, decoded)
     }
 
     func testValidationSuccess() {
-        XCTAssertNoThrow(try Capability.musicExample.validate())
+        XCTAssertNoThrow(try Capability.testLibraryExample.validate())
     }
 
     func testValidationFailsOnEmptyID() {
@@ -140,14 +140,14 @@ final class HealthcheckTests: XCTestCase {
 final class BundleTests: XCTestCase {
 
     func testCodableRoundTrip() throws {
-        let original = Bundle.navidromeSingleExample
+        let original = Bundle.testLibraryBasicExample
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(Bundle.self, from: data)
         XCTAssertEqual(original, decoded)
     }
 
     func testValidationSuccess() {
-        XCTAssertNoThrow(try Bundle.navidromeSingleExample.validate())
+        XCTAssertNoThrow(try Bundle.testLibraryBasicExample.validate())
     }
 
     func testValidationFailsOnEmptyID() {
@@ -192,14 +192,14 @@ final class BundleTests: XCTestCase {
 final class RuntimeUnitTests: XCTestCase {
 
     func testCodableRoundTrip() throws {
-        let original = RuntimeUnit.navidromeExample
+        let original = RuntimeUnit.testDBExample
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: data)
         XCTAssertEqual(original, decoded)
     }
 
     func testValidationSuccess() {
-        XCTAssertNoThrow(try RuntimeUnit.navidromeExample.validate())
+        XCTAssertNoThrow(try RuntimeUnit.testDBExample.validate())
     }
 
     func testValidationFailsOnEmptyID() {
@@ -256,22 +256,22 @@ final class RuntimeUnitTests: XCTestCase {
 final class ServiceRecordTests: XCTestCase {
 
     func testCodableRoundTrip() throws {
-        let original = ServiceRecord.musicExample
+        let original = ServiceRecord.testLibraryExample
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(ServiceRecord.self, from: data)
         XCTAssertEqual(original, decoded)
     }
 
     func testValidationSuccess() {
-        XCTAssertNoThrow(try ServiceRecord.musicExample.validate())
+        XCTAssertNoThrow(try ServiceRecord.testLibraryExample.validate())
     }
 
     func testValidationFailsOnEmptyID() {
         let record = ServiceRecord(
             id: "",
-            capability: .musicExample,
-            bundle: .navidromeSingleExample,
-            units: [.navidromeExample]
+            capability: .testLibraryExample,
+            bundle: .testLibraryBasicExample,
+            units: [.testDBExample]
         )
         XCTAssertThrowsError(try record.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
@@ -283,8 +283,8 @@ final class ServiceRecordTests: XCTestCase {
         let record = ServiceRecord(
             id: "r.1",
             capability: badCap,
-            bundle: .navidromeSingleExample,
-            units: [.navidromeExample]
+            bundle: .testLibraryBasicExample,
+            units: [.testDBExample]
         )
         XCTAssertThrowsError(try record.validate())
     }

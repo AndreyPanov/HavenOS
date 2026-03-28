@@ -1,0 +1,26 @@
+{
+    "id": "haven.bundle.test-library-basic",
+    "name": "Test Library (Basic)",
+    "capabilityIDs": ["haven.capability.test-library"],
+    "runtimeUnitIDs": [
+        "haven.unit.test-db",
+        "haven.unit.test-worker",
+        "haven.unit.test-web"
+    ],
+    "settings": [
+        {
+            "key": "data_path",
+            "label": "Data directory path",
+            "fieldType": "path",
+            "defaultValue": "/srv/data",
+            "required": true
+        },
+        {
+            "key": "port",
+            "label": "HTTP port",
+            "fieldType": "integer",
+            "defaultValue": "8080",
+            "required": false
+        }
+    ]
+}

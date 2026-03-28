@@ -6,13 +6,13 @@ import Foundation
 /// They are grouped into ``Bundle``s and executed inside
 /// ``RuntimeUnit``s.
 ///
-/// Example: "music" is a capability — it declares that the system
-/// can stream and manage a music library.
+/// Example: "test-library" is a capability — it declares that the
+/// system can manage a test library.
 public struct Capability: Identifiable, Codable, Hashable, Sendable {
-    /// Reverse-DNS style identifier, e.g. `"haven.capability.music"`.
+    /// Reverse-DNS style identifier, e.g. `"haven.capability.test-library"`.
     public let id: String
 
-    /// Human-readable display name, e.g. `"Music"`.
+    /// Human-readable display name, e.g. `"Test Library"`.
     public let name: String
 
     /// Semantic version string, e.g. `"1.0.0"`.
@@ -50,11 +50,11 @@ public struct Capability: Identifiable, Codable, Hashable, Sendable {
 // MARK: - Example
 
 extension Capability {
-    /// Example: a music streaming capability.
-    public static let musicExample = Capability(
-        id: "haven.capability.music",
-        name: "Music",
+    /// Example: a test library capability.
+    public static let testLibraryExample = Capability(
+        id: "haven.capability.test-library",
+        name: "Test Library",
         version: "1.0.0",
-        summary: "Stream and manage a personal music library."
+        summary: "Manage a synthetic test library."
     )
 }

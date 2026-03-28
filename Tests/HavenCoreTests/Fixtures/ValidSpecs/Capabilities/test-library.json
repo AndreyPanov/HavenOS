@@ -1,0 +1,6 @@
+{
+    "id": "haven.capability.test-library",
+    "name": "Test Library",
+    "version": "1.0.0",
+    "summary": "Manage a synthetic test library."
+}

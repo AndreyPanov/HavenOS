@@ -26,26 +26,38 @@ final class SpecLoaderTests: XCTestCase {
 
         // Capability
         XCTAssertEqual(registry.capabilitiesByID.count, 1)
-        let music = try XCTUnwrap(registry.capabilitiesByID["haven.capability.music"])
-        XCTAssertEqual(music.name, "Music")
-        XCTAssertEqual(music.version, "1.0.0")
-        XCTAssertEqual(music.summary, "Stream and manage a personal music library.")
+        let cap = try XCTUnwrap(registry.capabilitiesByID["haven.capability.test-library"])
+        XCTAssertEqual(cap.name, "Test Library")
+        XCTAssertEqual(cap.version, "1.0.0")
+        XCTAssertEqual(cap.summary, "Manage a synthetic test library.")
 
         // Bundle
         XCTAssertEqual(registry.bundlesByID.count, 1)
-        let bundle = try XCTUnwrap(registry.bundlesByID["haven.bundle.navidrome-single"])
-        XCTAssertEqual(bundle.name, "Navidrome (Single)")
-        XCTAssertEqual(bundle.capabilityIDs, ["haven.capability.music"])
-        XCTAssertEqual(bundle.runtimeUnitIDs, ["haven.unit.navidrome"])
+        let bundle = try XCTUnwrap(registry.bundlesByID["haven.bundle.test-library-basic"])
+        XCTAssertEqual(bundle.name, "Test Library (Basic)")
+        XCTAssertEqual(bundle.capabilityIDs, ["haven.capability.test-library"])
+        XCTAssertEqual(bundle.runtimeUnitIDs, [
+            "haven.unit.test-db",
+            "haven.unit.test-worker",
+            "haven.unit.test-web",
+        ])
         XCTAssertEqual(bundle.settings.count, 2)
 
-        // RuntimeUnit
-        XCTAssertEqual(registry.runtimeUnitsByID.count, 1)
-        let unit = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.navidrome"])
-        XCTAssertEqual(unit.bundleID, "haven.bundle.navidrome-single")
-        XCTAssertEqual(unit.runtimeType, .binary)
-        XCTAssertEqual(unit.installSource, "/opt/haven/bin/navidrome")
-        XCTAssertNotNil(unit.healthcheck)
+        // RuntimeUnits
+        XCTAssertEqual(registry.runtimeUnitsByID.count, 3)
+
+        let db = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.test-db"])
+        XCTAssertEqual(db.bundleID, "haven.bundle.test-library-basic")
+        XCTAssertEqual(db.runtimeType, .binary)
+        XCTAssertEqual(db.installSource, "/opt/haven/bin/test-db")
+        XCTAssertNotNil(db.healthcheck)
+
+        let worker = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.test-worker"])
+        XCTAssertEqual(worker.dependsOn, ["haven.unit.test-db"])
+
+        let web = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.test-web"])
+        XCTAssertEqual(web.port, 8080)
+        XCTAssertNotNil(web.healthcheck)
     }
 
     // MARK: - Unknown field rejection
@@ -77,8 +89,8 @@ final class SpecLoaderTests: XCTestCase {
         let dupIssues = result.issues.filter { $0.kind == .duplicateID }
         XCTAssertFalse(dupIssues.isEmpty, "Expected at least one duplicateID issue.")
         XCTAssertTrue(
-            dupIssues.contains { $0.source == "haven.capability.music" },
-            "Expected duplicate issue for 'haven.capability.music', got: \(dupIssues)"
+            dupIssues.contains { $0.source == "haven.capability.test-library" },
+            "Expected duplicate issue for 'haven.capability.test-library', got: \(dupIssues)"
         )
     }
 

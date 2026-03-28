@@ -46,11 +46,11 @@ public struct ServiceRecord: Identifiable, Codable, Equatable, Sendable {
 // MARK: - Example
 
 extension ServiceRecord {
-    /// Example: a complete music service record.
-    public static let musicExample = ServiceRecord(
-        id: "haven.bundle.navidrome-single",
-        capability: .musicExample,
-        bundle: .navidromeSingleExample,
-        units: [.navidromeExample]
+    /// Example: a complete test library service record.
+    public static let testLibraryExample = ServiceRecord(
+        id: "haven.bundle.test-library-basic",
+        capability: .testLibraryExample,
+        bundle: .testLibraryBasicExample,
+        units: [.testDBExample, .testWorkerExample, .testWebExample]
     )
 }
