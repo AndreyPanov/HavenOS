@@ -64,7 +64,7 @@ These are implementation details only.
 | `HavenCore` | `Sources/HavenCore/` | Domain models, specs, planning, state — no I/O beyond file state |
 | `HavenCLIKit` | `Sources/HavenCLIKit/` | CLI command definitions (ArgumentParser), importable by tests |
 | `HavenCLI` | `Sources/HavenCLI/` | Thin executable entry point (`havenctl`) |
-| `HavenLaunchd` | `Sources/HavenLaunchd/` | launchd job modeling — translates PreparedRuntime into plist definitions |
+| `HavenLaunchd` | `Sources/HavenLaunchd/` | launchd job modeling + execution controller — plist generation, lifecycle management via launchctl |
 | `HavenRuntimes` | `Sources/HavenRuntimes/` | Runtime adapter protocol + built-in adapters (native, Python) |
 
 ## HavenCore Internal Structure
@@ -148,7 +148,9 @@ Key design rules:
 
 ## HavenLaunchd Internal Structure (`Sources/HavenLaunchd/`)
 
-Launchd job modeling layer that translates `PreparedRuntime` values into deterministic launchd property list definitions. Pure modeling — no `launchctl` calls, no file I/O, no process execution.
+Launchd job modeling and execution layer. Translates `PreparedRuntime` values into deterministic launchd property list definitions and manages their lifecycle through `launchctl`.
+
+### Modeling types
 
 | File | Type | Notes |
 |---|---|---|
@@ -156,14 +158,30 @@ Launchd job modeling layer that translates `PreparedRuntime` values into determi
 | `LaunchdKeepAlivePolicy.swift` | `LaunchdKeepAlivePolicy` | Enum: `.always` (restart unconditionally), `.successfulExit` (restart on non-zero exit), `.none` (no restart). Converts to plist-compatible representation |
 | `LaunchdLabel.swift` | `LaunchdLabel` | Deterministic label generation: `app.haven.<capability-id>.<unit-id>` |
 
+### Execution types
+
+| File | Type | Notes |
+|---|---|---|
+| `LaunchdController.swift` | `LaunchdController` | Primary API: `install(job:)`, `uninstall(label:)`, `start(label:)`, `stop(label:)`, `status(label:)`. Writes plists atomically, delegates to `LaunchctlClient`, parses `launchctl print` output for status |
+| `LaunchdPaths.swift` | `LaunchdPaths` | Resolves `~/Library/LaunchAgents/<label>.plist` paths. Injectable for testing |
+| `LaunchdJobStatus.swift` | `LaunchdJobStatus` | Observed runtime status: state (installed/running/stopped/notFound), pid, lastExitStatus, label |
+| `LaunchctlClient.swift` | `LaunchctlClient` | Protocol: bootstrap, bootout, start, stop, print. Enables mock-based testing |
+| `ProcessLaunchctlClient.swift` | `ProcessLaunchctlClient` | Production implementation via Foundation.Process. Targets `gui/<uid>` domain |
+| `LaunchdControllerError.swift` | `LaunchdControllerError` | Structured errors: plistSerializationFailed, plistWriteFailed, plistRemoveFailed, loadFailed, unloadFailed, startFailed, stopFailed, statusQueryFailed, jobNotFound |
+
 Key design rules:
-- Pure modeling — no launchctl, no file writes, no process execution
 - Labels are deterministic and predictable: `app.haven.<cap-id>.<unit-id>`
 - Log paths follow convention: `<logs>/<unit-id>.stdout.log`, `<logs>/<unit-id>.stderr.log`
 - Default keep-alive policy is `.successfulExit` (restart on crash, not on clean exit)
 - Empty environment variables are omitted from the plist
 - `KeepAlive = .none` is omitted entirely from the plist
 - XML plist serialization via Foundation's `PropertyListSerialization`
+- `LaunchctlClient` protocol enables fully isolated testing with `MockLaunchctlClient`
+- `LaunchdPaths` is injectable — tests use temp directories instead of real `~/Library/LaunchAgents`
+- Controller uses atomic writes (temp file + rename) for plist files
+- All `launchctl` commands target `gui/<uid>` (user-session LaunchAgents)
+- Error cases use service-oriented language — no `launchctl`/`bootstrap`/`bootout` in case names
+- Status parsing extracts PID, exit code, and state from `launchctl print` output
 
 ## Filesystem Layout
 
@@ -196,8 +214,9 @@ Under the Haven base directory:
 | `HavenCLITests.swift` | 3 | CLI flag parsing |
 | `RuntimeAdapterTests.swift` | 26 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (7 — type, success, venv paths, empty source/args, PATH isolation, teardown), PreparedRuntime (2 — equality), RuntimeAdapterError (3 — equality, no tooling leaks) |
 | `LaunchdJobTests.swift` | 34 | LaunchdLabel (5 — prefix, generation, determinism, uniqueness), LaunchdKeepAlivePolicy (5 — plist values, shouldInclude, equality), LaunchdJob native (4 — make, log paths, env passthrough, custom keepAlive), LaunchdJob python (2 — make, log paths), Plist encoding (12 — required keys, label, args, runAtLoad, empty/nonempty env, keepAlive variants, XML validity, round-trip, env round-trip), Equality (2), LogPath (4 — stdout, stderr, under logs, deterministic) |
+| `LaunchdControllerTests.swift` | 50 | LaunchdPaths (7 — default dir, custom dir, plist path, determinism, uniqueness, extension, equality), LaunchdJobStatus (6 — running/stopped/installed/notFound, equality/inequality), LaunchdControllerError (3 — equality, inequality, no tooling leaks), LaunchctlResult (3 — succeeded, failed, equality), Install (5 — writes plist, valid plist content, calls bootstrap, bootstrap failure, client throws), Uninstall (4 — calls bootout, removes plist, tolerates missing plist, bootout failure), Start/Stop (6 — calls client, failure cases, client throws), Status (6 — running, stopped, installed when plist exists, notFound, calls print, client throws), Status parsing (6 — running with PID, stopped, PID overrides state, empty output, whitespace, label preserved), Integration (2 — install-then-uninstall, creates directory), ProcessLaunchctlClient (2 — domain target, service target) |
 
-**Total: 150 tests, all passing.**
+**Total: 200 tests, all passing.**
 
 Test fixtures use a synthetic `test-library` capability (not real third-party apps):
 - Capability: `haven.capability.test-library`
@@ -211,8 +230,7 @@ Test fixtures use a synthetic `test-library` capability (not real third-party ap
 ## What Does Not Exist Yet
 
 - No install/download execution logic
-- No process execution or lifecycle management
-- No launchd execution (plist modeling exists, but no launchctl calls or plist file writing)
 - No actual venv creation or package installation (adapters compute paths but don't touch filesystem)
+- No end-to-end orchestration (plan → prepare → install → start pipeline)
 - No UI
 - No networking
