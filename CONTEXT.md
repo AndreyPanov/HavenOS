@@ -64,7 +64,7 @@ These are implementation details only.
 | `HavenCore` | `Sources/HavenCore/` | Domain models, specs, planning, state — no I/O beyond file state |
 | `HavenCLIKit` | `Sources/HavenCLIKit/` | CLI command definitions (ArgumentParser), importable by tests |
 | `HavenCLI` | `Sources/HavenCLI/` | Thin executable entry point (`havenctl`) |
-| `HavenLaunchd` | `Sources/HavenLaunchd/` | launchd / ServiceManagement integration *(stub)* |
+| `HavenLaunchd` | `Sources/HavenLaunchd/` | launchd job modeling — translates PreparedRuntime into plist definitions |
 | `HavenRuntimes` | `Sources/HavenRuntimes/` | Runtime adapter protocol + built-in adapters (native, Python) |
 
 ## HavenCore Internal Structure
@@ -146,6 +146,25 @@ Key design rules:
 - PATH is controlled (venv bin + `/usr/bin:/bin`) — no user PATH leakage
 - Error cases use service-oriented language, never mention pip/brew/venv/PATH
 
+## HavenLaunchd Internal Structure (`Sources/HavenLaunchd/`)
+
+Launchd job modeling layer that translates `PreparedRuntime` values into deterministic launchd property list definitions. Pure modeling — no `launchctl` calls, no file I/O, no process execution.
+
+| File | Type | Notes |
+|---|---|---|
+| `LaunchdJob.swift` | `LaunchdJob` | Models a launchd plist: Label, ProgramArguments, EnvironmentVariables, WorkingDirectory, StandardOutPath, StandardErrorPath, RunAtLoad, KeepAlive. Factory: `make(capabilityID:unitID:preparedRuntime:serviceLayout:)`. Encodes to XML plist via `plistData()` |
+| `LaunchdKeepAlivePolicy.swift` | `LaunchdKeepAlivePolicy` | Enum: `.always` (restart unconditionally), `.successfulExit` (restart on non-zero exit), `.none` (no restart). Converts to plist-compatible representation |
+| `LaunchdLabel.swift` | `LaunchdLabel` | Deterministic label generation: `app.haven.<capability-id>.<unit-id>` |
+
+Key design rules:
+- Pure modeling — no launchctl, no file writes, no process execution
+- Labels are deterministic and predictable: `app.haven.<cap-id>.<unit-id>`
+- Log paths follow convention: `<logs>/<unit-id>.stdout.log`, `<logs>/<unit-id>.stderr.log`
+- Default keep-alive policy is `.successfulExit` (restart on crash, not on clean exit)
+- Empty environment variables are omitted from the plist
+- `KeepAlive = .none` is omitted entirely from the plist
+- XML plist serialization via Foundation's `PropertyListSerialization`
+
 ## Filesystem Layout
 
 Under the Haven base directory:
@@ -176,8 +195,9 @@ Under the Haven base directory:
 | `StateTests.swift` | 29 | HavenPaths (7), ServiceDirectoryLayout (5), StoredServiceState (2), FileStateStore (15 — empty load, save/reload, upsert, remove, atomic write, thread safety) |
 | `HavenCLITests.swift` | 3 | CLI flag parsing |
 | `RuntimeAdapterTests.swift` | 26 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (7 — type, success, venv paths, empty source/args, PATH isolation, teardown), PreparedRuntime (2 — equality), RuntimeAdapterError (3 — equality, no tooling leaks) |
+| `LaunchdJobTests.swift` | 34 | LaunchdLabel (5 — prefix, generation, determinism, uniqueness), LaunchdKeepAlivePolicy (5 — plist values, shouldInclude, equality), LaunchdJob native (4 — make, log paths, env passthrough, custom keepAlive), LaunchdJob python (2 — make, log paths), Plist encoding (12 — required keys, label, args, runAtLoad, empty/nonempty env, keepAlive variants, XML validity, round-trip, env round-trip), Equality (2), LogPath (4 — stdout, stderr, under logs, deterministic) |
 
-**Total: 116 tests, all passing.**
+**Total: 150 tests, all passing.**
 
 Test fixtures use a synthetic `test-library` capability (not real third-party apps):
 - Capability: `haven.capability.test-library`
@@ -192,7 +212,7 @@ Test fixtures use a synthetic `test-library` capability (not real third-party ap
 
 - No install/download execution logic
 - No process execution or lifecycle management
-- No launchd integration (stub module exists)
+- No launchd execution (plist modeling exists, but no launchctl calls or plist file writing)
 - No actual venv creation or package installation (adapters compute paths but don't touch filesystem)
 - No UI
 - No networking

@@ -40,15 +40,15 @@ let package = Package(
             path: "Sources/HavenCLI"
         ),
 
-        // MARK: - Launchd integration (stub)
+        // MARK: - Launchd modeling
 
         .target(
             name: "HavenLaunchd",
-            dependencies: ["HavenCore"],
+            dependencies: ["HavenCore", "HavenRuntimes"],
             path: "Sources/HavenLaunchd"
         ),
 
-        // MARK: - Runtime adapters (stub)
+        // MARK: - Runtime adapters
 
         .target(
             name: "HavenRuntimes",
@@ -70,6 +70,11 @@ let package = Package(
             name: "HavenRuntimesTests",
             dependencies: ["HavenRuntimes"],
             path: "Tests/HavenRuntimesTests"
+        ),
+        .testTarget(
+            name: "HavenLaunchdTests",
+            dependencies: ["HavenLaunchd", "HavenRuntimes"],
+            path: "Tests/HavenLaunchdTests"
         ),
         .testTarget(
             name: "HavenCLITests",
