@@ -23,7 +23,7 @@ public struct LaunchdController: Sendable {
 
     private let paths: LaunchdPaths
     private let client: any LaunchctlClient
-    private let fileManager: FileManager
+    private nonisolated(unsafe) let fileManager: FileManager
 
     /// Creates a controller with the given dependencies.
     ///

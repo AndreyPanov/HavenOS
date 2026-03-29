@@ -17,7 +17,7 @@ import HavenCore
 public struct ArtifactCache: Sendable {
 
     private let installedRoot: URL
-    private let fileManager: FileManager
+    private nonisolated(unsafe) let fileManager: FileManager
 
     /// Creates a cache rooted at the given `Installed/` directory.
     ///

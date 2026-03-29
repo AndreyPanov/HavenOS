@@ -23,7 +23,7 @@ public struct HavenExecutor: Sendable {
     private let runtimeRegistry: RuntimeAdapterRegistry
     private let launchdController: LaunchdController
     private let artifactInstaller: ArtifactInstaller?
-    private let fileManager: FileManager
+    private nonisolated(unsafe) let fileManager: FileManager
 
     public init(
         paths: HavenPaths,

@@ -28,7 +28,7 @@ public struct ArtifactInstaller: Sendable {
     private let downloadClient: any DownloadClient
     private let extractor: any ArchiveExtractor
     private let downloadsDirectory: URL
-    private let fileManager: FileManager
+    private nonisolated(unsafe) let fileManager: FileManager
 
     /// Creates an installer with the given dependencies.
     ///
