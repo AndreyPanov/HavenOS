@@ -2,16 +2,18 @@ import Foundation
 import HavenCore
 import HavenRuntimes
 import HavenLaunchd
+import HavenInstaller
 
 /// MVP end-to-end executor that orchestrates the full service lifecycle.
 ///
-/// Wires together spec loading, planning, runtime preparation, launchd job
-/// management, and state persistence into a single API surface.
+/// Wires together spec loading, planning, artifact installation, runtime
+/// preparation, launchd job management, and state persistence into a single
+/// API surface.
 ///
 /// ## Supported operations
 ///
-/// - `install` — plan, prepare runtimes, install launchd jobs, persist state
-/// - `uninstall` — stop jobs, remove plists, remove state
+/// - `install` — plan, install artifacts, prepare runtimes, install launchd jobs, persist state
+/// - `uninstall` — stop jobs, remove plists, remove artifacts, remove state
 /// - `start` / `stop` — control running state via launchd
 /// - `status` — combine persisted state with live launchd status
 public struct HavenExecutor: Sendable {
@@ -20,6 +22,7 @@ public struct HavenExecutor: Sendable {
     private let stateStore: any StateStore
     private let runtimeRegistry: RuntimeAdapterRegistry
     private let launchdController: LaunchdController
+    private let artifactInstaller: ArtifactInstaller?
     private let fileManager: FileManager
 
     public init(
@@ -27,18 +30,21 @@ public struct HavenExecutor: Sendable {
         stateStore: any StateStore,
         runtimeRegistry: RuntimeAdapterRegistry = .makeDefault(),
         launchdController: LaunchdController,
+        artifactInstaller: ArtifactInstaller? = nil,
         fileManager: FileManager = .default
     ) {
         self.paths = paths
         self.stateStore = stateStore
         self.runtimeRegistry = runtimeRegistry
         self.launchdController = launchdController
+        self.artifactInstaller = artifactInstaller
         self.fileManager = fileManager
     }
 
     // MARK: - Install
 
-    /// Install a capability: plan, prepare runtimes, register launchd jobs, persist state.
+    /// Install a capability: plan, install artifacts, prepare runtimes, register
+    /// launchd jobs, persist state.
     ///
     /// Does not start the services. Call `start(capabilityID:)` afterwards if desired.
     ///
@@ -84,15 +90,69 @@ public struct HavenExecutor: Sendable {
             )
         }
 
-        // 4. Prepare runtimes and install launchd jobs for each unit
+        // 4. Install artifacts and prepare runtimes, then install launchd jobs
         for plannedUnit in service.units {
             let unit = plannedUnit.spec
+
+            // Reject unsupported runtime types
+            if unit.runtimeType == .python {
+                throw ExecutorError.unsupportedRuntime(
+                    capabilityID: capabilityID,
+                    unitID: unit.id,
+                    detail: "This service requires a runtime that is not yet available in Haven."
+                )
+            }
+
+            // Install artifact if an installer is configured
+            let resolvedUnit: RuntimeUnit
+            if let installer = artifactInstaller {
+                let source = ArtifactSource(string: unit.installSource)
+                let format = ArtifactFormat.detect(from: unit.installSource) ?? .executable
+                let descriptor = ArtifactDescriptor(
+                    unitID: unit.id,
+                    source: source,
+                    format: format
+                )
+
+                let installResult: ArtifactInstallResult
+                do {
+                    installResult = try installer.install(descriptor: descriptor)
+                } catch {
+                    throw ExecutorError.artifactInstallFailed(
+                        capabilityID: capabilityID,
+                        unitID: unit.id,
+                        detail: error.localizedDescription
+                    )
+                }
+
+                // Resolve installed executable path:
+                // For executables: <installDir>/<original-filename>
+                // For archives: <installDir>/<original-filename>
+                let filename = URL(fileURLWithPath: unit.installSource).lastPathComponent
+                let installedPath = installResult.installDirectory
+                    .appendingPathComponent(filename).path
+
+                // Create a unit with the resolved install source
+                resolvedUnit = RuntimeUnit(
+                    id: unit.id,
+                    bundleID: unit.bundleID,
+                    runtimeType: unit.runtimeType,
+                    installSource: installedPath,
+                    launchArguments: unit.launchArguments,
+                    healthcheck: unit.healthcheck,
+                    dependsOn: unit.dependsOn,
+                    port: unit.port,
+                    environment: unit.environment
+                )
+            } else {
+                resolvedUnit = unit
+            }
 
             // Prepare runtime
             let prepared: PreparedRuntime
             do {
                 prepared = try runtimeRegistry.prepare(
-                    unit: unit,
+                    unit: resolvedUnit,
                     plannedUnit: plannedUnit,
                     serviceLayout: serviceLayout
                 )
@@ -148,7 +208,8 @@ public struct HavenExecutor: Sendable {
 
     // MARK: - Uninstall
 
-    /// Uninstall a capability: stop jobs, remove plists, remove state, clean up directories.
+    /// Uninstall a capability: stop jobs, remove plists, remove artifacts, remove state,
+    /// clean up directories.
     public func uninstall(capabilityID: String) throws {
         guard let service = try stateStore.service(for: capabilityID) else {
             throw ExecutorError.notInstalled(capabilityID: capabilityID)
@@ -171,6 +232,13 @@ public struct HavenExecutor: Sendable {
                     unitID: unitID,
                     detail: error.localizedDescription
                 )
+            }
+        }
+
+        // Best-effort remove installed artifacts
+        if let installer = artifactInstaller {
+            for unitID in service.runtimeUnitIDs {
+                try? installer.uninstall(unitID: unitID)
             }
         }
 

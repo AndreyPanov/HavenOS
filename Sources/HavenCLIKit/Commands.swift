@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import HavenCore
 import HavenExecutor
+import HavenInstaller
 import HavenLaunchd
 
 public struct Havenctl: ParsableCommand {
@@ -39,10 +40,12 @@ struct CommonOptions: ParsableArguments {
         let paths = HavenPaths(base: base)
         let stateStore = FileStateStore(paths: paths)
         let launchdController = LaunchdController()
+        let artifactInstaller = ArtifactInstaller(paths: paths)
         return HavenExecutor(
             paths: paths,
             stateStore: stateStore,
-            launchdController: launchdController
+            launchdController: launchdController,
+            artifactInstaller: artifactInstaller
         )
     }
 

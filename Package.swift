@@ -25,7 +25,7 @@ let package = Package(
 
         .target(
             name: "HavenExecutor",
-            dependencies: ["HavenCore", "HavenRuntimes", "HavenLaunchd"],
+            dependencies: ["HavenCore", "HavenRuntimes", "HavenLaunchd", "HavenInstaller"],
             path: "Sources/HavenExecutor"
         ),
 
@@ -37,6 +37,7 @@ let package = Package(
             dependencies: [
                 "HavenCore",
                 "HavenExecutor",
+                "HavenInstaller",
                 "HavenLaunchd",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
@@ -101,7 +102,7 @@ let package = Package(
         ),
         .testTarget(
             name: "HavenExecutorTests",
-            dependencies: ["HavenExecutor", "HavenLaunchd", "HavenRuntimes"],
+            dependencies: ["HavenExecutor", "HavenLaunchd", "HavenRuntimes", "HavenInstaller"],
             path: "Tests/HavenExecutorTests"
         ),
         .testTarget(

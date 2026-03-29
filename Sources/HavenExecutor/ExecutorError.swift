@@ -16,6 +16,12 @@ public enum ExecutorError: Error, Equatable, Sendable {
     /// Planning the installation failed.
     case planningFailed(capabilityID: String, detail: String)
 
+    /// A runtime type is not yet supported in the executor.
+    case unsupportedRuntime(capabilityID: String, unitID: String, detail: String)
+
+    /// Installing a service artifact failed.
+    case artifactInstallFailed(capabilityID: String, unitID: String, detail: String)
+
     /// Runtime preparation failed for a unit.
     case preparationFailed(capabilityID: String, unitID: String, detail: String)
 
