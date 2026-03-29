@@ -20,8 +20,15 @@ final class MockLaunchctlClient: LaunchctlClient, @unchecked Sendable {
     /// Canned results keyed by method name. Falls back to a success result.
     var results: [String: LaunchctlResult] = [:]
 
-    /// If set, the next call to this method will throw this error.
+    /// If set, any call to this method will throw this error.
     var throwOnMethod: [String: Error] = [:]
+
+    /// If set, only the Nth call (1-based) to a method will throw.
+    /// Key is method name, value is (callNumber, error).
+    var failOnCallNumber: [String: (callNumber: Int, error: Error)] = [:]
+
+    /// Tracks per-method call counts for failOnCallNumber.
+    private var methodCallCounts: [String: Int] = [:]
 
     private let defaultSuccess = LaunchctlResult(exitCode: 0, stdout: "", stderr: "")
 
@@ -47,8 +54,13 @@ final class MockLaunchctlClient: LaunchctlClient, @unchecked Sendable {
 
     private func record(_ method: String, arguments: [String]) throws -> LaunchctlResult {
         calls.append(Call(method: method, arguments: arguments))
+        methodCallCounts[method, default: 0] += 1
         if let error = throwOnMethod[method] {
             throw error
+        }
+        if let rule = failOnCallNumber[method],
+           methodCallCounts[method] == rule.callNumber {
+            throw rule.error
         }
         return results[method] ?? defaultSuccess
     }
@@ -578,6 +590,306 @@ final class HavenExecutorPythonTests: XCTestCase {
         )
 
         XCTAssertTrue(mock.calls.isEmpty, "No launchd calls should be made when install fails early")
+    }
+}
+
+// MARK: - Install Rollback Tests
+
+final class HavenExecutorRollbackTests: XCTestCase {
+
+    private var tempDir: URL!
+    private var artifactDir: URL!
+    private var mock: MockLaunchctlClient!
+    private var stateStore: FileStateStore!
+    private var paths: HavenPaths!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-rollback-test-\(UUID().uuidString)")
+        artifactDir = tempDir.appendingPathComponent("source-artifacts")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        mock = MockLaunchctlClient()
+        paths = HavenPaths(base: tempDir)
+        stateStore = FileStateStore(paths: paths)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    /// Makes an executor with the artifact installer wired in.
+    private func makeExecutorWithArtifacts() -> HavenExecutor {
+        let launchdPaths = LaunchdPaths(
+            launchAgentsDirectory: tempDir.appendingPathComponent("LaunchAgents")
+        )
+        return HavenExecutor(
+            paths: paths,
+            stateStore: stateStore,
+            launchdController: LaunchdController(paths: launchdPaths, client: mock),
+            artifactInstaller: ArtifactInstaller(paths: paths)
+        )
+    }
+
+    /// Makes an executor without artifact installer (uses original installSource paths).
+    private func makeExecutorWithoutArtifacts() -> HavenExecutor {
+        let launchdPaths = LaunchdPaths(
+            launchAgentsDirectory: tempDir.appendingPathComponent("LaunchAgents")
+        )
+        return HavenExecutor(
+            paths: paths,
+            stateStore: stateStore,
+            launchdController: LaunchdController(paths: launchdPaths, client: mock)
+        )
+    }
+
+    // MARK: - Launchd Job Rollback
+
+    func testFailureAfterFirstJobCleansUpInstalledJob() throws {
+        // Fail on the second bootstrap call (first unit succeeds, second fails)
+        let fakeError = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "bootstrap failed"])
+        mock.failOnCallNumber["bootstrap"] = (callNumber: 2, error: fakeError)
+
+        let executor = makeExecutorWithoutArtifacts()
+
+        XCTAssertThrowsError(
+            try executor.install(
+                capabilityID: testCapabilityID,
+                registry: makeStandardRegistry(),
+                settings: testSettings
+            )
+        ) { error in
+            guard case .serviceInstallFailed = error as? ExecutorError else {
+                XCTFail("Expected serviceInstallFailed, got \(error)")
+                return
+            }
+        }
+
+        // The first installed job should have been cleaned up via bootout
+        let bootoutCalls = mock.calls.filter { $0.method == "bootout" }
+        XCTAssertEqual(bootoutCalls.count, 1, "Should uninstall the one successfully installed job")
+
+        // No state should remain
+        let persisted = try stateStore.service(for: testCapabilityID)
+        XCTAssertNil(persisted, "No state should be persisted after rollback")
+    }
+
+    func testFailureAfterSecondJobCleansUpBothJobs() throws {
+        // Fail on the third bootstrap call (first two units succeed)
+        let fakeError = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "bootstrap failed"])
+        mock.failOnCallNumber["bootstrap"] = (callNumber: 3, error: fakeError)
+
+        let executor = makeExecutorWithoutArtifacts()
+
+        XCTAssertThrowsError(
+            try executor.install(
+                capabilityID: testCapabilityID,
+                registry: makeStandardRegistry(),
+                settings: testSettings
+            )
+        )
+
+        // Both successfully installed jobs should have been cleaned up
+        let bootoutCalls = mock.calls.filter { $0.method == "bootout" }
+        XCTAssertEqual(bootoutCalls.count, 2, "Should uninstall both successfully installed jobs")
+    }
+
+    // MARK: - Artifact Rollback
+
+    func testFailureAfterArtifactInstallCleansUpArtifact() throws {
+        // Create artifacts for all three units — but make the second bootstrap fail
+        // so the first unit's artifact and job both get cleaned up.
+        try createDummyExecutables(in: artifactDir)
+        let registry = makeLocalArtifactRegistry(artifactDir: artifactDir)
+
+        let fakeError = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "bootstrap failed"])
+        mock.failOnCallNumber["bootstrap"] = (callNumber: 2, error: fakeError)
+
+        let executor = makeExecutorWithArtifacts()
+
+        XCTAssertThrowsError(
+            try executor.install(
+                capabilityID: testCapabilityID,
+                registry: registry,
+                settings: testSettings
+            )
+        )
+
+        // First unit's artifact should be cleaned up
+        // The first unit in topological order is test-db
+        let dbInstallDir = paths.installedDirectory.appendingPathComponent("haven.unit.test-db")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: dbInstallDir.path),
+            "Artifact for first unit should be removed during rollback"
+        )
+
+        // Second unit's artifact should also be cleaned up (it was installed before bootstrap failed)
+        let workerInstallDir = paths.installedDirectory.appendingPathComponent("haven.unit.test-worker")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: workerInstallDir.path),
+            "Artifact for second unit should be removed during rollback"
+        )
+    }
+
+    func testMissingArtifactCleansUpEarlierArtifacts() throws {
+        // Create only the first artifact — the second will fail, triggering rollback
+        let dbDir = artifactDir
+        try FileManager.default.createDirectory(at: dbDir!, withIntermediateDirectories: true)
+        let dbPath = dbDir!.appendingPathComponent("test-db")
+        try "#!/bin/sh\necho hello".write(to: dbPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dbPath.path)
+
+        let registry = makeLocalArtifactRegistry(artifactDir: artifactDir)
+        let executor = makeExecutorWithArtifacts()
+
+        XCTAssertThrowsError(
+            try executor.install(
+                capabilityID: testCapabilityID,
+                registry: registry,
+                settings: testSettings
+            )
+        ) { error in
+            guard case .artifactInstallFailed = error as? ExecutorError else {
+                XCTFail("Expected artifactInstallFailed, got \(error)")
+                return
+            }
+        }
+
+        // The first unit's artifact should have been cleaned up
+        let dbInstallDir = paths.installedDirectory.appendingPathComponent("haven.unit.test-db")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: dbInstallDir.path),
+            "First unit's artifact should be removed during rollback"
+        )
+    }
+
+    // MARK: - Service Directory Rollback
+
+    func testFailureRemovesServiceDirectory() throws {
+        let fakeError = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "bootstrap failed"])
+        mock.failOnCallNumber["bootstrap"] = (callNumber: 1, error: fakeError)
+
+        let executor = makeExecutorWithoutArtifacts()
+
+        XCTAssertThrowsError(
+            try executor.install(
+                capabilityID: testCapabilityID,
+                registry: makeStandardRegistry(),
+                settings: testSettings
+            )
+        )
+
+        let serviceRoot = paths.serviceLayout(for: testCapabilityID).serviceRoot
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: serviceRoot.path),
+            "Service directory should be removed during rollback"
+        )
+    }
+
+    // MARK: - Original Error Preserved
+
+    func testRollbackPreservesOriginalError() throws {
+        let fakeError = NSError(domain: "test.specific.failure", code: 42)
+        mock.failOnCallNumber["bootstrap"] = (callNumber: 1, error: fakeError)
+
+        let executor = makeExecutorWithoutArtifacts()
+
+        XCTAssertThrowsError(
+            try executor.install(
+                capabilityID: testCapabilityID,
+                registry: makeStandardRegistry(),
+                settings: testSettings
+            )
+        ) { error in
+            guard case .serviceInstallFailed(let capID, let unitID, _) = error as? ExecutorError else {
+                XCTFail("Expected serviceInstallFailed, got \(error)")
+                return
+            }
+            XCTAssertEqual(capID, testCapabilityID)
+            // First unit in topological order is test-db
+            XCTAssertEqual(unitID, "haven.unit.test-db")
+        }
+    }
+
+    // MARK: - Successful Install Unaffected
+
+    func testSuccessfulInstallIsUnaffected() throws {
+        try createDummyExecutables(in: artifactDir)
+        let registry = makeLocalArtifactRegistry(artifactDir: artifactDir)
+
+        let executor = makeExecutorWithArtifacts()
+
+        let state = try executor.install(
+            capabilityID: testCapabilityID,
+            registry: registry,
+            settings: testSettings
+        )
+
+        // State persisted
+        XCTAssertEqual(state.status, .installed)
+        let persisted = try stateStore.service(for: testCapabilityID)
+        XCTAssertNotNil(persisted)
+
+        // All artifacts in place
+        for unitID in state.runtimeUnitIDs {
+            let installDir = paths.installedDirectory.appendingPathComponent(unitID)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: installDir.path))
+        }
+
+        // All bootstrap calls made
+        let bootstrapCalls = mock.calls.filter { $0.method == "bootstrap" }
+        XCTAssertEqual(bootstrapCalls.count, 3)
+
+        // No bootout calls (no rollback)
+        let bootoutCalls = mock.calls.filter { $0.method == "bootout" }
+        XCTAssertTrue(bootoutCalls.isEmpty, "No rollback should occur on success")
+    }
+
+    // MARK: - No Partial Install Remains
+
+    func testFailureLeavesNoPartialInstall() throws {
+        try createDummyExecutables(in: artifactDir)
+        let registry = makeLocalArtifactRegistry(artifactDir: artifactDir)
+
+        // Fail on the third bootstrap (after two units fully installed with artifacts)
+        let fakeError = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "bootstrap failed"])
+        mock.failOnCallNumber["bootstrap"] = (callNumber: 3, error: fakeError)
+
+        let executor = makeExecutorWithArtifacts()
+
+        XCTAssertThrowsError(
+            try executor.install(
+                capabilityID: testCapabilityID,
+                registry: registry,
+                settings: testSettings
+            )
+        )
+
+        // No state persisted
+        let persisted = try stateStore.service(for: testCapabilityID)
+        XCTAssertNil(persisted, "No state should remain after rollback")
+
+        // No artifacts remain
+        for unitID in ["haven.unit.test-db", "haven.unit.test-worker", "haven.unit.test-web"] {
+            let installDir = paths.installedDirectory.appendingPathComponent(unitID)
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: installDir.path),
+                "Artifact for \(unitID) should be removed during rollback"
+            )
+        }
+
+        // Service directory removed
+        let serviceRoot = paths.serviceLayout(for: testCapabilityID).serviceRoot
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: serviceRoot.path),
+            "Service directory should be removed during rollback"
+        )
+
+        // Jobs cleaned up (2 bootouts for 2 successfully installed jobs)
+        let bootoutCalls = mock.calls.filter { $0.method == "bootout" }
+        XCTAssertEqual(bootoutCalls.count, 2)
     }
 }
 

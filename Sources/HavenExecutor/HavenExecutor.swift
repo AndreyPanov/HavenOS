@@ -46,6 +46,11 @@ public struct HavenExecutor: Sendable {
     /// Install a capability: plan, install artifacts, prepare runtimes, register
     /// launchd jobs, persist state.
     ///
+    /// On failure, any work completed during this attempt is rolled back on a
+    /// best-effort basis (installed jobs unloaded, artifacts removed, state entry
+    /// deleted, service directory removed). The original error is always preserved
+    /// as the thrown result.
+    ///
     /// Does not start the services. Call `start(capabilityID:)` afterwards if desired.
     ///
     /// - Parameters:
@@ -82,6 +87,19 @@ public struct HavenExecutor: Sendable {
         let service = plan.service
         let serviceLayout = paths.serviceLayout(for: capabilityID)
 
+        // Rollback stack: closures executed in reverse on failure.
+        // Each step that creates side effects registers a cleanup closure.
+        var rollbackActions: [() -> Void] = []
+
+        /// Run all registered rollback actions in reverse order, then throw
+        /// the original error. Cleanup failures are silently ignored.
+        func rollback(_ error: Error) throws -> Never {
+            for action in rollbackActions.reversed() {
+                action()
+            }
+            throw error
+        }
+
         // 3. Create directories
         for dir in paths.topLevelDirectories + serviceLayout.allDirectories {
             try? fileManager.createDirectory(
@@ -90,17 +108,22 @@ public struct HavenExecutor: Sendable {
             )
         }
 
+        // Register service directory cleanup (only the service-specific tree)
+        rollbackActions.append { [fileManager] in
+            try? fileManager.removeItem(at: serviceLayout.serviceRoot)
+        }
+
         // 4. Install artifacts and prepare runtimes, then install launchd jobs
         for plannedUnit in service.units {
             let unit = plannedUnit.spec
 
             // Reject unsupported runtime types
             if unit.runtimeType == .python {
-                throw ExecutorError.unsupportedRuntime(
+                try rollback(ExecutorError.unsupportedRuntime(
                     capabilityID: capabilityID,
                     unitID: unit.id,
                     detail: "This service requires a runtime that is not yet available in Haven."
-                )
+                ))
             }
 
             // Install artifact if an installer is configured
@@ -118,11 +141,17 @@ public struct HavenExecutor: Sendable {
                 do {
                     installResult = try installer.install(descriptor: descriptor)
                 } catch {
-                    throw ExecutorError.artifactInstallFailed(
+                    try rollback(ExecutorError.artifactInstallFailed(
                         capabilityID: capabilityID,
                         unitID: unit.id,
                         detail: error.localizedDescription
-                    )
+                    ))
+                }
+
+                // Register artifact cleanup
+                let unitIDForCleanup = unit.id
+                rollbackActions.append {
+                    try? installer.uninstall(unitID: unitIDForCleanup)
                 }
 
                 // Resolve installed executable path:
@@ -157,11 +186,11 @@ public struct HavenExecutor: Sendable {
                     serviceLayout: serviceLayout
                 )
             } catch {
-                throw ExecutorError.preparationFailed(
+                try rollback(ExecutorError.preparationFailed(
                     capabilityID: capabilityID,
                     unitID: unit.id,
                     detail: error.localizedDescription
-                )
+                ))
             }
 
             // Build and install launchd job
@@ -175,11 +204,20 @@ public struct HavenExecutor: Sendable {
             do {
                 try launchdController.install(job: job)
             } catch {
-                throw ExecutorError.serviceInstallFailed(
+                try rollback(ExecutorError.serviceInstallFailed(
                     capabilityID: capabilityID,
                     unitID: unit.id,
                     detail: error.localizedDescription
-                )
+                ))
+            }
+
+            // Register launchd job cleanup
+            let label = LaunchdLabel.label(
+                capabilityID: capabilityID,
+                unitID: unit.id
+            )
+            rollbackActions.append { [launchdController] in
+                try? launchdController.uninstall(label: label)
             }
         }
 
@@ -202,7 +240,12 @@ public struct HavenExecutor: Sendable {
             directoryLayout: serviceLayout
         )
 
-        try stateStore.upsert(storedState)
+        do {
+            try stateStore.upsert(storedState)
+        } catch {
+            try rollback(error)
+        }
+
         return storedState
     }
 
