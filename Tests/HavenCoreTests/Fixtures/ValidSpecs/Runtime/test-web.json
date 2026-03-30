@@ -2,7 +2,7 @@
     "id": "haven.unit.test-web",
     "bundleID": "haven.bundle.test-library-basic",
     "runtimeType": "native",
-    "installSource": "/opt/haven/bin/test-web",
+    "installSource": "Artifacts/HelloService",
     "launchArguments": [
         "/opt/haven/bin/test-web",
         "--port",

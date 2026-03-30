@@ -16,41 +16,47 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     public let name: String
 
     /// ID of the capability this bundle implements.
-    public let capabilityID: String
+    public let capability: String
 
     /// IDs of the runtime units that belong to this bundle.
-    public let runtimeUnitIDs: [String]
+    public let runtimeUnits: [String]
 
     /// User-configurable settings exposed by this bundle.
     public let settings: [SettingField]
 
+    /// Optional version string for the bundle.
+    public let version: String?
+
     public init(
         id: String,
         name: String,
-        capabilityID: String,
-        runtimeUnitIDs: [String] = [],
-        settings: [SettingField] = []
+        capability: String,
+        runtimeUnits: [String] = [],
+        settings: [SettingField] = [],
+        version: String? = nil
     ) {
         self.id = id
         self.name = name
-        self.capabilityID = capabilityID
-        self.runtimeUnitIDs = runtimeUnitIDs
+        self.capability = capability
+        self.runtimeUnits = runtimeUnits
         self.settings = settings
+        self.version = version
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        capabilityID = try c.decode(String.self, forKey: .capabilityID)
-        runtimeUnitIDs = try c.decodeIfPresent([String].self, forKey: .runtimeUnitIDs) ?? []
+        capability = try c.decode(String.self, forKey: .capability)
+        runtimeUnits = try c.decodeIfPresent([String].self, forKey: .runtimeUnits) ?? []
         settings = try c.decodeIfPresent([SettingField].self, forKey: .settings) ?? []
+        version = try c.decodeIfPresent(String.self, forKey: .version)
     }
 
     /// Validates that the bundle is well-formed.
     ///
     /// - id and name must be non-empty.
-    /// - capabilityID must be non-empty.
+    /// - capability must be non-empty.
     /// - All setting fields must individually validate.
     public func validate() throws {
         if id.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -59,8 +65,8 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         if name.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("Bundle name must not be empty.")
         }
-        if capabilityID.trimmingCharacters(in: .whitespaces).isEmpty {
-            throw ValidationError("Bundle capabilityID must not be empty.")
+        if capability.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw ValidationError("Bundle capability must not be empty.")
         }
         for setting in settings {
             try setting.validate()
@@ -75,8 +81,8 @@ extension Bundle {
     public static let testLibraryBasicExample = Bundle(
         id: "haven.bundle.test-library-basic",
         name: "Test Library (Basic)",
-        capabilityID: "haven.capability.test-library",
-        runtimeUnitIDs: [
+        capability: "haven.capability.test-library",
+        runtimeUnits: [
             "haven.unit.test-db",
             "haven.unit.test-worker",
             "haven.unit.test-web",

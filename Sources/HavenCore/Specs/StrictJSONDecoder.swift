@@ -70,17 +70,18 @@ enum StrictJSONDecoder {
 extension StrictJSONDecoder {
 
     static let capabilityKeys: Set<String> = [
-        "id", "name", "version", "summary"
+        "id", "name", "version", "description"
     ]
 
     static let bundleKeys: Set<String> = [
-        "id", "name", "capabilityID", "runtimeUnitIDs", "settings"
+        "id", "name", "capability", "runtimeUnits", "settings",
+        "version"
     ]
 
     static let runtimeUnitKeys: Set<String> = [
         "id", "bundleID", "runtimeType", "installSource",
         "launchArguments", "healthcheck", "dependsOn", "port",
-        "environment"
+        "environment", "entrypoint", "version"
     ]
 
     static let settingFieldKeys: Set<String> = [

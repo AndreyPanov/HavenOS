@@ -247,8 +247,8 @@ final class PlannerTests: XCTestCase {
         let strictBundle = Bundle(
             id: "haven.bundle.strict",
             name: "Strict",
-            capabilityID: "haven.capability.test-library",
-            runtimeUnitIDs: [],
+            capability: "haven.capability.test-library",
+            runtimeUnits: [],
             settings: [
                 SettingField(
                     key: "api_key",
@@ -294,8 +294,8 @@ final class PlannerTests: XCTestCase {
         )
         let bundle = Bundle(
             id: "b", name: "B",
-            capabilityID: "cap",
-            runtimeUnitIDs: ["unit.a", "unit.b"]
+            capability: "cap",
+            runtimeUnits: ["unit.a", "unit.b"]
         )
         let cap = Capability(id: "cap", name: "Cap", version: "1.0.0")
         let registry = SpecRegistry(
@@ -341,8 +341,8 @@ final class PlannerTests: XCTestCase {
         )
         let bundle = Bundle(
             id: "b", name: "B",
-            capabilityID: "cap",
-            runtimeUnitIDs: ["unit.c", "unit.a", "unit.b"] // intentionally out of order
+            capability: "cap",
+            runtimeUnits: ["unit.c", "unit.a", "unit.b"] // intentionally out of order
         )
         let cap = Capability(id: "cap", name: "Cap", version: "1.0.0")
         let registry = SpecRegistry(

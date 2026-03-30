@@ -18,6 +18,16 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         case python
     }
 
+    /// Plugin-friendly entrypoint block that maps to launchArguments/environment.
+    /// `command` is ignored (Haven uses `installSource`).
+    /// `args` maps to `launchArguments`.
+    /// `env` maps to `environment`.
+    private struct Entrypoint: Codable, Equatable {
+        let command: String?
+        let args: [String]?
+        let env: [String: String]?
+    }
+
     /// Unique identifier, e.g. `"haven.unit.test-web"`.
     public let id: String
 
@@ -32,6 +42,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     public let installSource: String
 
     /// Command and arguments used to launch the unit.
+    /// Can be populated from the `"entrypoint"` block (entrypoint takes precedence).
     public let launchArguments: [String]
 
     /// Optional healthcheck definition.
@@ -45,7 +56,11 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
 
     /// Environment variables to set when launching. Values may contain
     /// `${setting_key}` placeholders that the planner expands.
+    /// Can be populated from the `"entrypoint"` block (entrypoint takes precedence).
     public let environment: [String: String]
+
+    /// Optional version string for the runtime unit.
+    public let version: String?
 
     public init(
         id: String,
@@ -56,7 +71,8 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         healthcheck: Healthcheck? = nil,
         dependsOn: [String] = [],
         port: Int? = nil,
-        environment: [String: String] = [:]
+        environment: [String: String] = [:],
+        version: String? = nil
     ) {
         self.id = id
         self.bundleID = bundleID
@@ -67,6 +83,15 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         self.dependsOn = dependsOn
         self.port = port
         self.environment = environment
+        self.version = version
+    }
+
+    // MARK: - Codable (entrypoint + version support)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, bundleID, runtimeType, installSource
+        case launchArguments, healthcheck, dependsOn, port
+        case environment, entrypoint, version
     }
 
     public init(from decoder: Decoder) throws {
@@ -75,11 +100,41 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         bundleID = try c.decode(String.self, forKey: .bundleID)
         runtimeType = try c.decode(RuntimeType.self, forKey: .runtimeType)
         installSource = try c.decode(String.self, forKey: .installSource)
-        launchArguments = try c.decode([String].self, forKey: .launchArguments)
+
+        let ep = try c.decodeIfPresent(Entrypoint.self, forKey: .entrypoint)
+
+        // Entrypoint.args takes precedence over top-level launchArguments.
+        if let epArgs = ep?.args {
+            launchArguments = epArgs
+        } else {
+            launchArguments = try c.decodeIfPresent([String].self, forKey: .launchArguments) ?? []
+        }
+
+        // Entrypoint.env takes precedence over top-level environment.
+        if let epEnv = ep?.env {
+            environment = epEnv
+        } else {
+            environment = try c.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        }
+
         healthcheck = try c.decodeIfPresent(Healthcheck.self, forKey: .healthcheck)
         dependsOn = try c.decodeIfPresent([String].self, forKey: .dependsOn) ?? []
         port = try c.decodeIfPresent(Int.self, forKey: .port)
-        environment = try c.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        version = try c.decodeIfPresent(String.self, forKey: .version)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(bundleID, forKey: .bundleID)
+        try c.encode(runtimeType, forKey: .runtimeType)
+        try c.encode(installSource, forKey: .installSource)
+        try c.encode(launchArguments, forKey: .launchArguments)
+        try c.encodeIfPresent(healthcheck, forKey: .healthcheck)
+        try c.encode(dependsOn, forKey: .dependsOn)
+        try c.encodeIfPresent(port, forKey: .port)
+        try c.encode(environment, forKey: .environment)
+        try c.encodeIfPresent(version, forKey: .version)
     }
 
     /// Validates that the unit has enough information to install and launch.

@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode user data
+DerivedData/
+xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Editors & IDEs
+.vscode/
+.idea/
+
+# Temporary files
+*.swp
+*.swo
+*~
+*.orig
+
+# Logs & coverage
+*.log
+*.trace
+*.profraw
+*.profdata
+coverage/
+.swiftpm/xcode/xcshareddata/IDEDerivedData*

@@ -29,14 +29,14 @@ final class SpecLoaderTests: XCTestCase {
         let cap = try XCTUnwrap(registry.capabilitiesByID["haven.capability.test-library"])
         XCTAssertEqual(cap.name, "Test Library")
         XCTAssertEqual(cap.version, "1.0.0")
-        XCTAssertEqual(cap.summary, "Manage a synthetic test library.")
+        XCTAssertEqual(cap.description, "Manage a synthetic test library.")
 
         // Bundle
         XCTAssertEqual(registry.bundlesByID.count, 1)
         let bundle = try XCTUnwrap(registry.bundlesByID["haven.bundle.test-library-basic"])
         XCTAssertEqual(bundle.name, "Test Library (Basic)")
-        XCTAssertEqual(bundle.capabilityID, "haven.capability.test-library")
-        XCTAssertEqual(bundle.runtimeUnitIDs, [
+        XCTAssertEqual(bundle.capability, "haven.capability.test-library")
+        XCTAssertEqual(bundle.runtimeUnits, [
             "haven.unit.test-db",
             "haven.unit.test-worker",
             "haven.unit.test-web",
@@ -49,7 +49,7 @@ final class SpecLoaderTests: XCTestCase {
         let db = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.test-db"])
         XCTAssertEqual(db.bundleID, "haven.bundle.test-library-basic")
         XCTAssertEqual(db.runtimeType, .native)
-        XCTAssertEqual(db.installSource, "/opt/haven/bin/test-db")
+        XCTAssertEqual(db.installSource, "Artifacts/HelloService")
         XCTAssertNotNil(db.healthcheck)
 
         let worker = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.test-worker"])
@@ -151,6 +151,162 @@ final class SpecLoaderTests: XCTestCase {
             jsonIssues.contains { $0.source == "broken.json" },
             "Expected issue sourced to 'broken.json', got: \(jsonIssues)"
         )
+    }
+
+    // MARK: - Entrypoint mapping
+
+    func testEntrypointMappingToLaunchArguments() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let capsDir = tmpDir.appendingPathComponent("Capabilities")
+        let bundlesDir = tmpDir.appendingPathComponent("Bundles")
+        let runtimeDir = tmpDir.appendingPathComponent("Runtime")
+        try FileManager.default.createDirectory(at: capsDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bundlesDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
+
+        let capJSON = """
+        {
+            "id": "haven.capability.ep-test",
+            "name": "EP Test",
+            "version": "1.0.0",
+            "description": "Entrypoint test."
+        }
+        """.data(using: .utf8)!
+        try capJSON.write(to: capsDir.appendingPathComponent("ep-cap.json"))
+
+        let bundleJSON = """
+        {
+            "id": "haven.bundle.ep-test",
+            "name": "EP Bundle",
+            "capability": "haven.capability.ep-test",
+            "runtimeUnits": ["haven.unit.ep-test"],
+            "version": "2.0.0"
+        }
+        """.data(using: .utf8)!
+        try bundleJSON.write(to: bundlesDir.appendingPathComponent("ep-bundle.json"))
+
+        let unitJSON = """
+        {
+            "id": "haven.unit.ep-test",
+            "bundleID": "haven.bundle.ep-test",
+            "runtimeType": "native",
+            "installSource": "Artifacts/HelloService",
+            "entrypoint": {
+                "command": "/usr/local/bin/hello",
+                "args": ["hello", "--port", "8080"],
+                "env": {"PORT": "8080"}
+            },
+            "version": "2.0.0"
+        }
+        """.data(using: .utf8)!
+        try unitJSON.write(to: runtimeDir.appendingPathComponent("ep-unit.json"))
+
+        let result = SpecLoader.load(from: tmpDir)
+        XCTAssertTrue(result.succeeded, "Expected success but got issues: \(result.issues)")
+        let registry = try XCTUnwrap(result.registry)
+
+        // Capability
+        let cap = try XCTUnwrap(registry.capabilitiesByID["haven.capability.ep-test"])
+        XCTAssertEqual(cap.description, "Entrypoint test.")
+
+        // Bundle
+        let bundle = try XCTUnwrap(registry.bundlesByID["haven.bundle.ep-test"])
+        XCTAssertEqual(bundle.capability, "haven.capability.ep-test")
+        XCTAssertEqual(bundle.runtimeUnits, ["haven.unit.ep-test"])
+        XCTAssertEqual(bundle.version, "2.0.0")
+
+        // RuntimeUnit: entrypoint.args → launchArguments, entrypoint.env → environment
+        let unit = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.ep-test"])
+        XCTAssertEqual(unit.launchArguments, ["hello", "--port", "8080"])
+        XCTAssertEqual(unit.environment, ["PORT": "8080"])
+        XCTAssertEqual(unit.version, "2.0.0")
+    }
+
+    // MARK: - Entrypoint takes precedence over top-level fields
+
+    func testEntrypointPrecedenceOverTopLevel() throws {
+        let json = """
+        {
+            "id": "haven.unit.ep-test",
+            "bundleID": "haven.bundle.test",
+            "runtimeType": "native",
+            "installSource": "Artifacts/Test",
+            "launchArguments": ["should-be-overridden"],
+            "environment": {"OLD": "overridden"},
+            "entrypoint": {
+                "command": "ignored",
+                "args": ["new-arg", "--flag"],
+                "env": {"NEW": "value"}
+            }
+        }
+        """.data(using: .utf8)!
+
+        let (unit, issues) = StrictJSONDecoder.decode(
+            RuntimeUnit.self,
+            from: json,
+            knownKeys: StrictJSONDecoder.runtimeUnitKeys,
+            source: "ep-test.json"
+        )
+        XCTAssertTrue(issues.isEmpty, "Unexpected issues: \(issues)")
+        let u = try XCTUnwrap(unit)
+        XCTAssertEqual(u.launchArguments, ["new-arg", "--flag"])
+        XCTAssertEqual(u.environment, ["NEW": "value"])
+    }
+
+    // MARK: - Version field accepted on Bundle and RuntimeUnit
+
+    func testVersionFieldAcceptedOnAllSpecs() throws {
+        // Capability already has version as a required field — verify no unknown-field error.
+        let capJSON = """
+        {"id": "test.cap", "name": "Test", "version": "1.0.0"}
+        """.data(using: .utf8)!
+        let (_, capIssues) = StrictJSONDecoder.decode(
+            Capability.self, from: capJSON,
+            knownKeys: StrictJSONDecoder.capabilityKeys, source: "cap.json"
+        )
+        XCTAssertTrue(capIssues.isEmpty, "Unexpected capability issues: \(capIssues)")
+
+        // Bundle with version
+        let bundleJSON = """
+        {"id": "test.bundle", "name": "Test", "capability": "test.cap", "version": "2.0.0"}
+        """.data(using: .utf8)!
+        let (bundle, bundleIssues) = StrictJSONDecoder.decode(
+            Bundle.self, from: bundleJSON,
+            knownKeys: StrictJSONDecoder.bundleKeys, source: "bundle.json"
+        )
+        XCTAssertTrue(bundleIssues.isEmpty, "Unexpected bundle issues: \(bundleIssues)")
+        XCTAssertEqual(try XCTUnwrap(bundle).version, "2.0.0")
+
+        // RuntimeUnit with version
+        let unitJSON = """
+        {
+            "id": "test.unit", "bundleID": "test.bundle",
+            "runtimeType": "native", "installSource": "bin/test",
+            "launchArguments": ["test"], "version": "3.0.0"
+        }
+        """.data(using: .utf8)!
+        let (unit, unitIssues) = StrictJSONDecoder.decode(
+            RuntimeUnit.self, from: unitJSON,
+            knownKeys: StrictJSONDecoder.runtimeUnitKeys, source: "unit.json"
+        )
+        XCTAssertTrue(unitIssues.isEmpty, "Unexpected unit issues: \(unitIssues)")
+        XCTAssertEqual(try XCTUnwrap(unit).version, "3.0.0")
+    }
+
+    // MARK: - Truly unknown fields still rejected
+
+    func testTrulyUnknownFieldsStillRejected() throws {
+        let json = """
+        {"id": "test.cap", "name": "Test", "version": "1.0.0", "bogusField": "bad"}
+        """.data(using: .utf8)!
+        let (_, issues) = StrictJSONDecoder.decode(
+            Capability.self, from: json,
+            knownKeys: StrictJSONDecoder.capabilityKeys, source: "bad.json"
+        )
+        XCTAssertTrue(issues.contains { $0.kind == .unknownField && $0.detail.contains("bogusField") })
     }
 
     // MARK: - Empty directory is a valid (empty) load

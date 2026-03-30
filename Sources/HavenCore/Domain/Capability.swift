@@ -19,18 +19,18 @@ public struct Capability: Identifiable, Codable, Hashable, Sendable {
     public let version: String
 
     /// Optional one-line description of what this capability provides.
-    public let summary: String?
+    public let description: String?
 
     public init(
         id: String,
         name: String,
         version: String,
-        summary: String? = nil
+        description: String? = nil
     ) {
         self.id = id
         self.name = name
         self.version = version
-        self.summary = summary
+        self.description = description
     }
 
     /// Validates that required fields are non-empty.
@@ -55,6 +55,6 @@ extension Capability {
         id: "haven.capability.test-library",
         name: "Test Library",
         version: "1.0.0",
-        summary: "Manage a synthetic test library."
+        description: "Manage a synthetic test library."
     )
 }

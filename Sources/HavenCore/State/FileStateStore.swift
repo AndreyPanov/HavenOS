@@ -67,7 +67,7 @@ public final class FileStateStore: StateStore, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         var state = try loadUnsafe()
-        state.services[service.capabilityID] = service
+        state.services[service.capability] = service
         try saveUnsafe(state)
     }
 

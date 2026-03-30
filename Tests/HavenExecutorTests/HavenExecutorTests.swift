@@ -139,15 +139,15 @@ private func makePythonRegistry() -> SpecRegistry {
                 id: "haven.capability.python-app",
                 name: "Python App",
                 version: "1.0.0",
-                summary: "A Python-based service"
+                description: "A Python-based service"
             )
         ],
         bundlesByID: [
             "haven.bundle.python-basic": Bundle(
                 id: "haven.bundle.python-basic",
                 name: "Python Basic",
-                capabilityID: "haven.capability.python-app",
-                runtimeUnitIDs: ["haven.unit.python-server"]
+                capability: "haven.capability.python-app",
+                runtimeUnits: ["haven.unit.python-server"]
             )
         ],
         runtimeUnitsByID: [
@@ -218,11 +218,11 @@ final class HavenExecutorInstallTests: XCTestCase {
             registry: makeStandardRegistry(),
             settings: testSettings
         )
-        XCTAssertEqual(state.capabilityID, testCapabilityID)
+        XCTAssertEqual(state.capability, testCapabilityID)
 
         let persisted = try stateStore.service(for: testCapabilityID)
         XCTAssertNotNil(persisted)
-        XCTAssertEqual(persisted?.capabilityID, testCapabilityID)
+        XCTAssertEqual(persisted?.capability, testCapabilityID)
     }
 
     func testInstallPersistsCorrectUnitIDs() throws {
@@ -232,7 +232,7 @@ final class HavenExecutorInstallTests: XCTestCase {
             settings: testSettings
         )
         // Units are in topological order: db first, then worker, then web
-        XCTAssertEqual(state.runtimeUnitIDs, [
+        XCTAssertEqual(state.runtimeUnits, [
             "haven.unit.test-db",
             "haven.unit.test-worker",
             "haven.unit.test-web",
@@ -381,10 +381,10 @@ final class HavenExecutorArtifactTests: XCTestCase {
         )
 
         XCTAssertEqual(state.status, .installed)
-        XCTAssertEqual(state.runtimeUnitIDs.count, 3)
+        XCTAssertEqual(state.runtimeUnits.count, 3)
 
         // Verify artifacts were installed to Installed/<unit-id>/
-        for unitID in state.runtimeUnitIDs {
+        for unitID in state.runtimeUnits {
             let installDir = paths.installedDirectory.appendingPathComponent(unitID)
             XCTAssertTrue(
                 FileManager.default.fileExists(atPath: installDir.path),
@@ -500,7 +500,7 @@ final class HavenExecutorArtifactTests: XCTestCase {
         XCTAssertNil(afterUninstall)
 
         // Verify artifacts cleaned up
-        for unitID in state.runtimeUnitIDs {
+        for unitID in state.runtimeUnits {
             let installDir = paths.installedDirectory.appendingPathComponent(unitID)
             XCTAssertFalse(FileManager.default.fileExists(atPath: installDir.path))
         }
@@ -833,7 +833,7 @@ final class HavenExecutorRollbackTests: XCTestCase {
         XCTAssertNotNil(persisted)
 
         // All artifacts in place
-        for unitID in state.runtimeUnitIDs {
+        for unitID in state.runtimeUnits {
             let installDir = paths.installedDirectory.appendingPathComponent(unitID)
             XCTAssertTrue(FileManager.default.fileExists(atPath: installDir.path))
         }
@@ -1169,7 +1169,7 @@ final class HavenExecutorStatusTests: XCTestCase {
         )
 
         let report = try executor.status(capabilityID: testCapabilityID)
-        XCTAssertEqual(report.capabilityID, testCapabilityID)
+        XCTAssertEqual(report.capability, testCapabilityID)
         XCTAssertEqual(report.unitStatuses.count, 3)
     }
 
@@ -1236,7 +1236,7 @@ final class HavenExecutorEndToEndTests: XCTestCase {
             settings: testSettings
         )
         XCTAssertEqual(state.status, .installed)
-        XCTAssertEqual(state.runtimeUnitIDs.count, 3)
+        XCTAssertEqual(state.runtimeUnits.count, 3)
 
         // 2. Start
         try executor.start(capabilityID: testCapabilityID)

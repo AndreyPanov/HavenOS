@@ -33,14 +33,14 @@ public enum Planner {
 
         // 2. Find the bundle that implements this capability
         guard let bundle = registry.bundlesByID.values.first(
-            where: { $0.capabilityID == capabilityID }
+            where: { $0.capability == capabilityID }
         ) else {
             throw PlanningError.bundleNotFound(capabilityID: capabilityID)
         }
 
         // 3. Resolve all runtime units
         var units: [RuntimeUnit] = []
-        for unitID in bundle.runtimeUnitIDs {
+        for unitID in bundle.runtimeUnits {
             guard let unit = registry.runtimeUnitsByID[unitID] else {
                 throw PlanningError.runtimeUnitNotFound(id: unitID, bundleID: bundle.id)
             }

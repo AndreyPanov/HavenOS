@@ -152,15 +152,15 @@ public enum SpecLoader {
     ) {
         // Bundle → Capability
         for bundle in bundlesByID.values {
-            if capsByID[bundle.capabilityID] == nil {
+            if capsByID[bundle.capability] == nil {
                 issues.append(SpecLoadIssue(
                     kind: .missingReference,
                     source: bundle.id,
-                    detail: "Bundle references unknown capability '\(bundle.capabilityID)'."
+                    detail: "Bundle references unknown capability '\(bundle.capability)'."
                 ))
             }
             // Bundle → RuntimeUnit
-            for unitID in bundle.runtimeUnitIDs {
+            for unitID in bundle.runtimeUnits {
                 if unitsByID[unitID] == nil {
                     issues.append(SpecLoadIssue(
                         kind: .missingReference,

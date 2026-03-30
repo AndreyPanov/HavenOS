@@ -14,7 +14,7 @@ final class InstallCommandTests: XCTestCase {
 
     func testCapabilityIDParsed() throws {
         let cmd = try InstallCommand.parse(["haven.capability.test"])
-        XCTAssertEqual(cmd.capabilityID, "haven.capability.test")
+        XCTAssertEqual(cmd.capability, "haven.capability.test")
     }
 
     func testSpecsDirDefault() throws {
@@ -67,7 +67,7 @@ final class UninstallCommandTests: XCTestCase {
 
     func testCapabilityIDParsed() throws {
         let cmd = try UninstallCommand.parse(["haven.capability.test"])
-        XCTAssertEqual(cmd.capabilityID, "haven.capability.test")
+        XCTAssertEqual(cmd.capability, "haven.capability.test")
     }
 }
 
@@ -80,7 +80,7 @@ final class StartCommandTests: XCTestCase {
 
     func testCapabilityIDParsed() throws {
         let cmd = try StartCommand.parse(["haven.capability.test"])
-        XCTAssertEqual(cmd.capabilityID, "haven.capability.test")
+        XCTAssertEqual(cmd.capability, "haven.capability.test")
     }
 }
 
@@ -93,7 +93,7 @@ final class StopCommandTests: XCTestCase {
 
     func testCapabilityIDParsed() throws {
         let cmd = try StopCommand.parse(["haven.capability.test"])
-        XCTAssertEqual(cmd.capabilityID, "haven.capability.test")
+        XCTAssertEqual(cmd.capability, "haven.capability.test")
     }
 }
 
@@ -106,7 +106,7 @@ final class StatusCommandTests: XCTestCase {
 
     func testCapabilityIDParsed() throws {
         let cmd = try StatusCommand.parse(["haven.capability.test"])
-        XCTAssertEqual(cmd.capabilityID, "haven.capability.test")
+        XCTAssertEqual(cmd.capability, "haven.capability.test")
     }
 }
 

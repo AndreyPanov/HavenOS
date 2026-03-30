@@ -7,7 +7,7 @@ import Foundation
 public struct StoredServiceState: Codable, Equatable, Sendable {
 
     /// The capability this service provides.
-    public let capabilityID: String
+    public let capability: String
 
     /// The bundle that implements the capability.
     public let bundleID: String
@@ -28,30 +28,30 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
     public let portAssignments: [StoredPortAssignment]
 
     /// IDs of the runtime units belonging to this service, in launch order.
-    public let runtimeUnitIDs: [String]
+    public let runtimeUnits: [String]
 
     /// The directory layout for this service on disk.
     public let directoryLayout: ServiceDirectoryLayout
 
     public init(
-        capabilityID: String,
+        capability: String,
         bundleID: String,
         installedAt: Date,
         updatedAt: Date,
         status: ServiceStatus,
         resolvedSettings: [String: String],
         portAssignments: [StoredPortAssignment],
-        runtimeUnitIDs: [String],
+        runtimeUnits: [String],
         directoryLayout: ServiceDirectoryLayout
     ) {
-        self.capabilityID = capabilityID
+        self.capability = capability
         self.bundleID = bundleID
         self.installedAt = installedAt
         self.updatedAt = updatedAt
         self.status = status
         self.resolvedSettings = resolvedSettings
         self.portAssignments = portAssignments
-        self.runtimeUnitIDs = runtimeUnitIDs
+        self.runtimeUnits = runtimeUnits
         self.directoryLayout = directoryLayout
     }
 }

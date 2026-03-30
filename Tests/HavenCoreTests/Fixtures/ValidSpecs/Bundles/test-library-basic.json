@@ -1,8 +1,8 @@
 {
     "id": "haven.bundle.test-library-basic",
     "name": "Test Library (Basic)",
-    "capabilityID": "haven.capability.test-library",
-    "runtimeUnitIDs": [
+    "capability": "haven.capability.test-library",
+    "runtimeUnits": [
         "haven.unit.test-db",
         "haven.unit.test-worker",
         "haven.unit.test-web"

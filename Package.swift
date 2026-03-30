@@ -6,6 +6,9 @@ let package = Package(
     platforms: [
         .macOS(.v13)
     ],
+    products: [
+        .executable(name: "havenctl", targets: ["HavenCLI"]),
+    ],
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-argument-parser",

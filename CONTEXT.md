@@ -77,9 +77,9 @@ Pure value types with Codable, Equatable, Sendable, validation, and static examp
 
 | File | Type | Notes |
 |---|---|---|
-| `Capability.swift` | `Capability` | ID, name, version, summary. Example: `.testLibraryExample` |
-| `Bundle.swift` | `Bundle` | ID, name, capabilityID (singular), runtimeUnitIDs, settings. Custom `init(from:)` for optional fields. Example: `.testLibraryBasicExample` |
-| `RuntimeUnit.swift` | `RuntimeUnit` | ID, bundleID, runtimeType (native/python), installSource, launchArguments, healthcheck, dependsOn, port, environment. Custom `init(from:)`. Examples: `.testDBExample`, `.testWorkerExample`, `.testWebExample` |
+| `Capability.swift` | `Capability` | ID, name, version, description. Example: `.testLibraryExample` |
+| `Bundle.swift` | `Bundle` | ID, name, capability (singular), runtimeUnits, settings, version. Custom `init(from:)` for optional fields. Example: `.testLibraryBasicExample` |
+| `RuntimeUnit.swift` | `RuntimeUnit` | ID, bundleID, runtimeType (native/python), installSource, launchArguments, healthcheck, dependsOn, port, environment, version. Supports `entrypoint` block (args → launchArguments, env → environment). Custom `init(from:)`. Examples: `.testDBExample`, `.testWorkerExample`, `.testWebExample` |
 | `Healthcheck.swift` | `Healthcheck` | type (http/tcp/exec), target, intervalSeconds, retries |
 | `SettingField.swift` | `SettingField` | key, label, fieldType (string/integer/boolean/path), defaultValue, required. Regex-validated key |
 | `ServiceRecord.swift` | `ServiceRecord` | Read-only aggregate of capability + bundle + units. Example: `.testLibraryExample` |
@@ -121,7 +121,7 @@ Filesystem layout and persistent state store. Thread-safe, atomic writes.
 | `HavenPaths.swift` | `HavenPaths` | Resolves all paths from a base URL: `State/`, `Downloads/`, `Installed/`, `Services/`, `State/services.json` |
 | `ServiceDirectoryLayout.swift` | `ServiceDirectoryLayout` | Codable value type for `Services/<cap-id>/{data,config,logs,run}` |
 | `ServiceStatus.swift` | `ServiceStatus` | Enum: installed, running, stopped, failed |
-| `StoredServiceState.swift` | `StoredServiceState` | capabilityID, bundleID, installedAt, updatedAt, status, resolvedSettings, portAssignments, runtimeUnitIDs, directoryLayout |
+| `StoredServiceState.swift` | `StoredServiceState` | capability, bundleID, installedAt, updatedAt, status, resolvedSettings, portAssignments, runtimeUnits, directoryLayout |
 | `StoredPortAssignment.swift` | `StoredPortAssignment` | unitID + port |
 | `HavenState.swift` | `HavenState` | Top-level container: `[capabilityID: StoredServiceState]` |
 | `StateStore.swift` | `StateStore` | Protocol: load, save, service(for:), upsert, remove |
@@ -221,7 +221,7 @@ MVP end-to-end orchestrator that wires together spec loading, planning, runtime 
 |---|---|---|
 | `HavenExecutor.swift` | `HavenExecutor` | Primary API: `install(capabilityID:registry:settings:)`, `uninstall(capabilityID:)`, `start(capabilityID:)`, `stop(capabilityID:)`, `status(capabilityID:)`. Injectable dependencies: HavenPaths, StateStore, RuntimeAdapterRegistry, LaunchdController, ArtifactInstaller (optional) |
 | `ExecutorError.swift` | `ExecutorError` | 11 cases: alreadyInstalled, notInstalled, planningFailed, unsupportedRuntime, artifactInstallFailed, preparationFailed, serviceInstallFailed, serviceUninstallFailed, startFailed, stopFailed, statusQueryFailed. All carry capabilityID + optional unitID + detail |
-| `ServiceStatusReport.swift` | `ServiceStatusReport`, `UnitStatusReport` | Combines persisted state with live launchd status per unit. Reports capabilityID, bundleID, status, and per-unit state/pid/lastExitStatus |
+| `ServiceStatusReport.swift` | `ServiceStatusReport`, `UnitStatusReport` | Combines persisted state with live launchd status per unit. Reports capability, bundleID, status, and per-unit state/pid/lastExitStatus |
 
 Key design rules:
 - Install flow: guard not installed → Planner.planInstall → create directories → for each unit: reject unsupported runtimes (python) → install artifact (if installer configured) → resolve installed path → prepare runtime → make LaunchdJob → install job → persist state (.installed)
@@ -239,11 +239,11 @@ Real CLI commands wired to HavenExecutor.
 
 | Command | Argument | Options | Notes |
 |---|---|---|---|
-| `install` | `capabilityID` | `--specs-dir`, `--set key=value`, `--base-dir` | Loads specs, installs capability, prints result |
-| `uninstall` | `capabilityID` | `--base-dir` | Uninstalls capability |
-| `start` | `capabilityID` | `--base-dir` | Starts all units |
-| `stop` | `capabilityID` | `--base-dir` | Stops all units |
-| `status` | `capabilityID` | `--base-dir` | Shows per-unit live status |
+| `install` | `capability` | `--specs-dir`, `--set key=value`, `--base-dir` | Loads specs, installs capability, prints result |
+| `uninstall` | `capability` | `--base-dir` | Uninstalls capability |
+| `start` | `capability` | `--base-dir` | Starts all units |
+| `stop` | `capability` | `--base-dir` | Stops all units |
+| `status` | `capability` | `--base-dir` | Shows per-unit live status |
 | `list` | — | `--base-dir` | Lists all installed services from state |
 
 Shared `CommonOptions` group provides `--base-dir` (default `~/.haven`) and factory methods for `HavenExecutor` and `FileStateStore`.

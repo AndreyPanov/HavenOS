@@ -2,7 +2,7 @@
     "id": "haven.unit.test-worker",
     "bundleID": "haven.bundle.test-library-basic",
     "runtimeType": "native",
-    "installSource": "/opt/haven/bin/test-worker",
+    "installSource": "Artifacts/HelloService",
     "launchArguments": [
         "/opt/haven/bin/test-worker",
         "--config",

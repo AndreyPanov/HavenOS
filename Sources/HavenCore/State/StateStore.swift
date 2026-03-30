@@ -18,7 +18,7 @@ public protocol StateStore: Sendable {
     func service(for capabilityID: String) throws -> StoredServiceState?
 
     /// Insert or update a service state. If a service with the same
-    /// `capabilityID` already exists, it is replaced.
+    /// `capability` already exists, it is replaced.
     func upsert(_ service: StoredServiceState) throws
 
     /// Remove the service state for the given capability ID.

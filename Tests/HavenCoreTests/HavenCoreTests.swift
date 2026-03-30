@@ -6,11 +6,11 @@ import HavenCore
 final class CapabilityTests: XCTestCase {
 
     func testInitStoresProperties() {
-        let cap = Capability(id: "cap.test", name: "Test", version: "1.0.0", summary: "A test.")
+        let cap = Capability(id: "cap.test", name: "Test", version: "1.0.0", description: "A test.")
         XCTAssertEqual(cap.id, "cap.test")
         XCTAssertEqual(cap.name, "Test")
         XCTAssertEqual(cap.version, "1.0.0")
-        XCTAssertEqual(cap.summary, "A test.")
+        XCTAssertEqual(cap.description, "A test.")
     }
 
     func testEquality() {
@@ -151,36 +151,36 @@ final class BundleTests: XCTestCase {
     }
 
     func testValidationFailsOnEmptyID() {
-        let bundle = Bundle(id: "", name: "B", capabilityID: "cap.x")
+        let bundle = Bundle(id: "", name: "B", capability: "cap.x")
         XCTAssertThrowsError(try bundle.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("id") == true)
         }
     }
 
     func testValidationFailsOnEmptyName() {
-        let bundle = Bundle(id: "b.1", name: "", capabilityID: "cap.x")
+        let bundle = Bundle(id: "b.1", name: "", capability: "cap.x")
         XCTAssertThrowsError(try bundle.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("name") == true)
         }
     }
 
-    func testValidationFailsOnEmptyCapabilityID() {
-        let bundle = Bundle(id: "b.1", name: "B", capabilityID: "")
+    func testValidationFailsOnEmptyCapability() {
+        let bundle = Bundle(id: "b.1", name: "B", capability: "")
         XCTAssertThrowsError(try bundle.validate()) { error in
-            XCTAssertTrue((error as? ValidationError)?.message.contains("capabilityID") == true)
+            XCTAssertTrue((error as? ValidationError)?.message.contains("capability") == true)
         }
     }
 
-    func testValidationFailsOnBlankCapabilityID() {
-        let bundle = Bundle(id: "b.1", name: "B", capabilityID: "  ")
+    func testValidationFailsOnBlankCapability() {
+        let bundle = Bundle(id: "b.1", name: "B", capability: "  ")
         XCTAssertThrowsError(try bundle.validate()) { error in
-            XCTAssertTrue((error as? ValidationError)?.message.contains("capabilityID") == true)
+            XCTAssertTrue((error as? ValidationError)?.message.contains("capability") == true)
         }
     }
 
     func testValidationCascadesToSettings() {
         let badSetting = SettingField(key: "123", label: "Bad", fieldType: .string)
-        let bundle = Bundle(id: "b.1", name: "B", capabilityID: "cap.x", settings: [badSetting])
+        let bundle = Bundle(id: "b.1", name: "B", capability: "cap.x", settings: [badSetting])
         XCTAssertThrowsError(try bundle.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("identifier") == true)
         }

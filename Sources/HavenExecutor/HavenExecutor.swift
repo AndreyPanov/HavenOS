@@ -229,14 +229,14 @@ public struct HavenExecutor: Sendable {
         }
 
         let storedState = StoredServiceState(
-            capabilityID: capabilityID,
+            capability: capabilityID,
             bundleID: service.bundle.id,
             installedAt: now,
             updatedAt: now,
             status: .installed,
             resolvedSettings: service.resolvedSettings,
             portAssignments: portAssignments,
-            runtimeUnitIDs: service.units.map(\.spec.id),
+            runtimeUnits: service.units.map(\.spec.id),
             directoryLayout: serviceLayout
         )
 
@@ -259,7 +259,7 @@ public struct HavenExecutor: Sendable {
         }
 
         // Stop and uninstall launchd jobs in reverse dependency order
-        for unitID in service.runtimeUnitIDs.reversed() {
+        for unitID in service.runtimeUnits.reversed() {
             let label = LaunchdLabel.label(
                 capabilityID: capabilityID,
                 unitID: unitID
@@ -280,7 +280,7 @@ public struct HavenExecutor: Sendable {
 
         // Best-effort remove installed artifacts
         if let installer = artifactInstaller {
-            for unitID in service.runtimeUnitIDs {
+            for unitID in service.runtimeUnits {
                 try? installer.uninstall(unitID: unitID)
             }
         }
@@ -300,7 +300,7 @@ public struct HavenExecutor: Sendable {
             throw ExecutorError.notInstalled(capabilityID: capabilityID)
         }
 
-        for unitID in service.runtimeUnitIDs {
+        for unitID in service.runtimeUnits {
             let label = LaunchdLabel.label(
                 capabilityID: capabilityID,
                 unitID: unitID
@@ -329,7 +329,7 @@ public struct HavenExecutor: Sendable {
             throw ExecutorError.notInstalled(capabilityID: capabilityID)
         }
 
-        for unitID in service.runtimeUnitIDs.reversed() {
+        for unitID in service.runtimeUnits.reversed() {
             let label = LaunchdLabel.label(
                 capabilityID: capabilityID,
                 unitID: unitID
@@ -361,7 +361,7 @@ public struct HavenExecutor: Sendable {
         }
 
         var unitStatuses: [UnitStatusReport] = []
-        for unitID in service.runtimeUnitIDs {
+        for unitID in service.runtimeUnits {
             let label = LaunchdLabel.label(
                 capabilityID: capabilityID,
                 unitID: unitID
@@ -385,7 +385,7 @@ public struct HavenExecutor: Sendable {
         }
 
         return ServiceStatusReport(
-            capabilityID: capabilityID,
+            capability: capabilityID,
             bundleID: service.bundleID,
             status: service.status,
             unitStatuses: unitStatuses

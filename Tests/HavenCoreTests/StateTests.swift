@@ -123,7 +123,7 @@ final class StoredServiceStateTests: XCTestCase {
             capabilityID: "haven.capability.test-library"
         )
         return StoredServiceState(
-            capabilityID: "haven.capability.test-library",
+            capability: "haven.capability.test-library",
             bundleID: "haven.bundle.test-library-basic",
             installedAt: Date(timeIntervalSince1970: 1_700_000_000),
             updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
@@ -132,7 +132,7 @@ final class StoredServiceStateTests: XCTestCase {
             portAssignments: [
                 StoredPortAssignment(unitID: "haven.unit.test-web", port: 8080)
             ],
-            runtimeUnitIDs: [
+            runtimeUnits: [
                 "haven.unit.test-db",
                 "haven.unit.test-worker",
                 "haven.unit.test-web",
@@ -195,7 +195,7 @@ final class FileStateStoreTests: XCTestCase {
         let paths = makePaths()
         let layout = paths.serviceLayout(for: capabilityID)
         return StoredServiceState(
-            capabilityID: capabilityID,
+            capability: capabilityID,
             bundleID: "haven.bundle.test-library-basic",
             installedAt: Date(timeIntervalSince1970: 1_700_000_000),
             updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
@@ -204,7 +204,7 @@ final class FileStateStoreTests: XCTestCase {
             portAssignments: [
                 StoredPortAssignment(unitID: "haven.unit.test-web", port: 8080)
             ],
-            runtimeUnitIDs: [
+            runtimeUnits: [
                 "haven.unit.test-db",
                 "haven.unit.test-worker",
                 "haven.unit.test-web",
@@ -227,12 +227,12 @@ final class FileStateStoreTests: XCTestCase {
         let store = makeStore()
         let svc = makeSampleService()
         var state = HavenState()
-        state.services[svc.capabilityID] = svc
+        state.services[svc.capability] = svc
         try store.save(state)
 
         let loaded = try store.load()
         XCTAssertEqual(loaded.services.count, 1)
-        XCTAssertEqual(loaded.services[svc.capabilityID], svc)
+        XCTAssertEqual(loaded.services[svc.capability], svc)
     }
 
     func testSaveCreatesParentDirectories() throws {
@@ -273,7 +273,7 @@ final class FileStateStoreTests: XCTestCase {
 
         let state = try store.load()
         XCTAssertEqual(state.services.count, 1)
-        XCTAssertEqual(state.services[svc.capabilityID]?.status, .installed)
+        XCTAssertEqual(state.services[svc.capability]?.status, .installed)
     }
 
     func testUpsertExistingServiceReplaces() throws {
@@ -288,7 +288,7 @@ final class FileStateStoreTests: XCTestCase {
 
         let state = try store.load()
         XCTAssertEqual(state.services.count, 1)
-        XCTAssertEqual(state.services[svc.capabilityID]?.status, .running)
+        XCTAssertEqual(state.services[svc.capability]?.status, .running)
     }
 
     func testUpsertMultipleServices() throws {
@@ -310,7 +310,7 @@ final class FileStateStoreTests: XCTestCase {
         let store = makeStore()
         let svc = makeSampleService()
         try store.upsert(svc)
-        try store.remove(capabilityID: svc.capabilityID)
+        try store.remove(capabilityID: svc.capability)
 
         let state = try store.load()
         XCTAssertTrue(state.services.isEmpty)

@@ -9,7 +9,7 @@ import HavenLaunchd
 public struct ServiceStatusReport: Sendable {
 
     /// The capability this service provides.
-    public let capabilityID: String
+    public let capability: String
 
     /// The bundle implementing this capability.
     public let bundleID: String
@@ -21,12 +21,12 @@ public struct ServiceStatusReport: Sendable {
     public let unitStatuses: [UnitStatusReport]
 
     public init(
-        capabilityID: String,
+        capability: String,
         bundleID: String,
         status: ServiceStatus,
         unitStatuses: [UnitStatusReport]
     ) {
-        self.capabilityID = capabilityID
+        self.capability = capability
         self.bundleID = bundleID
         self.status = status
         self.unitStatuses = unitStatuses

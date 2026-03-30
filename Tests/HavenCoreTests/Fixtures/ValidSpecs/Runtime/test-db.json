@@ -2,7 +2,7 @@
     "id": "haven.unit.test-db",
     "bundleID": "haven.bundle.test-library-basic",
     "runtimeType": "native",
-    "installSource": "/opt/haven/bin/test-db",
+    "installSource": "Artifacts/HelloService",
     "launchArguments": [
         "/opt/haven/bin/test-db",
         "--datadir",

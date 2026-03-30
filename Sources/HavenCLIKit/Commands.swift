@@ -65,7 +65,7 @@ public struct InstallCommand: ParsableCommand {
     )
 
     @Argument(help: "The capability ID to install.")
-    var capabilityID: String
+    var capability: String
 
     @Option(name: .long, help: "Directory containing spec files.")
     var specsDir: String = "~/.haven/Specs"
@@ -106,14 +106,14 @@ public struct InstallCommand: ParsableCommand {
 
         let executor = common.makeExecutor()
         let state = try executor.install(
-            capabilityID: capabilityID,
+            capabilityID: capability,
             registry: registry,
             settings: settings
         )
 
-        print("Installed \(capabilityID)")
+        print("Installed \(capability)")
         print("  Bundle: \(state.bundleID)")
-        print("  Units:  \(state.runtimeUnitIDs.joined(separator: ", "))")
+        print("  Units:  \(state.runtimeUnits.joined(separator: ", "))")
         if !state.portAssignments.isEmpty {
             let ports = state.portAssignments
                 .map { "\($0.unitID):\($0.port)" }
@@ -133,7 +133,7 @@ public struct UninstallCommand: ParsableCommand {
     )
 
     @Argument(help: "The capability ID to uninstall.")
-    var capabilityID: String
+    var capability: String
 
     @OptionGroup var common: CommonOptions
 
@@ -141,8 +141,8 @@ public struct UninstallCommand: ParsableCommand {
 
     public func run() throws {
         let executor = common.makeExecutor()
-        try executor.uninstall(capabilityID: capabilityID)
-        print("Uninstalled \(capabilityID)")
+        try executor.uninstall(capabilityID: capability)
+        print("Uninstalled \(capability)")
     }
 }
 
@@ -155,7 +155,7 @@ public struct StartCommand: ParsableCommand {
     )
 
     @Argument(help: "The capability ID to start.")
-    var capabilityID: String
+    var capability: String
 
     @OptionGroup var common: CommonOptions
 
@@ -163,8 +163,8 @@ public struct StartCommand: ParsableCommand {
 
     public func run() throws {
         let executor = common.makeExecutor()
-        try executor.start(capabilityID: capabilityID)
-        print("Started \(capabilityID)")
+        try executor.start(capabilityID: capability)
+        print("Started \(capability)")
     }
 }
 
@@ -177,7 +177,7 @@ public struct StopCommand: ParsableCommand {
     )
 
     @Argument(help: "The capability ID to stop.")
-    var capabilityID: String
+    var capability: String
 
     @OptionGroup var common: CommonOptions
 
@@ -185,8 +185,8 @@ public struct StopCommand: ParsableCommand {
 
     public func run() throws {
         let executor = common.makeExecutor()
-        try executor.stop(capabilityID: capabilityID)
-        print("Stopped \(capabilityID)")
+        try executor.stop(capabilityID: capability)
+        print("Stopped \(capability)")
     }
 }
 
@@ -199,7 +199,7 @@ public struct StatusCommand: ParsableCommand {
     )
 
     @Argument(help: "The capability ID to query.")
-    var capabilityID: String
+    var capability: String
 
     @OptionGroup var common: CommonOptions
 
@@ -207,9 +207,9 @@ public struct StatusCommand: ParsableCommand {
 
     public func run() throws {
         let executor = common.makeExecutor()
-        let report = try executor.status(capabilityID: capabilityID)
+        let report = try executor.status(capabilityID: capability)
 
-        print("Service: \(report.capabilityID)")
+        print("Service: \(report.capability)")
         print("  Bundle: \(report.bundleID)")
         print("  Status: \(report.status.rawValue)")
         print("  Units:")
@@ -252,8 +252,8 @@ public struct ListCommand: ParsableCommand {
         }
 
         for (_, service) in state.services.sorted(by: { $0.key < $1.key }) {
-            let units = service.runtimeUnitIDs.joined(separator: ", ")
-            print("\(service.capabilityID)  [\(service.status.rawValue)]  bundle=\(service.bundleID)  units=\(units)")
+            let units = service.runtimeUnits.joined(separator: ", ")
+            print("\(service.capability)  [\(service.status.rawValue)]  bundle=\(service.bundleID)  units=\(units)")
         }
     }
 }
