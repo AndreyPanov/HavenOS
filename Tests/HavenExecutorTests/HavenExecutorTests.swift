@@ -458,6 +458,46 @@ final class HavenExecutorArtifactTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: dbInstallDir.path))
     }
 
+    func testInstalledArtifactProducesCorrectProgramArguments() throws {
+        try createDummyExecutables(in: artifactDir)
+        let registry = makeLocalArtifactRegistry(artifactDir: artifactDir)
+
+        _ = try executor.install(
+            capabilityID: testCapabilityID,
+            registry: registry,
+            settings: testSettings
+        )
+
+        // Read back the plist written for test-db
+        let launchAgentsDir = tempDir.appendingPathComponent("LaunchAgents")
+        let label = LaunchdLabel.label(
+            capabilityID: testCapabilityID,
+            unitID: "haven.unit.test-db"
+        )
+        let plistPath = launchAgentsDir.appendingPathComponent("\(label).plist")
+        let plistData = try Data(contentsOf: plistPath)
+        let plist = try PropertyListSerialization.propertyList(
+            from: plistData, options: [], format: nil
+        ) as? [String: Any]
+
+        let programArgs = plist?["ProgramArguments"] as? [String]
+        XCTAssertNotNil(programArgs)
+
+        // ProgramArguments[0] must be an absolute path to an executable, not a flag
+        let firstArg = try XCTUnwrap(programArgs?.first)
+        XCTAssertTrue(
+            firstArg.hasPrefix("/"),
+            "ProgramArguments[0] must be an absolute path, got: \(firstArg)"
+        )
+        XCTAssertFalse(
+            firstArg.hasPrefix("--"),
+            "ProgramArguments[0] must not be a flag, got: \(firstArg)"
+        )
+
+        // Should contain the resolved flags
+        XCTAssertTrue(programArgs?.contains("--datadir") == true)
+    }
+
     func testInstallWithArtifactsCallsBootstrap() throws {
         try createDummyExecutables(in: artifactDir)
         let registry = makeLocalArtifactRegistry(artifactDir: artifactDir)

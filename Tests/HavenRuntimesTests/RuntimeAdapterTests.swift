@@ -107,8 +107,8 @@ final class NativeRuntimeAdapterTests: XCTestCase {
         // Executable path matches install source
         XCTAssertEqual(prepared.executableURL.path, "/opt/haven/bin/test-db")
 
-        // Arguments are the resolved ones
-        XCTAssertEqual(prepared.arguments, ["/opt/haven/bin/test-db", "--datadir", "/srv/data/db"])
+        // Arguments are the resolved ones, with the executable stripped
+        XCTAssertEqual(prepared.arguments, ["--datadir", "/srv/data/db"])
 
         // Environment is the resolved one
         XCTAssertEqual(prepared.environment["DB_DATA"], "/srv/data")
@@ -269,11 +269,8 @@ final class PythonRuntimeAdapterTests: XCTestCase {
             .appendingPathComponent("python3")
         XCTAssertEqual(prepared.executableURL, expectedPython)
 
-        // Arguments should start with the venv python, then the original args
-        XCTAssertEqual(prepared.arguments.first, expectedPython.path)
-        XCTAssertTrue(prepared.arguments.contains("-m"))
-        XCTAssertTrue(prepared.arguments.contains("pyapp"))
-        XCTAssertTrue(prepared.arguments.contains("--serve"))
+        // Arguments are the launch arguments only (executable is in executableURL)
+        XCTAssertEqual(prepared.arguments, ["-m", "pyapp", "--serve"])
 
         // Environment should include VIRTUAL_ENV and a controlled PATH
         XCTAssertEqual(prepared.environment["VIRTUAL_ENV"], expectedVenvRoot.path)

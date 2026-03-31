@@ -13,7 +13,7 @@ import HavenRuntimes
 /// | Key                         | Source |
 /// |-----------------------------|--------|
 /// | `Label`                     | `LaunchdLabel.label(capabilityID:unitID:)` |
-/// | `ProgramArguments`          | `PreparedRuntime.arguments` |
+/// | `ProgramArguments`          | `[PreparedRuntime.executableURL.path] + PreparedRuntime.arguments` |
 /// | `EnvironmentVariables`      | `PreparedRuntime.environment` |
 /// | `WorkingDirectory`          | `PreparedRuntime.workingDirectory` |
 /// | `StandardOutPath`           | `<logs>/<unit-id>.stdout.log` |
@@ -99,7 +99,7 @@ public struct LaunchdJob: Equatable, Sendable {
 
         return LaunchdJob(
             label: label,
-            programArguments: preparedRuntime.arguments,
+            programArguments: [preparedRuntime.executableURL.path] + preparedRuntime.arguments,
             environmentVariables: preparedRuntime.environment,
             workingDirectory: preparedRuntime.workingDirectory.path,
             standardOutPath: stdoutPath,

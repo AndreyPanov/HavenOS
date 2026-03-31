@@ -31,12 +31,24 @@ public struct NativeRuntimeAdapter: RuntimeAdapter {
             throw RuntimeAdapterError.missingLaunchArguments(unitID: unit.id)
         }
 
-        let executableURL = URL(fileURLWithPath: source)
+        // Resolve the executable — if installSource is a directory, find
+        // the actual executable inside it.
+        let executableURL = try NativeRuntimeAdapter.resolveExecutable(
+            at: source, unitID: unit.id
+        )
+
+        // Strip the executable path from arguments if it was included as
+        // argv[0] (legacy spec convention). The executable is conveyed
+        // separately via executableURL; LaunchdJob.make() will prepend it.
+        var args = plannedUnit.resolvedLaunchArguments
+        if let first = args.first, first == executableURL.path {
+            args.removeFirst()
+        }
 
         return PreparedRuntime(
             unitID: unit.id,
             executableURL: executableURL,
-            arguments: plannedUnit.resolvedLaunchArguments,
+            arguments: args,
             environment: plannedUnit.resolvedEnvironment,
             workingDirectory: serviceLayout.serviceRoot,
             managedDirectories: serviceLayout.allDirectories,
@@ -45,6 +57,52 @@ public struct NativeRuntimeAdapter: RuntimeAdapter {
             port: plannedUnit.port?.number,
             dependsOn: plannedUnit.dependsOn
         )
+    }
+
+    // MARK: - Executable resolution
+
+    /// Resolve an install source path to an actual executable URL.
+    ///
+    /// - If the path is a regular file, use it directly.
+    /// - If the path is a directory, find the first executable file inside.
+    /// - Otherwise, fall back to treating the path as-is (for specs
+    ///   referencing executables that don't exist yet).
+    static func resolveExecutable(at path: String, unitID: String) throws -> URL {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+
+        guard fm.fileExists(atPath: path, isDirectory: &isDir) else {
+            // Path doesn't exist yet (e.g. before artifact installation).
+            // Return it as-is — the execution layer will fail later with
+            // a clear error if the binary is truly missing.
+            return URL(fileURLWithPath: path)
+        }
+
+        if !isDir.boolValue {
+            // It's a file — use it directly.
+            return URL(fileURLWithPath: path)
+        }
+
+        // It's a directory — find the executable inside.
+        guard let contents = try? fm.contentsOfDirectory(
+            at: URL(fileURLWithPath: path),
+            includingPropertiesForKeys: nil
+        ) else {
+            throw RuntimeAdapterError.executableNotFound(unitID: unitID, path: path)
+        }
+
+        let executables = contents.filter { url in
+            var fileIsDir: ObjCBool = false
+            return fm.fileExists(atPath: url.path, isDirectory: &fileIsDir)
+                && !fileIsDir.boolValue
+                && fm.isExecutableFile(atPath: url.path)
+        }
+
+        guard let executable = executables.first else {
+            throw RuntimeAdapterError.executableNotFound(unitID: unitID, path: path)
+        }
+
+        return executable
     }
 
     public func teardown(

@@ -43,12 +43,15 @@ public enum SpecLoader {
             knownKeys: StrictJSONDecoder.bundleKeys,
             issues: &issues
         )
-        let runtimeUnits = decodeSpecs(
+        let rawRuntimeUnits = decodeSpecs(
             RuntimeUnit.self,
             directory: rootURL.appendingPathComponent("Runtime"),
             knownKeys: StrictJSONDecoder.runtimeUnitKeys,
             issues: &issues
         )
+
+        // --- Resolve relative installSource paths ---
+        let runtimeUnits = resolveInstallSources(rawRuntimeUnits, rootURL: rootURL, issues: &issues)
 
         // --- Duplicate ID detection ---
         let capsByID = deduplicateByID(capabilities, kind: "Capability", issues: &issues)
@@ -180,6 +183,47 @@ public enum SpecLoader {
                     detail: "RuntimeUnit references unknown bundle '\(unit.bundleID)'."
                 ))
             }
+        }
+    }
+
+    /// Resolve relative `installSource` paths against the specs root directory.
+    ///
+    /// - Paths starting with `/` are treated as absolute and kept as-is.
+    /// - All other paths are resolved relative to `rootURL`.
+    /// - If the resolved path does not exist on disk, a `.validationFailure` is emitted.
+    private static func resolveInstallSources(
+        _ units: [RuntimeUnit],
+        rootURL: URL,
+        issues: inout [SpecLoadIssue]
+    ) -> [RuntimeUnit] {
+        let fm = FileManager.default
+        return units.map { unit in
+            let source = unit.installSource
+            if source.hasPrefix("/") {
+                // Absolute path — keep as-is.
+                return unit
+            }
+            // Relative path — resolve from specs root.
+            let resolved = rootURL.appendingPathComponent(source).path
+            if !fm.fileExists(atPath: resolved) {
+                issues.append(SpecLoadIssue(
+                    kind: .validationFailure,
+                    source: unit.id,
+                    detail: "installSource path does not exist: '\(resolved)' (resolved from '\(source)')."
+                ))
+            }
+            return RuntimeUnit(
+                id: unit.id,
+                bundleID: unit.bundleID,
+                runtimeType: unit.runtimeType,
+                installSource: resolved,
+                launchArguments: unit.launchArguments,
+                healthcheck: unit.healthcheck,
+                dependsOn: unit.dependsOn,
+                port: unit.port,
+                environment: unit.environment,
+                version: unit.version
+            )
         }
     }
 

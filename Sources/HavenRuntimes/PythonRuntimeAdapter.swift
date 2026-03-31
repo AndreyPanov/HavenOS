@@ -50,11 +50,10 @@ public struct PythonRuntimeAdapter: RuntimeAdapter {
             .appendingPathComponent("bin")
             .appendingPathComponent("python3")
 
-        // Build the launch arguments: use the venv's python as the interpreter,
-        // then append the original resolved arguments (which include the script path
-        // and any flags).
-        var arguments = [pythonExecutable.path]
-        arguments.append(contentsOf: plannedUnit.resolvedLaunchArguments)
+        // Arguments are the resolved launch arguments (script/module path and flags).
+        // The executable (venv python) is conveyed via executableURL —
+        // LaunchdJob.make() will prepend it to ProgramArguments.
+        let arguments = plannedUnit.resolvedLaunchArguments
 
         // Build the environment. The venv's bin directory is prepended to PATH
         // so that any subprocess spawned by the Python app also uses the venv.

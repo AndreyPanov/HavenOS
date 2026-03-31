@@ -19,7 +19,10 @@ public struct PreparedRuntime: Equatable, Sendable {
     /// Absolute path to the executable that should be launched.
     public let executableURL: URL
 
-    /// Arguments to pass to the executable (argv[0] should be the executable).
+    /// Additional arguments to pass to the executable (does NOT include the
+    /// executable path itself — that is conveyed via ``executableURL``).
+    /// `LaunchdJob.make()` combines `[executableURL.path] + arguments` to
+    /// build the final `ProgramArguments`.
     public let arguments: [String]
 
     /// Environment variables for the launched process.

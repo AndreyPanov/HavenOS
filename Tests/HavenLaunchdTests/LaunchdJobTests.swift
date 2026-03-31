@@ -173,7 +173,7 @@ final class LaunchdJobPythonTests: XCTestCase {
         let prepared = PreparedRuntime(
             unitID: "haven.unit.py-app",
             executableURL: pythonExe,
-            arguments: [pythonExe.path, "-m", "pyapp", "--serve"],
+            arguments: ["-m", "pyapp", "--serve"],
             environment: [
                 "VIRTUAL_ENV": venvRoot.path,
                 "PATH": "\(venvRoot.appendingPathComponent("bin").path):/usr/bin:/bin",
@@ -218,7 +218,7 @@ final class LaunchdJobPythonTests: XCTestCase {
         let prepared = PreparedRuntime(
             unitID: "haven.unit.py-app",
             executableURL: pythonExe,
-            arguments: [pythonExe.path, "-m", "app"],
+            arguments: ["-m", "app"],
             environment: [:],
             workingDirectory: layout.serviceRoot,
             managedDirectories: [],
@@ -422,6 +422,113 @@ final class LaunchdJobPlistTests: XCTestCase {
     }
 }
 
+// MARK: - ProgramArguments Integration Tests
+
+final class LaunchdJobProgramArgumentsTests: XCTestCase {
+
+    func testNativeProgramArgumentsStartWithExecutable() {
+        let layout = makeLayout()
+        let prepared = makeNativePreparedRuntime(
+            arguments: ["--datadir", "/data", "--port", "5432"]
+        )
+
+        let job = LaunchdJob.make(
+            capabilityID: "haven.capability.test-library",
+            unitID: "haven.unit.test-db",
+            preparedRuntime: prepared,
+            serviceLayout: layout
+        )
+
+        XCTAssertEqual(job.programArguments.first, "/opt/haven/bin/test-db")
+        XCTAssertEqual(
+            job.programArguments,
+            ["/opt/haven/bin/test-db", "--datadir", "/data", "--port", "5432"]
+        )
+    }
+
+    func testEntrypointStyleProgramArguments() {
+        // Simulates entrypoint-style spec where arguments are only flags
+        let layout = makeLayout()
+        let prepared = PreparedRuntime(
+            unitID: "haven.unit.hello-svc",
+            executableURL: URL(fileURLWithPath: "/opt/haven/installed/haven.unit.hello-svc/HelloService"),
+            arguments: ["--port", "8088"],
+            environment: [:],
+            workingDirectory: layout.serviceRoot,
+            managedDirectories: [],
+            runtimeType: .native,
+            healthcheck: nil,
+            port: 8088,
+            dependsOn: []
+        )
+
+        let job = LaunchdJob.make(
+            capabilityID: "haven.capability.hello",
+            unitID: "haven.unit.hello-svc",
+            preparedRuntime: prepared,
+            serviceLayout: layout
+        )
+
+        XCTAssertEqual(
+            job.programArguments,
+            ["/opt/haven/installed/haven.unit.hello-svc/HelloService", "--port", "8088"]
+        )
+    }
+
+    func testPythonProgramArgumentsStartWithInterpreter() {
+        let layout = makeLayout(capabilityID: "haven.capability.py-svc")
+        let venvRoot = layout.run
+            .appendingPathComponent("venvs")
+            .appendingPathComponent("haven.unit.py-app")
+        let pythonExe = venvRoot
+            .appendingPathComponent("bin")
+            .appendingPathComponent("python3")
+
+        let prepared = PreparedRuntime(
+            unitID: "haven.unit.py-app",
+            executableURL: pythonExe,
+            arguments: ["-m", "pyapp", "--serve"],
+            environment: ["VIRTUAL_ENV": venvRoot.path],
+            workingDirectory: layout.serviceRoot,
+            managedDirectories: [],
+            runtimeType: .python,
+            healthcheck: nil,
+            port: nil,
+            dependsOn: []
+        )
+
+        let job = LaunchdJob.make(
+            capabilityID: "haven.capability.py-svc",
+            unitID: "haven.unit.py-app",
+            preparedRuntime: prepared,
+            serviceLayout: layout
+        )
+
+        XCTAssertEqual(job.programArguments.first, pythonExe.path)
+        XCTAssertEqual(job.programArguments, [pythonExe.path, "-m", "pyapp", "--serve"])
+    }
+
+    func testPlistRoundTripPreservesProgramArguments() throws {
+        let layout = makeLayout()
+        let prepared = makeNativePreparedRuntime(arguments: ["--port", "8080"])
+
+        let job = LaunchdJob.make(
+            capabilityID: "cap.x",
+            unitID: "unit.y",
+            preparedRuntime: prepared,
+            serviceLayout: layout
+        )
+
+        let data = try job.plistData()
+        let plist = try PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil
+        ) as? [String: Any]
+
+        let plistArgs = plist?["ProgramArguments"] as? [String]
+        XCTAssertEqual(plistArgs, ["/opt/haven/bin/test-db", "--port", "8080"])
+    }
+}
+
 // MARK: - LaunchdJob Equality Tests
 
 final class LaunchdJobEqualityTests: XCTestCase {
@@ -495,7 +602,7 @@ private func makeLayout(
 
 private func makeNativePreparedRuntime(
     unitID: String = "haven.unit.test-db",
-    arguments: [String] = ["/opt/haven/bin/test-db", "--datadir", "/data"],
+    arguments: [String] = ["--datadir", "/data"],
     environment: [String: String] = [:],
     port: Int? = nil
 ) -> PreparedRuntime {
@@ -518,7 +625,7 @@ private func makeMinimalJob() -> LaunchdJob {
     let prepared = PreparedRuntime(
         unitID: "unit.y",
         executableURL: URL(fileURLWithPath: "/bin/x"),
-        arguments: ["/bin/x", "--flag"],
+        arguments: ["--flag"],
         environment: ["KEY": "val"],
         workingDirectory: layout.serviceRoot,
         managedDirectories: [],
