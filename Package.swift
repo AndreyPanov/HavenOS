@@ -4,10 +4,11 @@ import PackageDescription
 let package = Package(
     name: "Haven",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .executable(name: "havenctl", targets: ["HavenCLI"]),
+        .executable(name: "Haven", targets: ["HavenApp"]),
     ],
     dependencies: [
         .package(
@@ -76,6 +77,14 @@ let package = Package(
             name: "HavenInstaller",
             dependencies: ["HavenCore"],
             path: "Sources/HavenInstaller"
+        ),
+
+        // MARK: - macOS App
+
+        .executableTarget(
+            name: "HavenApp",
+            dependencies: [],
+            path: "Sources/HavenApp"
         ),
 
         // MARK: - Tests

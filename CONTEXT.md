@@ -4,7 +4,7 @@
 
 Haven is a macOS-first service management system. It lets users install, configure, start, stop, and monitor self-hosted services on their Mac — without ever needing to understand the underlying tooling, runtimes, or system plumbing.
 
-**Target:** macOS 13+, Swift 5.9+, Swift Package Manager.
+**Target:** macOS 14+, Swift 5.9+, Swift Package Manager.
 
 ## Core Abstraction Chain
 
@@ -68,6 +68,53 @@ These are implementation details only.
 | `HavenLaunchd` | `Sources/HavenLaunchd/` | launchd job modeling + execution controller — plist generation, lifecycle management via launchctl |
 | `HavenInstaller` | `Sources/HavenInstaller/` | Artifact fetch, cache, and placement — downloads, extracts, and installs service artifacts into Haven-managed directories |
 | `HavenRuntimes` | `Sources/HavenRuntimes/` | Runtime adapter protocol + built-in adapters (native, Python) |
+| `HavenApp` | `Sources/HavenApp/` | Native macOS SwiftUI interface — sidebar navigation, service management, discovery catalog, settings |
+
+## HavenApp Internal Structure (`Sources/HavenApp/`)
+
+Native macOS SwiftUI app with mock data. Uses `NavigationSplitView` with sidebar (Home, Discovery, Settings) and `NavigationStack` for drill-down navigation within each section. Platform: macOS 14+ (uses `@Observable`, `Button(systemImage:)`, `@Bindable`).
+
+### Models (`Sources/HavenApp/Models/`)
+
+| File | Type | Notes |
+|---|---|---|
+| `ServiceStatus.swift` | `ServiceStatus` | Enum: running, stopped, failed, installing. Color and SF Symbol per case |
+| `InstalledService.swift` | `InstalledService` | id, name, serviceDescription, icon, status, port, dataPath. Computed localURL |
+| `DiscoverablePlugin.swift` | `DiscoverablePlugin`, `PluginCategory` | Plugin with category (all/media/files/network/utilities), notes, isInstalled, fullDescription |
+| `HavenSettingsModel.swift` | `HavenSettingsModel` | `@Observable` class: data/base/downloads/artifacts directories, launchAtLogin, autoStartServices, showInternalDetails, version |
+| `MockData.swift` | `MockData` | Static mock data: 4 installed services (Hello Service, Photos, Music, Files), 7 discoverable plugins |
+
+### Views (`Sources/HavenApp/Views/`)
+
+| File | Type | Notes |
+|---|---|---|
+| `HomeView.swift` | `HomeView` | Searchable service grid with stats row (installed/running/stopped counts). NavigationStack pushes to ServiceDetailView |
+| `ServiceCardView.swift` | `ServiceCardView` | Rounded card: icon, name, port, status badge, description, local URL, action buttons (Open/Start/Stop), overflow menu |
+| `ServiceDetailView.swift` | `ServiceDetailView` | GroupBox sections: About, Details (status/address/port/path), Recent Activity (mock logs), action buttons (Open/Stop/Restart/Remove) |
+| `DiscoveryView.swift` | `DiscoveryView` | Category filter chips, searchable plugin grid. NavigationStack pushes to DiscoveryDetailView |
+| `DiscoveryCardView.swift` | `DiscoveryCardView` | Rounded card: icon, name, category, summary, note tags, Install/Open + Learn More actions |
+| `DiscoveryDetailView.swift` | `DiscoveryDetailView` | Screenshot placeholder, About, Details, Features, Settings Preview, Install/Open/Remove actions |
+| `SettingsView.swift` | `SettingsView` | Grouped Form: General (directory, toggles), Paths, Advanced (show details, open logs, rebuild state), About (version) |
+
+### Components (`Sources/HavenApp/Components/`)
+
+| File | Type | Notes |
+|---|---|---|
+| `StatusBadgeView.swift` | `StatusBadgeView` | Reusable capsule badge with tinted background per status |
+
+### App Entry (`Sources/HavenApp/`)
+
+| File | Type | Notes |
+|---|---|---|
+| `HavenApp.swift` | `HavenApp` | `@main` App. WindowGroup with default 1100×700 size. Injects `HavenSettingsModel` via `.environment()` |
+| `ContentView.swift` | `ContentView` | `NavigationSplitView` with sidebar (Home, Discovery, Settings). Switches detail view based on selection |
+
+Key design rules:
+- All data is mock — no backend integration yet
+- No internal implementation details exposed (no launchd, pip, PATH, runtime references)
+- User-facing language only: Service, Installed, Running, Stopped, Open, Add, Remove
+- Visual style: restrained status colors, subtle card borders, `.background`/`.quaternary` fills, native typography
+- SPM executable target — runs as bare executable, no `.app` bundle
 
 ## HavenCore Internal Structure
 
@@ -302,6 +349,6 @@ Test fixtures use a synthetic `test-library` capability (not real third-party ap
 
 - No actual venv creation or package installation (adapters compute paths but don't touch filesystem)
 - No Python runtime support in the executor (rejected with `.unsupportedRuntime` — adapters exist but executor blocks Python units)
-- No UI
+- UI uses mock data only — not wired to HavenExecutor or state store yet
 - No networking (URLSessionDownloadClient exists but no orchestration layer uses it yet)
 - No update/upgrade support (must uninstall and reinstall)
