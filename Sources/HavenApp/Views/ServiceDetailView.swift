@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ServiceDetailView: View {
+    @Environment(ServiceManager.self) private var serviceManager
     let service: InstalledService
 
     var body: some View {
@@ -66,26 +67,39 @@ struct ServiceDetailView: View {
                 // Action buttons
                 HStack(spacing: 12) {
                     if service.status == .running {
-                        Button("Open", systemImage: "arrow.up.forward.square") {}
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        Button("Stop", systemImage: "stop.circle") {}
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
-                        Button("Restart", systemImage: "arrow.clockwise") {}
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
+                        Button("Stop", systemImage: "stop.circle") {
+                            Task { await serviceManager.stopService(capabilityID: service.id) }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
+
+                        Button("Restart", systemImage: "arrow.clockwise") {
+                            Task {
+                                await serviceManager.stopService(capabilityID: service.id)
+                                await serviceManager.startService(capabilityID: service.id)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
                     } else {
-                        Button("Start", systemImage: "play.circle") {}
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
+                        Button("Start", systemImage: "play.circle") {
+                            Task { await serviceManager.startService(capabilityID: service.id) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
                     }
 
                     Spacer()
 
-                    Button("Remove", systemImage: "trash", role: .destructive) {}
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
+                    Button("Remove", systemImage: "trash", role: .destructive) {
+                        Task { await serviceManager.uninstallService(capabilityID: service.id) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(serviceManager.isPerformingAction)
                 }
             }
             .padding(24)
@@ -132,5 +146,6 @@ private struct LogLine: View {
     NavigationStack {
         ServiceDetailView(service: MockData.installedServices[0])
     }
+    .environment(ServiceManager())
     .frame(width: 600, height: 700)
 }

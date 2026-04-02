@@ -2,7 +2,7 @@
     "id": "haven.bundle.hello-service-basic",
     "name": "Hello Service (Basic)",
     "capability": "haven.capability.hello-service",
-    "runtimeUnits": [],
+    "runtimeUnits": ["haven.unit.hello-service"],
     "settings": [
         {
             "key": "port",

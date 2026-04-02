@@ -1,0 +1,11 @@
+{
+    "id": "haven.unit.hello-service",
+    "bundleID": "haven.bundle.hello-service-basic",
+    "runtimeType": "native",
+    "installSource": "../Artifacts/HelloService",
+    "entrypoint": {
+        "command": "HelloService",
+        "args": ["HelloService", "--port", "${port}"]
+    },
+    "port": 8080
+}

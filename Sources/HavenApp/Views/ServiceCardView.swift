@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ServiceCardView: View {
+    @Environment(ServiceManager.self) private var serviceManager
     let service: InstalledService
 
     var body: some View {
@@ -47,25 +48,37 @@ struct ServiceCardView: View {
             // Action buttons
             HStack(spacing: 12) {
                 if service.status == .running {
-                    CardActionButton(title: "Open", icon: "arrow.up.forward.square") {}
-                    CardActionButton(title: "Stop", icon: "stop.circle") {}
+                    CardActionButton(title: "Stop", icon: "stop.circle") {
+                        Task { await serviceManager.stopService(capabilityID: service.id) }
+                    }
+                    .disabled(serviceManager.isPerformingAction)
                 } else {
-                    CardActionButton(title: "Start", icon: "play.circle") {}
+                    CardActionButton(title: "Start", icon: "play.circle") {
+                        Task { await serviceManager.startService(capabilityID: service.id) }
+                    }
+                    .disabled(serviceManager.isPerformingAction)
                 }
 
                 Spacer()
 
                 Menu {
-                    Button("Open in Browser", systemImage: "safari") {}
-                    Button("Restart", systemImage: "arrow.clockwise") {}
+                    Button("Restart", systemImage: "arrow.clockwise") {
+                        Task {
+                            await serviceManager.stopService(capabilityID: service.id)
+                            await serviceManager.startService(capabilityID: service.id)
+                        }
+                    }
                     Divider()
-                    Button("Remove", systemImage: "trash", role: .destructive) {}
+                    Button("Remove", systemImage: "trash", role: .destructive) {
+                        Task { await serviceManager.uninstallService(capabilityID: service.id) }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .disabled(serviceManager.isPerformingAction)
             }
         }
         .padding(16)
@@ -96,6 +109,7 @@ private struct CardActionButton: View {
 
 #Preview {
     ServiceCardView(service: MockData.installedServices[0])
+        .environment(ServiceManager())
         .frame(width: 300)
         .padding()
 }

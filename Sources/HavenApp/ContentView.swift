@@ -7,6 +7,7 @@ enum SidebarItem: String, Hashable {
 }
 
 struct ContentView: View {
+    @Environment(ServiceManager.self) private var serviceManager
     @State private var selectedSidebar: SidebarItem? = .home
 
     var body: some View {
@@ -42,6 +43,16 @@ struct ContentView: View {
                 }
             }
             .id(selectedSidebar)
+        }
+        .alert("Error", isPresented: Binding(
+            get: { serviceManager.lastError != nil },
+            set: { if !$0 { serviceManager.lastError = nil } }
+        )) {
+            Button("OK") { serviceManager.lastError = nil }
+        } message: {
+            if let error = serviceManager.lastError {
+                Text(error)
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DiscoveryCardView: View {
+    @Environment(ServiceManager.self) private var serviceManager
     let plugin: DiscoverablePlugin
 
     var body: some View {
@@ -56,21 +57,20 @@ struct DiscoveryCardView: View {
             // Actions
             HStack {
                 if plugin.isInstalled {
-                    Button("Open") {}
+                    Button("Installed") {}
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(true)
                 } else {
-                    Button("Install") {}
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                    Button("Install") {
+                        Task { await serviceManager.installService(capabilityID: plugin.id) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(serviceManager.isPerformingAction)
                 }
 
                 Spacer()
-
-                Button("Learn More") {}
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(16)
@@ -89,6 +89,7 @@ struct DiscoveryCardView: View {
         DiscoveryCardView(plugin: MockData.discoverablePlugins[0])
         DiscoveryCardView(plugin: MockData.discoverablePlugins[0])
     }
+    .environment(ServiceManager())
     .padding()
     .frame(width: 600)
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DiscoveryDetailView: View {
+    @Environment(ServiceManager.self) private var serviceManager
     let plugin: DiscoverablePlugin
 
     var body: some View {
@@ -26,9 +27,12 @@ struct DiscoveryDetailView: View {
                             .font(.subheadline)
                             .foregroundStyle(.green)
                     } else {
-                        Button("Install") {}
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
+                        Button("Install") {
+                            Task { await serviceManager.installService(capabilityID: plugin.id) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
                     }
                 }
 
@@ -97,16 +101,19 @@ struct DiscoveryDetailView: View {
                 // Actions
                 HStack {
                     if plugin.isInstalled {
-                        Button("Open") {}
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        Button("Remove", role: .destructive) {}
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
+                        Button("Remove", role: .destructive) {
+                            Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
                     } else {
-                        Button("Install", systemImage: "plus.circle") {}
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
+                        Button("Install", systemImage: "plus.circle") {
+                            Task { await serviceManager.installService(capabilityID: plugin.id) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
                     }
                     Spacer()
                 }
@@ -138,5 +145,6 @@ private struct PluginDetailRow: View {
     NavigationStack {
         DiscoveryDetailView(plugin: MockData.discoverablePlugins[0])
     }
+    .environment(ServiceManager())
     .frame(width: 600, height: 700)
 }
