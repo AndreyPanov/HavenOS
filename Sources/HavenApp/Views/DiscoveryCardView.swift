@@ -12,14 +12,9 @@ struct DiscoveryCardView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 32, height: 32)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(plugin.name)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(plugin.category.rawValue)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+                Text(plugin.name)
+                    .font(.headline)
+                    .lineLimit(1)
 
                 Spacer()
 

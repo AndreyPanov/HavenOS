@@ -117,7 +117,6 @@ final class ServiceManager {
                 name: entry.capability.name,
                 summary: entry.capability.description ?? "",
                 icon: entry.metadata.icon,
-                category: entry.metadata.category,
                 notes: entry.metadata.notes,
                 isInstalled: installedCapIDs.contains(entry.capability.id),
                 fullDescription: entry.metadata.fullDescription
@@ -149,10 +148,9 @@ struct CatalogEntry: Identifiable {
     var id: String { capability.id }
 }
 
-/// UI metadata that HavenCore specs do not carry (icons, categories, etc.).
+/// UI metadata that HavenCore specs do not carry (icons, etc.).
 struct CatalogMetadata {
     let icon: String
-    let category: PluginCategory
     let notes: [String]
     let fullDescription: String
 }
@@ -162,7 +160,6 @@ extension CatalogEntry {
     static let knownMetadata: [String: CatalogMetadata] = [
         "haven.capability.hello-service": CatalogMetadata(
             icon: "hand.wave",
-            category: .utilities,
             notes: ["Lightweight", "Native service"],
             fullDescription: "Hello Service is a minimal service that responds to HTTP requests with a greeting. Useful for testing your Haven setup and verifying connectivity."
         ),
@@ -171,7 +168,6 @@ extension CatalogEntry {
     /// Fallback metadata for capabilities without a known entry.
     static let defaultMetadata = CatalogMetadata(
         icon: "shippingbox",
-        category: .utilities,
         notes: [],
         fullDescription: ""
     )

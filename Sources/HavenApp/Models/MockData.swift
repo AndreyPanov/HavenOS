@@ -20,7 +20,6 @@ enum MockData {
             name: "Hello Service",
             summary: "A simple greeting service for testing Haven.",
             icon: "hand.wave",
-            category: .utilities,
             notes: ["Lightweight", "Native service"],
             isInstalled: false,
             fullDescription: "Hello Service is a minimal service that responds to HTTP requests with a greeting. Useful for testing your Haven setup and verifying connectivity."

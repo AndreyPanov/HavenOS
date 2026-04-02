@@ -15,14 +15,9 @@ struct DiscoveryDetailView: View {
                         .background(.quaternary)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(plugin.name)
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        Text(plugin.category.rawValue)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(plugin.name)
+                        .font(.title2)
+                        .fontWeight(.semibold)
 
                     Spacer()
 
@@ -64,8 +59,6 @@ struct DiscoveryDetailView: View {
                 // Details
                 GroupBox("Details") {
                     VStack(spacing: 0) {
-                        PluginDetailRow(label: "Category", value: plugin.category.rawValue)
-                        Divider().padding(.vertical, 6)
                         PluginDetailRow(label: "Type", value: plugin.notes.first ?? "Service")
                         if plugin.isInstalled {
                             Divider().padding(.vertical, 6)
