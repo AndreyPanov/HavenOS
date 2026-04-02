@@ -1,12 +1,13 @@
 import SwiftUI
 
 struct DiscoveryView: View {
+    @Environment(ServiceManager.self) private var serviceManager
     @State private var searchText = ""
     @State private var selectedCategory: PluginCategory = .all
     @State private var path = NavigationPath()
 
     private var plugins: [DiscoverablePlugin] {
-        MockData.discoverablePlugins
+        serviceManager.discoverablePlugins
     }
 
     private var filteredPlugins: [DiscoverablePlugin] {
@@ -103,5 +104,6 @@ private struct CategoryChip: View {
 
 #Preview {
     DiscoveryView()
+        .environment(ServiceManager())
         .frame(width: 800, height: 600)
 }

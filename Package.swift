@@ -83,8 +83,12 @@ let package = Package(
 
         .executableTarget(
             name: "HavenApp",
-            dependencies: [],
-            path: "Sources/HavenApp"
+            dependencies: ["HavenCore"],
+            path: "Sources/HavenApp",
+            exclude: ["Info.plist"],
+            resources: [
+                .copy("Resources/Catalog"),
+            ]
         ),
 
         // MARK: - Tests

@@ -143,7 +143,7 @@ private struct PluginDetailRow: View {
 
 #Preview {
     NavigationStack {
-        DiscoveryDetailView(plugin: MockData.discoverablePlugins[4])
+        DiscoveryDetailView(plugin: MockData.discoverablePlugins[0])
     }
     .frame(width: 600, height: 700)
 }

@@ -1,11 +1,12 @@
 import SwiftUI
 
 struct HomeView: View {
+    @Environment(ServiceManager.self) private var serviceManager
     @State private var searchText = ""
     @State private var path = NavigationPath()
 
     private var services: [InstalledService] {
-        MockData.installedServices
+        serviceManager.installedServices
     }
 
     private var filteredServices: [InstalledService] {
@@ -84,5 +85,6 @@ private struct StatItem: View {
 
 #Preview {
     HomeView()
+        .environment(ServiceManager())
         .frame(width: 800, height: 600)
 }

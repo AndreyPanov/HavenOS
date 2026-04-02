@@ -1,0 +1,6 @@
+{
+    "id": "haven.capability.hello-service",
+    "name": "Hello Service",
+    "version": "1.0.0",
+    "description": "A simple greeting service for testing and verifying your Haven setup."
+}

@@ -91,7 +91,7 @@ struct DiscoveryCardView: View {
 
 #Preview {
     HStack {
-        DiscoveryCardView(plugin: MockData.discoverablePlugins[4])
+        DiscoveryCardView(plugin: MockData.discoverablePlugins[0])
         DiscoveryCardView(plugin: MockData.discoverablePlugins[0])
     }
     .padding()

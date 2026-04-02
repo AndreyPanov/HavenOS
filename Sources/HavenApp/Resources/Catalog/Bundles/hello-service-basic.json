@@ -1,0 +1,15 @@
+{
+    "id": "haven.bundle.hello-service-basic",
+    "name": "Hello Service (Basic)",
+    "capability": "haven.capability.hello-service",
+    "runtimeUnits": [],
+    "settings": [
+        {
+            "key": "port",
+            "label": "HTTP port",
+            "fieldType": "integer",
+            "defaultValue": "8080",
+            "required": false
+        }
+    ]
+}
