@@ -5,7 +5,7 @@ import Foundation
 /// These errors use service-oriented language. Raw launchctl output is
 /// captured in the `detail` field for diagnostics but should not be
 /// shown to end users.
-public enum LaunchdControllerError: Error, Equatable, Sendable {
+public enum LaunchdControllerError: Error, LocalizedError, Equatable, Sendable {
 
     /// Failed to serialize the job definition to plist data.
     case plistSerializationFailed(label: String, detail: String)
@@ -33,4 +33,27 @@ public enum LaunchdControllerError: Error, Equatable, Sendable {
 
     /// The job was expected to exist but was not found.
     case jobNotFound(label: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .plistSerializationFailed(_, let detail):
+            "Plist serialization failed: \(detail)"
+        case .plistWriteFailed(_, _, let detail):
+            "Plist write failed: \(detail)"
+        case .plistRemoveFailed(_, _, let detail):
+            "Plist remove failed: \(detail)"
+        case .loadFailed(_, let detail):
+            "Service load failed: \(detail)"
+        case .unloadFailed(_, let detail):
+            "Service unload failed: \(detail)"
+        case .startFailed(_, let detail):
+            "Service start failed: \(detail)"
+        case .stopFailed(_, let detail):
+            "Service stop failed: \(detail)"
+        case .statusQueryFailed(_, let detail):
+            "Status query failed: \(detail)"
+        case .jobNotFound(let label):
+            "Job '\(label)' not found."
+        }
+    }
 }

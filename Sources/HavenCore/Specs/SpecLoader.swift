@@ -212,18 +212,7 @@ public enum SpecLoader {
                     detail: "installSource path does not exist: '\(resolved)' (resolved from '\(source)')."
                 ))
             }
-            return RuntimeUnit(
-                id: unit.id,
-                bundleID: unit.bundleID,
-                runtimeType: unit.runtimeType,
-                installSource: resolved,
-                launchArguments: unit.launchArguments,
-                healthcheck: unit.healthcheck,
-                dependsOn: unit.dependsOn,
-                port: unit.port,
-                environment: unit.environment,
-                version: unit.version
-            )
+            return unit.withInstallSource(resolved)
         }
     }
 

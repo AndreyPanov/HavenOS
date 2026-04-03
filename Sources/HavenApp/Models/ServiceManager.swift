@@ -159,7 +159,20 @@ final class ServiceManager {
 
         let capabilities = decodeAll(Capability.self, from: capabilitiesURL)
         let bundles = decodeAll(HavenCore.Bundle.self, from: bundlesURL)
-        runtimeUnits = decodeAll(RuntimeUnit.self, from: runtimeURL)
+        let rawUnits = decodeAll(RuntimeUnit.self, from: runtimeURL)
+
+        // Resolve relative installSource paths against <base>/Catalog/,
+        // matching the CLI's filesystem layout where the Catalog and Artifacts
+        // directories are siblings under the Haven base directory.
+        let catalogRoot = paths.base.appendingPathComponent("Catalog")
+        runtimeUnits = rawUnits.map { unit in
+            if unit.installSource.hasPrefix("/") || unit.installSource.hasPrefix("http") {
+                return unit
+            }
+            let resolved = catalogRoot.appendingPathComponent(unit.installSource)
+                .standardizedFileURL.path
+            return unit.withInstallSource(resolved)
+        }
 
         // Pair each capability with its implementing bundle
         let bundlesByCap = Dictionary(grouping: bundles, by: \.capability)
@@ -188,7 +201,22 @@ final class ServiceManager {
     // MARK: - State Loading
 
     private func loadInstalledState() {
-        havenState = (try? stateStore.load()) ?? HavenState()
+        do {
+            havenState = try stateStore.load()
+        } catch {
+            // State file exists but is incompatible (e.g. from an older Haven version).
+            // Back it up and start fresh so the executor can also read state cleanly.
+            let fm = FileManager.default
+            let stateFile = paths.stateFile
+            if fm.fileExists(atPath: stateFile.path) {
+                let backup = stateFile.deletingLastPathComponent()
+                    .appendingPathComponent("services.backup.json")
+                try? fm.removeItem(at: backup)
+                try? fm.moveItem(at: stateFile, to: backup)
+            }
+            havenState = HavenState()
+            try? stateStore.save(havenState)
+        }
     }
 
     // MARK: - Registry Building

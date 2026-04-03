@@ -137,6 +137,16 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         try c.encodeIfPresent(version, forKey: .version)
     }
 
+    /// Returns a copy with a different `installSource`, keeping all other fields.
+    public func withInstallSource(_ newSource: String) -> RuntimeUnit {
+        RuntimeUnit(
+            id: id, bundleID: bundleID, runtimeType: runtimeType,
+            installSource: newSource, launchArguments: launchArguments,
+            healthcheck: healthcheck, dependsOn: dependsOn,
+            port: port, environment: environment, version: version
+        )
+    }
+
     /// Validates that the unit has enough information to install and launch.
     ///
     /// - id and bundleID must be non-empty.

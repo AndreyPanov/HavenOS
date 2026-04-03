@@ -5,7 +5,7 @@ import Foundation
 /// These errors use service-oriented language. Upper layers should
 /// never need to translate these into user-visible messages that
 /// mention tooling details (pip, python, PATH, etc.).
-public enum RuntimeAdapterError: Error, Equatable {
+public enum RuntimeAdapterError: Error, LocalizedError, Equatable {
     /// The install source path is missing or empty.
     case missingInstallSource(unitID: String)
 
@@ -20,4 +20,19 @@ public enum RuntimeAdapterError: Error, Equatable {
 
     /// The runtime environment could not be created.
     case environmentSetupFailed(unitID: String, reason: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingInstallSource(let id):
+            "Missing install source for unit '\(id)'."
+        case .executableNotFound(_, let path):
+            "Executable not found: \(path)"
+        case .missingLaunchArguments(let id):
+            "No launch arguments for unit '\(id)'."
+        case .unsupportedRuntimeType(_, let type):
+            "Unsupported runtime type: \(type)"
+        case .environmentSetupFailed(_, let reason):
+            "Environment setup failed: \(reason)"
+        }
+    }
 }

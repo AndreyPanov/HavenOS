@@ -5,7 +5,7 @@ import Foundation
 /// All error cases use service-oriented language. Implementation details
 /// such as launchctl, pip, brew, or PATH are never exposed in case names.
 /// The `detail` field captures diagnostic information from lower layers.
-public enum ExecutorError: Error, Equatable, Sendable {
+public enum ExecutorError: Error, LocalizedError, Equatable, Sendable {
 
     /// The service is already installed.
     case alreadyInstalled(capabilityID: String)
@@ -39,4 +39,31 @@ public enum ExecutorError: Error, Equatable, Sendable {
 
     /// Querying service status failed.
     case statusQueryFailed(capabilityID: String, detail: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .alreadyInstalled(let id):
+            "Service '\(id)' is already installed."
+        case .notInstalled(let id):
+            "Service '\(id)' is not installed."
+        case .planningFailed(_, let detail):
+            "Planning failed: \(detail)"
+        case .unsupportedRuntime(_, _, let detail):
+            detail
+        case .artifactInstallFailed(_, _, let detail):
+            "Artifact install failed: \(detail)"
+        case .preparationFailed(_, _, let detail):
+            "Preparation failed: \(detail)"
+        case .serviceInstallFailed(_, _, let detail):
+            "Service install failed: \(detail)"
+        case .serviceUninstallFailed(_, _, let detail):
+            "Uninstall failed: \(detail)"
+        case .startFailed(_, _, let detail):
+            "Start failed: \(detail)"
+        case .stopFailed(_, _, let detail):
+            "Stop failed: \(detail)"
+        case .statusQueryFailed(_, let detail):
+            "Status query failed: \(detail)"
+        }
+    }
 }
