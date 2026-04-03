@@ -13,8 +13,7 @@ struct DiscoveryDetailView: View {
                         .font(.system(size: 36))
                         .foregroundStyle(.secondary)
                         .frame(width: 56, height: 56)
-                        .background(.quaternary)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .glassEffect(in: .rect(cornerRadius: 12))
 
                     Text(plugin.name)
                         .font(.title2)
@@ -30,7 +29,7 @@ struct DiscoveryDetailView: View {
                         Button("Install") {
                             Task { await serviceManager.installService(capabilityID: plugin.id) }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                         .controlSize(.large)
                         .disabled(serviceManager.isPerformingAction)
                     }
@@ -38,7 +37,7 @@ struct DiscoveryDetailView: View {
 
                 // Screenshot placeholder
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.quaternary)
+                    .fill(.quinary)
                     .frame(height: 180)
                     .overlay {
                         VStack(spacing: 8) {
@@ -104,14 +103,14 @@ struct DiscoveryDetailView: View {
                         Button("Remove", role: .destructive) {
                             Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         .controlSize(.large)
                         .disabled(serviceManager.isPerformingAction)
                     } else {
                         Button("Install", systemImage: "plus.circle") {
                             Task { await serviceManager.installService(capabilityID: plugin.id) }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                         .controlSize(.large)
                         .disabled(serviceManager.isPerformingAction)
                     }

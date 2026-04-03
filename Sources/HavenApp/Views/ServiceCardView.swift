@@ -82,13 +82,7 @@ struct ServiceCardView: View {
             }
         }
         .padding(16)
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+        .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -102,7 +96,7 @@ private struct CardActionButton: View {
             Label(title, systemImage: icon)
                 .font(.caption)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.glass)
         .controlSize(.small)
     }
 }

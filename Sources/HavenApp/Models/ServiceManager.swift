@@ -11,6 +11,7 @@ import SwiftUI
 /// - Discovery: Loads `Capability` + `Bundle` + `RuntimeUnit` from bundled JSON resources
 /// - Installed: Reads `HavenState` from `FileStateStore` at `~/.haven/`
 /// - Lifecycle: Delegates install/uninstall/start/stop to `HavenExecutor`
+@MainActor
 @Observable
 final class ServiceManager {
 

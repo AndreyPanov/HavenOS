@@ -58,14 +58,14 @@ struct DiscoveryCardView: View {
             HStack {
                 if plugin.isInstalled {
                     Button("Installed") {}
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         .controlSize(.small)
                         .disabled(true)
                 } else {
                     Button("Install") {
                         Task { await serviceManager.installService(capabilityID: plugin.id) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .controlSize(.small)
                     .disabled(serviceManager.isPerformingAction)
                 }
@@ -74,13 +74,7 @@ struct DiscoveryCardView: View {
             }
         }
         .padding(16)
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+        .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

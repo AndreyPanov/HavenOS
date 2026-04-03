@@ -13,8 +13,7 @@ struct ServiceDetailView: View {
                         .font(.system(size: 36))
                         .foregroundStyle(.secondary)
                         .frame(width: 56, height: 56)
-                        .background(.quaternary)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .glassEffect(in: .rect(cornerRadius: 12))
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(service.name)
@@ -70,7 +69,7 @@ struct ServiceDetailView: View {
                         Button("Stop", systemImage: "stop.circle") {
                             Task { await serviceManager.stopService(capabilityID: service.id) }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         .controlSize(.large)
                         .disabled(serviceManager.isPerformingAction)
 
@@ -80,14 +79,14 @@ struct ServiceDetailView: View {
                                 await serviceManager.startService(capabilityID: service.id)
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         .controlSize(.large)
                         .disabled(serviceManager.isPerformingAction)
                     } else {
                         Button("Start", systemImage: "play.circle") {
                             Task { await serviceManager.startService(capabilityID: service.id) }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                         .controlSize(.large)
                         .disabled(serviceManager.isPerformingAction)
                     }
@@ -97,7 +96,7 @@ struct ServiceDetailView: View {
                     Button("Remove", systemImage: "trash", role: .destructive) {
                         Task { await serviceManager.uninstallService(capabilityID: service.id) }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .controlSize(.large)
                     .disabled(serviceManager.isPerformingAction)
                 }
