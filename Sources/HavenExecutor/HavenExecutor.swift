@@ -3,6 +3,9 @@ import HavenCore
 import HavenRuntimes
 import HavenLaunchd
 import HavenInstaller
+import os
+
+private let log = Logger(subsystem: "com.haven", category: "Executor")
 
 /// MVP end-to-end executor that orchestrates the full service lifecycle.
 ///
@@ -63,12 +66,15 @@ public struct HavenExecutor: Sendable {
         registry: SpecRegistry,
         settings: [String: String] = [:]
     ) throws -> StoredServiceState {
+        log.info("[install] Starting install for \(capabilityID)")
+
         // 1. Guard not already installed
         if let _ = try stateStore.service(for: capabilityID) {
             throw ExecutorError.alreadyInstalled(capabilityID: capabilityID)
         }
 
         // 2. Plan
+        log.info("[install] Planning...")
         let plan: InstallPlan
         do {
             plan = try Planner.planInstall(
@@ -86,6 +92,7 @@ public struct HavenExecutor: Sendable {
 
         let service = plan.service
         let serviceLayout = paths.serviceLayout(for: capabilityID)
+        log.info("[install] Plan OK: bundle=\(service.bundle.id), units=\(service.units.count), serviceRoot=\(serviceLayout.serviceRoot.path)")
 
         // Rollback stack: closures executed in reverse on failure.
         // Each step that creates side effects registers a cleanup closure.
@@ -101,6 +108,7 @@ public struct HavenExecutor: Sendable {
         }
 
         // 3. Create directories
+        log.debug("[install] Creating directories...")
         for dir in paths.topLevelDirectories + serviceLayout.allDirectories {
             try? fileManager.createDirectory(
                 at: dir,
@@ -116,6 +124,7 @@ public struct HavenExecutor: Sendable {
         // 4. Install artifacts and prepare runtimes, then install launchd jobs
         for plannedUnit in service.units {
             let unit = plannedUnit.spec
+            log.info("[install] Processing unit \(unit.id) (runtime=\(unit.runtimeType.rawValue), source=\(unit.installSource))")
 
             // Reject unsupported runtime types
             if unit.runtimeType == .python {
@@ -131,6 +140,7 @@ public struct HavenExecutor: Sendable {
             if let installer = artifactInstaller {
                 let source = ArtifactSource(string: unit.installSource)
                 let format = ArtifactFormat.detect(from: unit.installSource) ?? .executable
+                log.info("[install] Installing artifact: source=\(unit.installSource), format=\(String(describing: format))")
                 let descriptor = ArtifactDescriptor(
                     unitID: unit.id,
                     source: source,
@@ -140,6 +150,7 @@ public struct HavenExecutor: Sendable {
                 let installResult: ArtifactInstallResult
                 do {
                     installResult = try installer.install(descriptor: descriptor)
+                    log.info("[install] Artifact installed: dir=\(installResult.installDirectory.path), cached=\(installResult.wasCached)")
                 } catch {
                     try rollback(ExecutorError.artifactInstallFailed(
                         capabilityID: capabilityID,
@@ -162,22 +173,14 @@ public struct HavenExecutor: Sendable {
                     .appendingPathComponent(filename).path
 
                 // Create a unit with the resolved install source
-                resolvedUnit = RuntimeUnit(
-                    id: unit.id,
-                    bundleID: unit.bundleID,
-                    runtimeType: unit.runtimeType,
-                    installSource: installedPath,
-                    launchArguments: unit.launchArguments,
-                    healthcheck: unit.healthcheck,
-                    dependsOn: unit.dependsOn,
-                    port: unit.port,
-                    environment: unit.environment
-                )
+                resolvedUnit = unit.withInstallSource(installedPath)
+                log.info("[install] Resolved unit path: \(installedPath)")
             } else {
                 resolvedUnit = unit
             }
 
             // Prepare runtime
+            log.info("[install] Preparing runtime for unit \(unit.id)...")
             let prepared: PreparedRuntime
             do {
                 prepared = try runtimeRegistry.prepare(
@@ -185,6 +188,7 @@ public struct HavenExecutor: Sendable {
                     plannedUnit: plannedUnit,
                     serviceLayout: serviceLayout
                 )
+                log.info("[install] Runtime prepared: executable=\(prepared.executableURL.path)")
             } catch {
                 try rollback(ExecutorError.preparationFailed(
                     capabilityID: capabilityID,
@@ -200,9 +204,11 @@ public struct HavenExecutor: Sendable {
                 preparedRuntime: prepared,
                 serviceLayout: serviceLayout
             )
+            log.info("[install] Installing launchd job: label=\(job.label)")
 
             do {
                 try launchdController.install(job: job)
+                log.info("[install] Launchd job installed: \(job.label)")
             } catch {
                 try rollback(ExecutorError.serviceInstallFailed(
                     capabilityID: capabilityID,
@@ -222,6 +228,7 @@ public struct HavenExecutor: Sendable {
         }
 
         // 5. Build and persist state
+        log.info("[install] Persisting state for \(capabilityID)...")
         let now = Date()
         let portAssignments = service.units.compactMap { unit -> StoredPortAssignment? in
             guard let port = unit.port else { return nil }
@@ -242,6 +249,7 @@ public struct HavenExecutor: Sendable {
 
         do {
             try stateStore.upsert(storedState)
+            log.info("[install] State persisted. Install complete for \(capabilityID)")
         } catch {
             try rollback(error)
         }
@@ -254,6 +262,7 @@ public struct HavenExecutor: Sendable {
     /// Uninstall a capability: stop jobs, remove plists, remove artifacts, remove state,
     /// clean up directories.
     public func uninstall(capabilityID: String) throws {
+        log.info("[uninstall] Starting uninstall for \(capabilityID)")
         guard let service = try stateStore.service(for: capabilityID) else {
             throw ExecutorError.notInstalled(capabilityID: capabilityID)
         }
@@ -264,6 +273,7 @@ public struct HavenExecutor: Sendable {
                 capabilityID: capabilityID,
                 unitID: unitID
             )
+            log.info("[uninstall] Stopping and removing launchd job: \(label)")
             // Best-effort stop
             try? launchdController.stop(label: label)
 
@@ -281,12 +291,14 @@ public struct HavenExecutor: Sendable {
         // Best-effort remove installed artifacts
         if let installer = artifactInstaller {
             for unitID in service.runtimeUnits {
+                log.info("[uninstall] Removing artifact for unit: \(unitID)")
                 try? installer.uninstall(unitID: unitID)
             }
         }
 
         // Remove state
         try stateStore.remove(capabilityID: capabilityID)
+        log.info("[uninstall] State removed. Uninstall complete for \(capabilityID)")
 
         // Best-effort remove service directory
         try? fileManager.removeItem(at: service.directoryLayout.serviceRoot)
@@ -296,6 +308,7 @@ public struct HavenExecutor: Sendable {
 
     /// Start all units for an installed service, in dependency order.
     public func start(capabilityID: String) throws {
+        log.info("[start] Starting service \(capabilityID)")
         guard var service = try stateStore.service(for: capabilityID) else {
             throw ExecutorError.notInstalled(capabilityID: capabilityID)
         }
@@ -305,6 +318,7 @@ public struct HavenExecutor: Sendable {
                 capabilityID: capabilityID,
                 unitID: unitID
             )
+            log.info("[start] Starting launchd job: \(label)")
             do {
                 try launchdController.start(label: label)
             } catch {
@@ -319,12 +333,14 @@ public struct HavenExecutor: Sendable {
         service.status = .running
         service.updatedAt = Date()
         try stateStore.upsert(service)
+        log.info("[start] Service started: \(capabilityID)")
     }
 
     // MARK: - Stop
 
     /// Stop all units for a running service, in reverse dependency order.
     public func stop(capabilityID: String) throws {
+        log.info("[stop] Stopping service \(capabilityID)")
         guard var service = try stateStore.service(for: capabilityID) else {
             throw ExecutorError.notInstalled(capabilityID: capabilityID)
         }
@@ -334,6 +350,7 @@ public struct HavenExecutor: Sendable {
                 capabilityID: capabilityID,
                 unitID: unitID
             )
+            log.info("[stop] Stopping launchd job: \(label)")
             do {
                 try launchdController.stop(label: label)
             } catch {
@@ -348,6 +365,7 @@ public struct HavenExecutor: Sendable {
         service.status = .stopped
         service.updatedAt = Date()
         try stateStore.upsert(service)
+        log.info("[stop] Service stopped: \(capabilityID)")
     }
 
     // MARK: - Status

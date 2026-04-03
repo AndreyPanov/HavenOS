@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let log = Logger(subsystem: "com.haven", category: "LaunchdController")
 
 /// Manages the lifecycle of launchd jobs for Haven services.
 ///
@@ -56,10 +59,13 @@ public struct LaunchdController: Sendable {
     /// - Parameter job: The launchd job definition to install.
     /// - Throws: `LaunchdControllerError` if any step fails.
     public func install(job: LaunchdJob) throws {
+        log.info("[install] Installing job: \(job.label)")
+
         // 1. Serialize to plist data
         let data: Data
         do {
             data = try job.plistData()
+            log.debug("[install] Plist serialized (\(data.count) bytes)")
         } catch {
             throw LaunchdControllerError.plistSerializationFailed(
                 label: job.label,
@@ -69,6 +75,7 @@ public struct LaunchdController: Sendable {
 
         // 2. Write plist file atomically
         let plistURL = paths.plistPath(for: job.label)
+        log.info("[install] Writing plist: \(plistURL.path)")
         do {
             try writePlistAtomically(data: data, to: plistURL)
         } catch let error as LaunchdControllerError {
@@ -82,6 +89,7 @@ public struct LaunchdController: Sendable {
         }
 
         // 3. Bootstrap into the user domain
+        log.info("[install] Bootstrapping job into user domain...")
         let result: LaunchctlResult
         do {
             result = try client.bootstrap(plistPath: plistURL.path)
@@ -93,11 +101,13 @@ public struct LaunchdController: Sendable {
         }
 
         guard result.succeeded else {
+            log.error("[install] Bootstrap failed: \(combinedOutput(result))")
             throw LaunchdControllerError.loadFailed(
                 label: job.label,
                 detail: combinedOutput(result)
             )
         }
+        log.info("[install] Job installed: \(job.label)")
     }
 
     // MARK: - Uninstall
@@ -112,6 +122,7 @@ public struct LaunchdController: Sendable {
     /// - Parameter label: The launchd job label to uninstall.
     /// - Throws: `LaunchdControllerError` if any step fails.
     public func uninstall(label: String) throws {
+        log.info("[uninstall] Booting out job: \(label)")
         // 1. Bootout from the user domain
         let result: LaunchctlResult
         do {
@@ -124,6 +135,7 @@ public struct LaunchdController: Sendable {
         }
 
         guard result.succeeded else {
+            log.error("[uninstall] Bootout failed: \(combinedOutput(result))")
             throw LaunchdControllerError.unloadFailed(
                 label: label,
                 detail: combinedOutput(result)
@@ -132,12 +144,13 @@ public struct LaunchdController: Sendable {
 
         // 2. Remove the plist file
         let plistURL = paths.plistPath(for: label)
+        log.info("[uninstall] Removing plist: \(plistURL.path)")
         do {
             try fileManager.removeItem(at: plistURL)
         } catch let error as NSError where error.domain == NSCocoaErrorDomain
             && error.code == NSFileNoSuchFileError
         {
-            // File already gone — not an error
+            log.info("[uninstall] Plist already removed")
         } catch {
             throw LaunchdControllerError.plistRemoveFailed(
                 label: label,
@@ -145,6 +158,7 @@ public struct LaunchdController: Sendable {
                 detail: error.localizedDescription
             )
         }
+        log.info("[uninstall] Job uninstalled: \(label)")
     }
 
     // MARK: - Start
@@ -157,6 +171,7 @@ public struct LaunchdController: Sendable {
     /// - Parameter label: The launchd job label to start.
     /// - Throws: `LaunchdControllerError.startFailed` if the command fails.
     public func start(label: String) throws {
+        log.info("[start] Starting job: \(label)")
         let result: LaunchctlResult
         do {
             result = try client.start(label: label)
@@ -168,11 +183,13 @@ public struct LaunchdController: Sendable {
         }
 
         guard result.succeeded else {
+            log.error("[start] Start failed: \(combinedOutput(result))")
             throw LaunchdControllerError.startFailed(
                 label: label,
                 detail: combinedOutput(result)
             )
         }
+        log.info("[start] Job started: \(label)")
     }
 
     // MARK: - Stop
@@ -185,6 +202,7 @@ public struct LaunchdController: Sendable {
     /// - Parameter label: The launchd job label to stop.
     /// - Throws: `LaunchdControllerError.stopFailed` if the command fails.
     public func stop(label: String) throws {
+        log.info("[stop] Stopping job: \(label)")
         let result: LaunchctlResult
         do {
             result = try client.stop(label: label)
@@ -196,11 +214,13 @@ public struct LaunchdController: Sendable {
         }
 
         guard result.succeeded else {
+            log.error("[stop] Stop failed: \(combinedOutput(result))")
             throw LaunchdControllerError.stopFailed(
                 label: label,
                 detail: combinedOutput(result)
             )
         }
+        log.info("[stop] Job stopped: \(label)")
     }
 
     // MARK: - Status
@@ -215,6 +235,7 @@ public struct LaunchdController: Sendable {
     /// - Throws: `LaunchdControllerError.statusQueryFailed` if the query fails
     ///   in an unexpected way.
     public func status(label: String) throws -> LaunchdJobStatus {
+        log.debug("[status] Querying job: \(label)")
         let plistURL = paths.plistPath(for: label)
         let plistExists = fileManager.fileExists(atPath: plistURL.path)
 

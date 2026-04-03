@@ -5,6 +5,9 @@ import HavenRuntimes
 import HavenLaunchd
 import HavenInstaller
 import SwiftUI
+import os
+
+private let log = Logger(subsystem: "com.haven", category: "ServiceManager")
 
 /// Central data layer that bridges HavenCore specs and state to the UI.
 ///
@@ -51,6 +54,7 @@ final class ServiceManager {
             launchdController: LaunchdController(),
             artifactInstaller: ArtifactInstaller(paths: paths)
         )
+        log.info("Initialized with base path: \(basePath.path)")
     }
 
     // MARK: - Loading
@@ -72,6 +76,7 @@ final class ServiceManager {
 
     /// Install a service by capability ID. Runs the executor on a background thread.
     func installService(capabilityID: String) async {
+        log.info("Installing service: \(capabilityID)")
         isPerformingAction = true
         lastError = nil
 
@@ -82,8 +87,10 @@ final class ServiceManager {
             _ = try await Task.detached {
                 try executor.install(capabilityID: capabilityID, registry: registry)
             }.value
+            log.info("Install succeeded: \(capabilityID)")
             refresh()
         } catch {
+            log.error("Install failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
 
@@ -92,6 +99,7 @@ final class ServiceManager {
 
     /// Uninstall a service by capability ID.
     func uninstallService(capabilityID: String) async {
+        log.info("Uninstalling service: \(capabilityID)")
         isPerformingAction = true
         lastError = nil
 
@@ -101,8 +109,10 @@ final class ServiceManager {
             try await Task.detached {
                 try executor.uninstall(capabilityID: capabilityID)
             }.value
+            log.info("Uninstall succeeded: \(capabilityID)")
             refresh()
         } catch {
+            log.error("Uninstall failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
 
@@ -111,6 +121,7 @@ final class ServiceManager {
 
     /// Start an installed service.
     func startService(capabilityID: String) async {
+        log.info("Starting service: \(capabilityID)")
         isPerformingAction = true
         lastError = nil
 
@@ -120,8 +131,10 @@ final class ServiceManager {
             try await Task.detached {
                 try executor.start(capabilityID: capabilityID)
             }.value
+            log.info("Start succeeded: \(capabilityID)")
             refresh()
         } catch {
+            log.error("Start failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
 
@@ -130,6 +143,7 @@ final class ServiceManager {
 
     /// Stop a running service.
     func stopService(capabilityID: String) async {
+        log.info("Stopping service: \(capabilityID)")
         isPerformingAction = true
         lastError = nil
 
@@ -139,8 +153,10 @@ final class ServiceManager {
             try await Task.detached {
                 try executor.stop(capabilityID: capabilityID)
             }.value
+            log.info("Stop succeeded: \(capabilityID)")
             refresh()
         } catch {
+            log.error("Stop failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
 
@@ -151,8 +167,11 @@ final class ServiceManager {
 
     private func loadCatalog() {
         guard let catalogURL = Foundation.Bundle.module.url(forResource: "Catalog", withExtension: nil) else {
+            log.error("Catalog resource not found in bundle")
             return
         }
+        log.info("Loading catalog from: \(catalogURL.path)")
+
         let capabilitiesURL = catalogURL.appendingPathComponent("Capabilities")
         let bundlesURL = catalogURL.appendingPathComponent("Bundles")
         let runtimeURL = catalogURL.appendingPathComponent("Runtime")
@@ -160,6 +179,7 @@ final class ServiceManager {
         let capabilities = decodeAll(Capability.self, from: capabilitiesURL)
         let bundles = decodeAll(HavenCore.Bundle.self, from: bundlesURL)
         let rawUnits = decodeAll(RuntimeUnit.self, from: runtimeURL)
+        log.info("Decoded \(capabilities.count) capabilities, \(bundles.count) bundles, \(rawUnits.count) runtime units")
 
         // Resolve relative installSource paths against <base>/Catalog/,
         // matching the CLI's filesystem layout where the Catalog and Artifacts
@@ -167,10 +187,12 @@ final class ServiceManager {
         let catalogRoot = paths.base.appendingPathComponent("Catalog")
         runtimeUnits = rawUnits.map { unit in
             if unit.installSource.hasPrefix("/") || unit.installSource.hasPrefix("http") {
+                log.debug("Unit \(unit.id): installSource is absolute/remote — \(unit.installSource)")
                 return unit
             }
             let resolved = catalogRoot.appendingPathComponent(unit.installSource)
                 .standardizedFileURL.path
+            log.info("Unit \(unit.id): resolved installSource '\(unit.installSource)' → '\(resolved)'")
             return unit.withInstallSource(resolved)
         }
 
@@ -178,10 +200,14 @@ final class ServiceManager {
         let bundlesByCap = Dictionary(grouping: bundles, by: \.capability)
 
         catalog = capabilities.compactMap { cap in
-            guard let bundle = bundlesByCap[cap.id]?.first else { return nil }
+            guard let bundle = bundlesByCap[cap.id]?.first else {
+                log.warning("No bundle found for capability \(cap.id), skipping")
+                return nil
+            }
             let meta = CatalogEntry.knownMetadata[cap.id] ?? CatalogEntry.defaultMetadata
             return CatalogEntry(capability: cap, bundle: bundle, metadata: meta)
         }
+        log.info("Catalog loaded: \(self.catalog.count) entries")
     }
 
     /// Decode all JSON files of a given Codable type from a directory.
@@ -203,7 +229,12 @@ final class ServiceManager {
     private func loadInstalledState() {
         do {
             havenState = try stateStore.load()
+            log.info("Loaded state: \(self.havenState.services.count) installed services")
+            for (id, svc) in havenState.services {
+                log.debug("  \(id): status=\(svc.status.rawValue), units=\(svc.runtimeUnits)")
+            }
         } catch {
+            log.error("State file incompatible: \(error.localizedDescription) — backing up and resetting")
             // State file exists but is incompatible (e.g. from an older Haven version).
             // Back it up and start fresh so the executor can also read state cleanly.
             let fm = FileManager.default
