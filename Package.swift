@@ -91,10 +91,7 @@ let package = Package(
                 "HavenInstaller",
             ],
             path: "Sources/HavenApp",
-            exclude: ["Info.plist"],
-            resources: [
-                .copy("Resources/Catalog"),
-            ]
+            exclude: ["Info.plist"]
         ),
 
         // MARK: - Tests
@@ -134,6 +131,11 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "Tests/HavenCLITests"
+        ),
+        .testTarget(
+            name: "HavenAppTests",
+            dependencies: ["HavenCore"],
+            path: "Tests/HavenAppTests"
         ),
     ]
 )

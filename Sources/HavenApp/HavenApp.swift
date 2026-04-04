@@ -18,7 +18,7 @@ struct HavenApp: App {
                 .environment(settings)
                 .environment(serviceManager)
                 .onAppear {
-                    serviceManager.load()
+                    serviceManager.load(catalogURL: settings.catalogFolderURL)
                 }
         }
         .defaultSize(width: 1100, height: 700)

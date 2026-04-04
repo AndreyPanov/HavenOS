@@ -9,9 +9,28 @@ import os
 
 private let log = Logger(subsystem: "com.haven", category: "ServiceManager")
 
+/// Summary counts from a successful catalog load.
+struct CatalogCounts: Equatable {
+    let capabilities: Int
+    let bundles: Int
+    let runtimeUnits: Int
+}
+
+/// Represents the catalog loading state for the UI.
+enum CatalogState: Equatable {
+    /// Catalog has not been loaded yet.
+    case notLoaded
+    /// Catalog loaded successfully.
+    case loaded(counts: CatalogCounts)
+    /// Catalog folder does not exist at the configured path.
+    case folderNotFound(path: String)
+    /// Catalog loaded but SpecLoader reported validation issues.
+    case issues([SpecLoadIssue])
+}
+
 /// Central data layer that bridges HavenCore specs and state to the UI.
 ///
-/// - Discovery: Loads `Capability` + `Bundle` + `RuntimeUnit` from bundled JSON resources
+/// - Discovery: Loads specs from a local folder via `SpecLoader`
 /// - Installed: Reads `HavenState` from `FileStateStore` at `~/.haven/`
 /// - Lifecycle: Delegates install/uninstall/start/stop to `HavenExecutor`
 @MainActor
@@ -23,7 +42,7 @@ final class ServiceManager {
     /// Services currently installed (from ~/.haven/State/services.json).
     private(set) var installedServices: [InstalledService] = []
 
-    /// All discoverable plugins (from bundled catalog specs).
+    /// All discoverable plugins (from local catalog specs).
     private(set) var discoverablePlugins: [DiscoverablePlugin] = []
 
     // MARK: - UI State
@@ -34,10 +53,13 @@ final class ServiceManager {
     /// Description of the last error, cleared on next action.
     var lastError: String?
 
+    /// Current catalog loading state for the UI.
+    private(set) var catalogState: CatalogState = .notLoaded
+
     // MARK: - Internal State
 
     private var catalog: [CatalogEntry] = []
-    private var runtimeUnits: [RuntimeUnit] = []
+    private var registry: SpecRegistry?
     private var havenState: HavenState = HavenState()
     private let paths: HavenPaths
     private let stateStore: FileStateStore
@@ -59,14 +81,22 @@ final class ServiceManager {
 
     // MARK: - Loading
 
-    /// Load catalog and installed state. Call once on app launch.
-    func load() {
-        loadCatalog()
+    /// Load catalog from the given URL and installed state. Call once on app launch.
+    func load(catalogURL: URL) {
+        ensureCatalogFolderExists(at: catalogURL)
+        loadCatalog(from: catalogURL)
         loadInstalledState()
         rebuildViewModels()
     }
 
-    /// Reload just the installed state (e.g. on timer or after an action).
+    /// Reload just the catalog from a (possibly changed) folder URL.
+    func reloadCatalog(from catalogURL: URL) {
+        log.info("Reloading catalog from: \(catalogURL.path)")
+        loadCatalog(from: catalogURL)
+        rebuildViewModels()
+    }
+
+    /// Reload just the installed state (e.g. after an action).
     func refresh() {
         loadInstalledState()
         rebuildViewModels()
@@ -80,7 +110,12 @@ final class ServiceManager {
         isPerformingAction = true
         lastError = nil
 
-        let registry = buildRegistry()
+        guard let registry = self.registry else {
+            lastError = "No catalog loaded. Configure your catalog folder in Settings."
+            isPerformingAction = false
+            return
+        }
+
         let executor = self.executor
 
         do {
@@ -163,65 +198,78 @@ final class ServiceManager {
         isPerformingAction = false
     }
 
-    // MARK: - Catalog Loading
+    // MARK: - Catalog Folder Setup
 
-    private func loadCatalog() {
-        guard let catalogURL = Foundation.Bundle.module.url(forResource: "Catalog", withExtension: nil) else {
-            log.error("Catalog resource not found in bundle")
-            return
-        }
-        log.info("Loading catalog from: \(catalogURL.path)")
+    /// Ensure the catalog folder and its expected subdirectories exist.
+    private func ensureCatalogFolderExists(at url: URL) {
+        let fm = FileManager.default
+        let subdirs = ["Capabilities", "Bundles", "Runtime"]
 
-        let capabilitiesURL = catalogURL.appendingPathComponent("Capabilities")
-        let bundlesURL = catalogURL.appendingPathComponent("Bundles")
-        let runtimeURL = catalogURL.appendingPathComponent("Runtime")
-
-        let capabilities = decodeAll(Capability.self, from: capabilitiesURL)
-        let bundles = decodeAll(HavenCore.Bundle.self, from: bundlesURL)
-        let rawUnits = decodeAll(RuntimeUnit.self, from: runtimeURL)
-        log.info("Decoded \(capabilities.count) capabilities, \(bundles.count) bundles, \(rawUnits.count) runtime units")
-
-        // Resolve relative installSource paths against <base>/Catalog/,
-        // matching the CLI's filesystem layout where the Catalog and Artifacts
-        // directories are siblings under the Haven base directory.
-        let catalogRoot = paths.base.appendingPathComponent("Catalog")
-        runtimeUnits = rawUnits.map { unit in
-            if unit.installSource.hasPrefix("/") || unit.installSource.hasPrefix("http") {
-                log.debug("Unit \(unit.id): installSource is absolute/remote — \(unit.installSource)")
-                return unit
+        if !fm.fileExists(atPath: url.path) {
+            log.info("Creating default catalog folder at: \(url.path)")
+            do {
+                for subdir in subdirs {
+                    try fm.createDirectory(
+                        at: url.appendingPathComponent(subdir),
+                        withIntermediateDirectories: true
+                    )
+                }
+                log.info("Created catalog folder with subdirectories: \(subdirs.joined(separator: ", "))")
+            } catch {
+                log.error("Failed to create catalog folder: \(error.localizedDescription)")
             }
-            let resolved = catalogRoot.appendingPathComponent(unit.installSource)
-                .standardizedFileURL.path
-            log.info("Unit \(unit.id): resolved installSource '\(unit.installSource)' → '\(resolved)'")
-            return unit.withInstallSource(resolved)
         }
-
-        // Pair each capability with its implementing bundle
-        let bundlesByCap = Dictionary(grouping: bundles, by: \.capability)
-
-        catalog = capabilities.compactMap { cap in
-            guard let bundle = bundlesByCap[cap.id]?.first else {
-                log.warning("No bundle found for capability \(cap.id), skipping")
-                return nil
-            }
-            let meta = CatalogEntry.knownMetadata[cap.id] ?? CatalogEntry.defaultMetadata
-            return CatalogEntry(capability: cap, bundle: bundle, metadata: meta)
-        }
-        log.info("Catalog loaded: \(self.catalog.count) entries")
     }
 
-    /// Decode all JSON files of a given Codable type from a directory.
-    private func decodeAll<T: Decodable>(_ type: T.Type, from directory: URL) -> [T] {
+    // MARK: - Catalog Loading
+
+    private func loadCatalog(from catalogURL: URL) {
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
-            return []
+        let path = catalogURL.path
+
+        guard fm.fileExists(atPath: path) else {
+            log.warning("Catalog folder not found: \(path)")
+            catalogState = .folderNotFound(path: path)
+            catalog = []
+            registry = nil
+            return
         }
-        return files
-            .filter { $0.pathExtension.lowercased() == "json" }
-            .compactMap { url in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return try? JSONDecoder().decode(T.self, from: data)
+
+        log.info("Loading catalog via SpecLoader from: \(path)")
+        let result = SpecLoader.load(from: catalogURL)
+
+        if let loadedRegistry = result.registry {
+            self.registry = loadedRegistry
+
+            // Build catalog entries from the registry for UI display
+            let bundlesByCap = Dictionary(
+                grouping: loadedRegistry.bundlesByID.values, by: \.capability
+            )
+            catalog = loadedRegistry.capabilitiesByID.values.compactMap { cap in
+                guard let bundle = bundlesByCap[cap.id]?.first else {
+                    log.warning("No bundle for capability \(cap.id), skipping")
+                    return nil
+                }
+                let meta = CatalogEntry.knownMetadata[cap.id] ?? CatalogEntry.defaultMetadata
+                return CatalogEntry(capability: cap, bundle: bundle, metadata: meta)
             }
+
+            let counts = CatalogCounts(
+                capabilities: loadedRegistry.capabilitiesByID.count,
+                bundles: loadedRegistry.bundlesByID.count,
+                runtimeUnits: loadedRegistry.runtimeUnitsByID.count
+            )
+            catalogState = .loaded(counts: counts)
+            log.info("Catalog loaded: \(counts.capabilities) capabilities, \(counts.bundles) bundles, \(counts.runtimeUnits) runtime units")
+        } else {
+            log.error("Catalog loading failed with \(result.issues.count) issues")
+            for issue in result.issues {
+                log.error("  \(issue.description)")
+            }
+            catalogState = .issues(result.issues)
+            catalog = []
+            registry = nil
+        }
     }
 
     // MARK: - State Loading
@@ -235,8 +283,6 @@ final class ServiceManager {
             }
         } catch {
             log.error("State file incompatible: \(error.localizedDescription) — backing up and resetting")
-            // State file exists but is incompatible (e.g. from an older Haven version).
-            // Back it up and start fresh so the executor can also read state cleanly.
             let fm = FileManager.default
             let stateFile = paths.stateFile
             if fm.fileExists(atPath: stateFile.path) {
@@ -248,30 +294,6 @@ final class ServiceManager {
             havenState = HavenState()
             try? stateStore.save(havenState)
         }
-    }
-
-    // MARK: - Registry Building
-
-    /// Build a `SpecRegistry` from the loaded catalog and runtime units
-    /// for use by the executor.
-    private func buildRegistry() -> SpecRegistry {
-        var capsByID: [String: Capability] = [:]
-        var bundlesByID: [String: HavenCore.Bundle] = [:]
-        var unitsByID: [String: RuntimeUnit] = [:]
-
-        for entry in catalog {
-            capsByID[entry.capability.id] = entry.capability
-            bundlesByID[entry.bundle.id] = entry.bundle
-        }
-        for unit in runtimeUnits {
-            unitsByID[unit.id] = unit
-        }
-
-        return SpecRegistry(
-            capabilitiesByID: capsByID,
-            bundlesByID: bundlesByID,
-            runtimeUnitsByID: unitsByID
-        )
     }
 
     // MARK: - View Model Building
@@ -312,7 +334,6 @@ final class ServiceManager {
 
     // MARK: - Status Mapping
 
-    /// Maps HavenCore.ServiceStatus to the app's ServiceStatus.
     private func mapStatus(_ coreStatus: HavenCore.ServiceStatus) -> ServiceStatus {
         switch coreStatus {
         case .installed: .stopped
