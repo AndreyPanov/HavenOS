@@ -309,7 +309,7 @@ final class ServiceManager {
 
             return InstalledService(
                 id: stored.capability,
-                name: entry?.capability.name ?? stored.capability,
+                name: entry?.capability.name ?? Self.displayName(from: stored.capability),
                 serviceDescription: entry?.capability.description ?? "",
                 icon: meta.icon,
                 status: mapStatus(stored.status),
@@ -330,6 +330,15 @@ final class ServiceManager {
                 fullDescription: entry.metadata.fullDescription
             )
         }
+    }
+
+    // MARK: - Helpers
+
+    /// Derive a human-readable name from a capability ID.
+    /// e.g. "haven.capability.hello-service" → "Hello Service"
+    private static func displayName(from capabilityID: String) -> String {
+        let slug = capabilityID.split(separator: ".").last.map(String.init) ?? capabilityID
+        return slug.split(separator: "-").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
     }
 
     // MARK: - Status Mapping
