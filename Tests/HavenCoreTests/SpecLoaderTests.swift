@@ -203,7 +203,7 @@ final class SpecLoaderTests: XCTestCase {
             "version": "2.0.0"
         }]
         """.data(using: .utf8)!
-        try unitJSON.write(to: serviceDir.appendingPathComponent("runtime.json"))
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
 
         let result = SpecLoader.load(from: tmpDir)
         XCTAssertTrue(result.succeeded, "Expected success but got issues: \(result.issues)")
@@ -364,7 +364,7 @@ final class SpecLoaderTests: XCTestCase {
             "launchArguments": ["test"]
         }]
         """.data(using: .utf8)!
-        try unitJSON.write(to: serviceDir.appendingPathComponent("runtime.json"))
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
 
         return tmpDir
     }

@@ -8,7 +8,7 @@ import Foundation
 ///   my-service/
 ///     capability.json   — single Capability object
 ///     bundle.json       — single Bundle object
-///     runtime.json      — JSON array of RuntimeUnit objects
+///     runtimes.json     — JSON array of RuntimeUnit objects
 /// ```
 ///
 /// Usage:
@@ -64,9 +64,9 @@ public enum SpecLoader {
                 bundles.append(bun)
             }
 
-            // runtime.json — JSON array of RuntimeUnit objects
+            // runtimes.json — JSON array of RuntimeUnit objects
             let rawUnits = decodeRuntimeArray(
-                file: folder.appendingPathComponent("runtime.json"),
+                file: folder.appendingPathComponent("runtimes.json"),
                 folderName: folderName,
                 issues: &issues
             )

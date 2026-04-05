@@ -51,7 +51,7 @@ final class CatalogLoadingTests: XCTestCase {
             "launchArguments": ["serve", "--port", "8080"],
             "port": 8080
         }]
-        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtime.json"))
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtimes.json"))
 
         return root
     }
@@ -175,7 +175,7 @@ final class CatalogLoadingTests: XCTestCase {
             "installSource": "Artifacts/OtherService",
             "launchArguments": ["run"]
         }]
-        """.data(using: .utf8)!.write(to: serviceDir2.appendingPathComponent("runtime.json"))
+        """.data(using: .utf8)!.write(to: serviceDir2.appendingPathComponent("runtimes.json"))
 
         // Load from folder 1
         let result1 = SpecLoader.load(from: root1)
@@ -227,7 +227,7 @@ final class CatalogLoadingTests: XCTestCase {
                 "installSource": "Artifacts/Svc\(i + 1)",
                 "launchArguments": ["run"]
             }]
-            """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtime.json"))
+            """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtimes.json"))
         }
 
         let result = SpecLoader.load(from: root)
@@ -291,7 +291,7 @@ final class CatalogLoadingTests: XCTestCase {
 
         try """
         [{"id": "test.unit", "bundleID": "test.bundle", "runtimeType": "native", "installSource": "Artifacts/TestSvc", "launchArguments": ["run"]}]
-        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtime.json"))
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtimes.json"))
 
         // Reload should now find the spec
         let populatedResult = SpecLoader.load(from: root)

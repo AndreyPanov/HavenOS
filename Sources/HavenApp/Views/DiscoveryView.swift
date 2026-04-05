@@ -163,7 +163,7 @@ struct DiscoveryView: View {
                     structureLine("my-service/", description: "A service folder")
                     specFileLine("capability.json", description: "What the service provides")
                     specFileLine("bundle.json", description: "Which implementation to use")
-                    specFileLine("runtime.json", description: "How to run it (array of units)")
+                    specFileLine("runtimes.json", description: "How to run it (array of units)")
                 }
                 .padding(.leading, 4)
 
