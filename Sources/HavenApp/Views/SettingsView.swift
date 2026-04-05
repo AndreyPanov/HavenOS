@@ -118,27 +118,10 @@ struct SettingsView: View {
                 .foregroundStyle(.tertiary)
 
         case .loaded(let counts):
-            if counts.capabilities == 0 {
-                Label {
-                    Text("Catalog folder is empty. Add spec files to get started.")
-                } icon: {
-                    Image(systemName: "tray")
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("Catalog loaded", systemImage: "checkmark.circle")
-                        .font(.callout)
-                        .foregroundStyle(.green)
+            catalogCountsView(counts: counts, warnings: [])
 
-                    HStack(spacing: 16) {
-                        countBadge(counts.capabilities, label: "capabilities")
-                        countBadge(counts.bundles, label: "bundles")
-                        countBadge(counts.runtimeUnits, label: "runtime units")
-                    }
-                }
-            }
+        case .loadedWithWarnings(let counts, let warnings):
+            catalogCountsView(counts: counts, warnings: warnings)
 
         case .folderNotFound(let path):
             Label {
@@ -168,6 +151,53 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .font(.callout)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func catalogCountsView(counts: CatalogCounts, warnings: [SpecLoadIssue]) -> some View {
+        if counts.capabilities == 0 {
+            Label {
+                Text("Catalog folder is empty. Add spec files to get started.")
+            } icon: {
+                Image(systemName: "tray")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                if warnings.isEmpty {
+                    Label("Catalog loaded", systemImage: "checkmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(.green)
+                } else {
+                    Label("Catalog loaded with \(warnings.count) warning\(warnings.count == 1 ? "" : "s")",
+                          systemImage: "checkmark.circle.trianglebadge.exclamationmark")
+                        .font(.callout)
+                        .foregroundStyle(.yellow)
+                }
+
+                HStack(spacing: 16) {
+                    countBadge(counts.capabilities, label: "capabilities")
+                    countBadge(counts.bundles, label: "bundles")
+                    countBadge(counts.runtimeUnits, label: "runtime units")
+                }
+
+                if !warnings.isEmpty {
+                    DisclosureGroup("Warnings") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(warnings.enumerated()), id: \.offset) { _, issue in
+                                Text(issue.description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.callout)
+                }
             }
         }
     }
