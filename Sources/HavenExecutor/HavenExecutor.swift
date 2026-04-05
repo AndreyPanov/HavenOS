@@ -138,14 +138,33 @@ public struct HavenExecutor: Sendable {
             // Install artifact if an installer is configured
             let resolvedUnit: RuntimeUnit
             if let installer = artifactInstaller {
-                let source = ArtifactSource(string: unit.installSource)
-                let format = ArtifactFormat.detect(from: unit.installSource) ?? .executable
-                log.info("[install] Installing artifact: source=\(unit.installSource), format=\(String(describing: format))")
-                let descriptor = ArtifactDescriptor(
-                    unitID: unit.id,
-                    source: source,
-                    format: format
-                )
+                let descriptor: ArtifactDescriptor
+                if let artifact = unit.artifact {
+                    // Resolve from artifact spec (e.g. GitHub Release)
+                    log.info("[install] Resolving artifact for unit \(unit.id): \(artifact.type.rawValue) \(artifact.repo)@\(artifact.version)")
+                    do {
+                        descriptor = try ArtifactResolver.resolve(
+                            artifact: artifact,
+                            unitID: unit.id
+                        )
+                    } catch {
+                        try rollback(ExecutorError.artifactInstallFailed(
+                            capabilityID: capabilityID,
+                            unitID: unit.id,
+                            detail: error.localizedDescription
+                        ))
+                    }
+                } else {
+                    // Legacy: use installSource directly
+                    let source = ArtifactSource(string: unit.installSource)
+                    let format = ArtifactFormat.detect(from: unit.installSource) ?? .executable
+                    descriptor = ArtifactDescriptor(
+                        unitID: unit.id,
+                        source: source,
+                        format: format
+                    )
+                }
+                log.info("[install] Installing artifact: source=\(String(describing: descriptor.source)), format=\(String(describing: descriptor.format))")
 
                 let installResult: ArtifactInstallResult
                 do {
@@ -165,12 +184,18 @@ public struct HavenExecutor: Sendable {
                     try? installer.uninstall(unitID: unitIDForCleanup)
                 }
 
-                // Resolve installed executable path:
-                // For executables: <installDir>/<original-filename>
-                // For archives: <installDir>/<original-filename>
-                let filename = URL(fileURLWithPath: unit.installSource).lastPathComponent
-                let installedPath = installResult.installDirectory
-                    .appendingPathComponent(filename).path
+                // Resolve installed executable path
+                let installedPath: String
+                if unit.artifact != nil {
+                    // For artifact-based units, point to the install directory.
+                    // NativeRuntimeAdapter.resolveExecutable finds the binary inside.
+                    installedPath = installResult.installDirectory.path
+                } else {
+                    // For legacy units, resolve to the specific file.
+                    let filename = URL(fileURLWithPath: unit.installSource).lastPathComponent
+                    installedPath = installResult.installDirectory
+                        .appendingPathComponent(filename).path
+                }
 
                 // Create a unit with the resolved install source
                 resolvedUnit = unit.withInstallSource(installedPath)

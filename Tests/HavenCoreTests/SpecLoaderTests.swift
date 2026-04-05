@@ -426,4 +426,164 @@ final class SpecLoaderTests: XCTestCase {
             "Expected warning mentioning the missing path, got: \(warnings)"
         )
     }
+
+    // MARK: - Artifact field support
+
+    func testArtifactFieldDecodesWithoutUnknownKeyWarning() throws {
+        let json = """
+        {
+            "id": "test.unit",
+            "bundleID": "test.bundle",
+            "runtimeType": "native",
+            "launchArguments": ["test"],
+            "installSource": "/opt/bin/test",
+            "artifact": {
+                "type": "github-release",
+                "repo": "owner/repo",
+                "version": "v1.0.0",
+                "assets": [
+                    {"os": "macos", "arch": "arm64", "file": "app-arm64.zip"}
+                ],
+                "archive": {"format": "zip", "stripFirstDirectory": true}
+            }
+        }
+        """.data(using: .utf8)!
+
+        let (unit, issues) = StrictJSONDecoder.decode(
+            RuntimeUnit.self, from: json,
+            knownKeys: StrictJSONDecoder.runtimeUnitKeys, source: "unit.json"
+        )
+
+        XCTAssertTrue(issues.isEmpty, "Unexpected issues: \(issues)")
+        let u = try XCTUnwrap(unit)
+        XCTAssertNotNil(u.artifact)
+        XCTAssertEqual(u.artifact?.type, .githubRelease)
+        XCTAssertEqual(u.artifact?.repo, "owner/repo")
+        XCTAssertEqual(u.artifact?.version, "v1.0.0")
+        XCTAssertEqual(u.artifact?.assets.count, 1)
+        XCTAssertEqual(u.artifact?.assets.first?.os, "macos")
+        XCTAssertEqual(u.artifact?.assets.first?.arch, "arm64")
+        XCTAssertEqual(u.artifact?.assets.first?.file, "app-arm64.zip")
+        XCTAssertEqual(u.artifact?.archive?.format, "zip")
+        XCTAssertEqual(u.artifact?.archive?.stripFirstDirectory, true)
+    }
+
+    func testArtifactFieldOptionalInstallSource() throws {
+        // When artifact is present, installSource can be omitted
+        let json = """
+        {
+            "id": "test.unit",
+            "bundleID": "test.bundle",
+            "runtimeType": "native",
+            "entrypoint": {"args": ["--port", "8080"]},
+            "artifact": {
+                "type": "github-release",
+                "repo": "owner/repo",
+                "version": "v1.0.0",
+                "assets": [
+                    {"os": "macos", "arch": "arm64", "file": "app.zip"}
+                ]
+            }
+        }
+        """.data(using: .utf8)!
+
+        let (unit, issues) = StrictJSONDecoder.decode(
+            RuntimeUnit.self, from: json,
+            knownKeys: StrictJSONDecoder.runtimeUnitKeys, source: "unit.json"
+        )
+
+        XCTAssertTrue(issues.isEmpty, "Unexpected issues: \(issues)")
+        let u = try XCTUnwrap(unit)
+        XCTAssertEqual(u.installSource, "")
+        XCTAssertNotNil(u.artifact)
+        XCTAssertEqual(u.launchArguments, ["--port", "8080"])
+
+        // Validation should pass because artifact is present
+        XCTAssertNoThrow(try u.validate())
+    }
+
+    func testValidationFailsWithEmptyInstallSourceAndNoArtifact() throws {
+        let unit = RuntimeUnit(
+            id: "test.unit",
+            bundleID: "test.bundle",
+            runtimeType: .native,
+            installSource: "",
+            launchArguments: ["test"]
+        )
+
+        XCTAssertThrowsError(try unit.validate()) { error in
+            let validationError = error as? ValidationError
+            XCTAssertNotNil(validationError)
+            XCTAssertTrue(validationError?.message.contains("installSource") == true)
+        }
+    }
+
+    func testValidationPassesWithEmptyLaunchArgsAndArtifact() throws {
+        let artifact = Artifact(
+            type: .githubRelease,
+            repo: "owner/repo",
+            version: "v1.0.0",
+            assets: [ArtifactAsset(os: "macos", arch: "arm64", file: "app.zip")]
+        )
+        let unit = RuntimeUnit(
+            id: "test.unit",
+            bundleID: "test.bundle",
+            runtimeType: .native,
+            installSource: "",
+            launchArguments: [],
+            artifact: artifact
+        )
+
+        XCTAssertNoThrow(try unit.validate())
+    }
+
+    func testArtifactFieldInRuntimesJsonArray() throws {
+        // Test that the SpecLoader can load a runtimes.json with artifact fields
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let serviceDir = tmpDir.appendingPathComponent("artifact-service")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let capJSON = """
+        {"id": "test.cap", "name": "Test", "version": "1.0.0"}
+        """.data(using: .utf8)!
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
+
+        let bundleJSON = """
+        {"id": "test.bundle", "name": "Test", "capability": "test.cap", "runtimeUnits": ["test.unit"]}
+        """.data(using: .utf8)!
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
+
+        let unitJSON = """
+        [{
+            "id": "test.unit",
+            "bundleID": "test.bundle",
+            "runtimeType": "native",
+            "entrypoint": {"args": ["--port", "8080"]},
+            "artifact": {
+                "type": "github-release",
+                "repo": "owner/hello-service",
+                "version": "v1.0.0",
+                "assets": [
+                    {"os": "macos", "arch": "arm64", "file": "hello-arm64.zip"},
+                    {"os": "macos", "arch": "x86_64", "file": "hello-x86.zip"}
+                ],
+                "archive": {"format": "zip"}
+            }
+        }]
+        """.data(using: .utf8)!
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
+
+        let result = SpecLoader.load(from: tmpDir)
+
+        // Should succeed — no errors, no unknown-key warnings for "artifact"
+        XCTAssertTrue(result.succeeded, "Expected success but got issues: \(result.issues)")
+        let registry = try XCTUnwrap(result.registry)
+
+        let unit = try XCTUnwrap(registry.runtimeUnitsByID["test.unit"])
+        XCTAssertNotNil(unit.artifact)
+        XCTAssertEqual(unit.artifact?.repo, "owner/hello-service")
+        XCTAssertEqual(unit.artifact?.assets.count, 2)
+    }
 }

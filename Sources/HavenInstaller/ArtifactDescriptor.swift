@@ -15,13 +15,19 @@ public struct ArtifactDescriptor: Equatable, Sendable {
     /// The packaging format of the artifact.
     public let format: ArtifactFormat
 
+    /// If `true`, the top-level directory inside an archive is stripped
+    /// after extraction, moving its contents up one level.
+    public let stripFirstDirectory: Bool
+
     public init(
         unitID: String,
         source: ArtifactSource,
-        format: ArtifactFormat
+        format: ArtifactFormat,
+        stripFirstDirectory: Bool = false
     ) {
         self.unitID = unitID
         self.source = source
         self.format = format
+        self.stripFirstDirectory = stripFirstDirectory
     }
 }

@@ -81,7 +81,7 @@ extension StrictJSONDecoder {
     static let runtimeUnitKeys: Set<String> = [
         "id", "bundleID", "runtimeType", "installSource",
         "launchArguments", "healthcheck", "dependsOn", "port",
-        "environment", "entrypoint", "version"
+        "environment", "entrypoint", "version", "artifact"
     ]
 
     static let settingFieldKeys: Set<String> = [

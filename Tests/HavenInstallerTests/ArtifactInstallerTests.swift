@@ -871,3 +871,201 @@ final class ProcessArchiveExtractorTests: XCTestCase {
         }
     }
 }
+
+// MARK: - ArtifactInstaller stripFirstDirectory Tests
+
+final class ArtifactInstallerStripTests: XCTestCase {
+
+    private var tempDir: URL!
+    private var installedDir: URL!
+    private var downloadsDir: URL!
+    private var mockExtractor: MockArchiveExtractor!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-strip-test-\(UUID().uuidString)")
+        installedDir = tempDir.appendingPathComponent("Installed")
+        downloadsDir = tempDir.appendingPathComponent("Downloads")
+        try? FileManager.default.createDirectory(at: installedDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+        mockExtractor = MockArchiveExtractor()
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    func testStripFirstDirectoryMovesContentsUp() throws {
+        // Mock extractor that simulates an archive with a single top-level wrapper dir
+        let ext = MockArchiveExtractor()
+        ext.simulateExtraction = false
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: MockDownloadClient(),
+            extractor: ext,
+            downloadsDirectory: downloadsDir
+        )
+
+        // Create a fixture archive file
+        let fixtureDir = tempDir.appendingPathComponent("fixtures")
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+        let archiveFile = fixtureDir.appendingPathComponent("app.zip")
+        try Data("fake-zip".utf8).write(to: archiveFile)
+
+        // Configure the extractor to create a wrapped directory structure when called
+        let wrappedDirName = "hello-service-v1.0.0"
+        ext.simulateExtraction = false
+        // We'll use a custom closure approach: override the extract behavior
+        // by making the mock create the wrapped structure in the destination
+        let customExtractor = WrappedDirectoryExtractor(
+            wrapperName: wrappedDirName,
+            files: [
+                "hello-service": Data("#!/bin/sh\necho hello".utf8),
+                "config.json": Data("{\"key\":\"value\"}".utf8),
+            ]
+        )
+
+        let installerWithCustom = ArtifactInstaller(
+            cache: cache,
+            downloadClient: MockDownloadClient(),
+            extractor: customExtractor,
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.hello",
+            source: .local(archiveFile),
+            format: .zip,
+            stripFirstDirectory: true
+        )
+
+        let result = try installerWithCustom.install(descriptor: descriptor)
+
+        // After stripping, the files should be at the top level
+        let execPath = result.installDirectory.appendingPathComponent("hello-service")
+        let configPath = result.installDirectory.appendingPathComponent("config.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: execPath.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configPath.path))
+
+        // The wrapper directory should be gone
+        let wrapperPath = result.installDirectory.appendingPathComponent(wrappedDirName)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wrapperPath.path))
+    }
+
+    func testStripFirstDirectoryNoOpWhenMultipleEntries() throws {
+        // Extractor creates multiple top-level items — strip should be a no-op
+        let ext = FlatFilesExtractor(files: [
+            "app": Data("binary".utf8),
+            "README.md": Data("readme".utf8),
+        ])
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: MockDownloadClient(),
+            extractor: ext,
+            downloadsDirectory: downloadsDir
+        )
+
+        let fixtureDir = tempDir.appendingPathComponent("fixtures")
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+        let archiveFile = fixtureDir.appendingPathComponent("app.zip")
+        try Data("fake-zip".utf8).write(to: archiveFile)
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.multi",
+            source: .local(archiveFile),
+            format: .zip,
+            stripFirstDirectory: true
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+
+        // Both files should still be at top level (no change — strip is no-op)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("app").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("README.md").path
+            )
+        )
+    }
+
+    func testNoStripWhenFlagIsFalse() throws {
+        // Extractor creates a wrapped directory but strip is disabled
+        let ext = WrappedDirectoryExtractor(
+            wrapperName: "inner",
+            files: ["app": Data("binary".utf8)]
+        )
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: MockDownloadClient(),
+            extractor: ext,
+            downloadsDirectory: downloadsDir
+        )
+
+        let fixtureDir = tempDir.appendingPathComponent("fixtures")
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+        let archiveFile = fixtureDir.appendingPathComponent("app.zip")
+        try Data("fake-zip".utf8).write(to: archiveFile)
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.wrapped",
+            source: .local(archiveFile),
+            format: .zip,
+            stripFirstDirectory: false
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+
+        // The wrapper directory should still be present
+        let innerPath = result.installDirectory.appendingPathComponent("inner")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: innerPath.path))
+    }
+}
+
+// MARK: - Test-only archive extractors
+
+/// Simulates an archive that extracts with a single wrapper directory.
+private final class WrappedDirectoryExtractor: ArchiveExtractor, @unchecked Sendable {
+    let wrapperName: String
+    let files: [String: Data]
+
+    init(wrapperName: String, files: [String: Data]) {
+        self.wrapperName = wrapperName
+        self.files = files
+    }
+
+    func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
+        let wrapper = destinationDirectory.appendingPathComponent(wrapperName)
+        try FileManager.default.createDirectory(at: wrapper, withIntermediateDirectories: true)
+        for (name, data) in files {
+            try data.write(to: wrapper.appendingPathComponent(name))
+        }
+    }
+}
+
+/// Simulates an archive that extracts flat files (no wrapper directory).
+private final class FlatFilesExtractor: ArchiveExtractor, @unchecked Sendable {
+    let files: [String: Data]
+
+    init(files: [String: Data]) {
+        self.files = files
+    }
+
+    func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        for (name, data) in files {
+            try data.write(to: destinationDirectory.appendingPathComponent(name))
+        }
+    }
+}

@@ -62,6 +62,11 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     /// Optional version string for the runtime unit.
     public let version: String?
 
+    /// Optional artifact descriptor for automatic binary fetching.
+    /// When present, Haven downloads the binary during install instead
+    /// of requiring a pre-existing `installSource` path.
+    public let artifact: Artifact?
+
     public init(
         id: String,
         bundleID: String,
@@ -72,7 +77,8 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         dependsOn: [String] = [],
         port: Int? = nil,
         environment: [String: String] = [:],
-        version: String? = nil
+        version: String? = nil,
+        artifact: Artifact? = nil
     ) {
         self.id = id
         self.bundleID = bundleID
@@ -84,6 +90,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         self.port = port
         self.environment = environment
         self.version = version
+        self.artifact = artifact
     }
 
     // MARK: - Codable (entrypoint + version support)
@@ -91,7 +98,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, bundleID, runtimeType, installSource
         case launchArguments, healthcheck, dependsOn, port
-        case environment, entrypoint, version
+        case environment, entrypoint, version, artifact
     }
 
     public init(from decoder: Decoder) throws {
@@ -99,7 +106,10 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         id = try c.decode(String.self, forKey: .id)
         bundleID = try c.decode(String.self, forKey: .bundleID)
         runtimeType = try c.decode(RuntimeType.self, forKey: .runtimeType)
-        installSource = try c.decode(String.self, forKey: .installSource)
+        artifact = try c.decodeIfPresent(Artifact.self, forKey: .artifact)
+
+        // installSource is optional when artifact is present.
+        installSource = try c.decodeIfPresent(String.self, forKey: .installSource) ?? ""
 
         let ep = try c.decodeIfPresent(Entrypoint.self, forKey: .entrypoint)
 
@@ -135,6 +145,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         try c.encodeIfPresent(port, forKey: .port)
         try c.encode(environment, forKey: .environment)
         try c.encodeIfPresent(version, forKey: .version)
+        try c.encodeIfPresent(artifact, forKey: .artifact)
     }
 
     /// Returns a copy with a different `installSource`, keeping all other fields.
@@ -143,15 +154,17 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
             id: id, bundleID: bundleID, runtimeType: runtimeType,
             installSource: newSource, launchArguments: launchArguments,
             healthcheck: healthcheck, dependsOn: dependsOn,
-            port: port, environment: environment, version: version
+            port: port, environment: environment, version: version,
+            artifact: artifact
         )
     }
 
     /// Validates that the unit has enough information to install and launch.
     ///
     /// - id and bundleID must be non-empty.
-    /// - installSource must be non-empty.
-    /// - launchArguments must contain at least one element (the executable).
+    /// - installSource must be non-empty unless `artifact` provides the source.
+    /// - launchArguments must contain at least one element unless `artifact`
+    ///   is present (the executable path is resolved at install time).
     /// - If a healthcheck is attached, it must validate independently.
     public func validate() throws {
         if id.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -160,10 +173,10 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         if bundleID.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("RuntimeUnit bundleID must not be empty.")
         }
-        if installSource.trimmingCharacters(in: .whitespaces).isEmpty {
-            throw ValidationError("RuntimeUnit installSource must not be empty.")
+        if installSource.trimmingCharacters(in: .whitespaces).isEmpty && artifact == nil {
+            throw ValidationError("RuntimeUnit installSource must not be empty when no artifact is provided.")
         }
-        if launchArguments.isEmpty {
+        if launchArguments.isEmpty && artifact == nil {
             throw ValidationError("RuntimeUnit launchArguments must not be empty.")
         }
         try healthcheck?.validate()

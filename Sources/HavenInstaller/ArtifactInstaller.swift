@@ -159,6 +159,21 @@ public struct ArtifactInstaller: Sendable {
                 )
             }
 
+            // Strip the top-level directory if requested.
+            if descriptor.stripFirstDirectory {
+                do {
+                    try stripFirstDirectory(in: installDir)
+                    log.info("[install] Stripped first directory level")
+                } catch {
+                    try? cache.remove(unitID: unitID)
+                    log.error("[install] Strip first directory failed: \(error.localizedDescription)")
+                    throw ArtifactInstallerError.installFailed(
+                        unitID: unitID,
+                        detail: "Failed to strip first directory: \(error.localizedDescription)"
+                    )
+                }
+            }
+
         case .executable:
             do {
                 let destFile = installDir.appendingPathComponent(
@@ -193,6 +208,43 @@ public struct ArtifactInstaller: Sendable {
             installDirectory: installDir,
             wasCached: false
         )
+    }
+
+    // MARK: - Strip first directory
+
+    /// If the directory contains exactly one subdirectory (and no other items),
+    /// move all of that subdirectory's contents up one level and remove the
+    /// now-empty subdirectory.
+    private func stripFirstDirectory(in directory: URL) throws {
+        let contents = try fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+
+        // Filter to only directories
+        let directories = contents.filter { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+
+        // Only strip if there is exactly one top-level directory and nothing else
+        guard directories.count == 1, contents.count == 1,
+              let singleDir = directories.first else {
+            return
+        }
+
+        // Move all contents of the single directory up one level
+        let innerContents = try fileManager.contentsOfDirectory(
+            at: singleDir,
+            includingPropertiesForKeys: nil
+        )
+
+        for item in innerContents {
+            let destination = directory.appendingPathComponent(item.lastPathComponent)
+            try fileManager.moveItem(at: item, to: destination)
+        }
+
+        // Remove the now-empty directory
+        try fileManager.removeItem(at: singleDir)
     }
 
     // MARK: - Uninstall
