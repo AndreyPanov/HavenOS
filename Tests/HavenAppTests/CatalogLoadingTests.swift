@@ -14,18 +14,14 @@ final class CatalogLoadingTests: XCTestCase {
             .appendingPathComponent("CatalogLoadingTests-\(UUID().uuidString)")
     }
 
-    /// Creates a minimal valid catalog folder with one capability, bundle, and runtime unit.
+    /// Creates a minimal valid catalog folder with one service subfolder.
     private func makeValidCatalogFolder() throws -> URL {
         let root = makeTempDir()
         let fm = FileManager.default
 
-        let capsDir = root.appendingPathComponent("Capabilities")
-        let bundlesDir = root.appendingPathComponent("Bundles")
-        let runtimeDir = root.appendingPathComponent("Runtime")
-        let artifactDir = root.appendingPathComponent("Artifacts/HelloService")
-        try fm.createDirectory(at: capsDir, withIntermediateDirectories: true)
-        try fm.createDirectory(at: bundlesDir, withIntermediateDirectories: true)
-        try fm.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
+        let serviceDir = root.appendingPathComponent("hello-service")
+        let artifactDir = serviceDir.appendingPathComponent("Artifacts/HelloService")
+        try fm.createDirectory(at: serviceDir, withIntermediateDirectories: true)
         try fm.createDirectory(at: artifactDir, withIntermediateDirectories: true)
 
         try """
@@ -35,7 +31,7 @@ final class CatalogLoadingTests: XCTestCase {
             "version": "1.0.0",
             "description": "A greeting service."
         }
-        """.data(using: .utf8)!.write(to: capsDir.appendingPathComponent("hello-service.json"))
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("capability.json"))
 
         try """
         {
@@ -44,31 +40,20 @@ final class CatalogLoadingTests: XCTestCase {
             "capability": "haven.capability.hello-service",
             "runtimeUnits": ["haven.unit.hello-service"]
         }
-        """.data(using: .utf8)!.write(to: bundlesDir.appendingPathComponent("hello-service-basic.json"))
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("bundle.json"))
 
         try """
-        {
+        [{
             "id": "haven.unit.hello-service",
             "bundleID": "haven.bundle.hello-service-basic",
             "runtimeType": "native",
             "installSource": "Artifacts/HelloService",
             "launchArguments": ["serve", "--port", "8080"],
             "port": 8080
-        }
-        """.data(using: .utf8)!.write(to: runtimeDir.appendingPathComponent("hello-service.json"))
+        }]
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtime.json"))
 
         return root
-    }
-
-    /// Creates the catalog folder structure (Capabilities/, Bundles/, Runtime/) without specs.
-    private func createCatalogSubdirs(at root: URL) throws {
-        let fm = FileManager.default
-        for subdir in ["Capabilities", "Bundles", "Runtime"] {
-            try fm.createDirectory(
-                at: root.appendingPathComponent(subdir),
-                withIntermediateDirectories: true
-            )
-        }
     }
 
     // MARK: - Valid catalog folder
@@ -93,7 +78,7 @@ final class CatalogLoadingTests: XCTestCase {
 
         let unit = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.hello-service"])
         XCTAssertTrue(unit.installSource.hasPrefix("/"), "installSource should be resolved to absolute")
-        XCTAssertTrue(unit.installSource.hasSuffix("Artifacts/HelloService"))
+        XCTAssertTrue(unit.installSource.hasSuffix("hello-service/Artifacts/HelloService"))
         XCTAssertEqual(unit.port, 8080)
     }
 
@@ -105,7 +90,7 @@ final class CatalogLoadingTests: XCTestCase {
         XCTAssertFalse(exists, "Path should not exist for this test")
 
         // The app checks fileExists before calling SpecLoader.
-        // SpecLoader itself handles missing subdirectories gracefully.
+        // SpecLoader itself handles missing directories gracefully.
         let result = SpecLoader.load(from: nonexistent)
         XCTAssertTrue(result.succeeded, "Empty/missing dirs produce an empty but valid registry")
         let registry = try XCTUnwrap(result.registry)
@@ -118,12 +103,12 @@ final class CatalogLoadingTests: XCTestCase {
         let root = makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let capsDir = root.appendingPathComponent("Capabilities")
-        try FileManager.default.createDirectory(at: capsDir, withIntermediateDirectories: true)
+        let serviceDir = root.appendingPathComponent("bad-service")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
 
         // Write malformed JSON
         try "{ not valid json }".data(using: .utf8)!
-            .write(to: capsDir.appendingPathComponent("bad.json"))
+            .write(to: serviceDir.appendingPathComponent("capability.json"))
 
         let result = SpecLoader.load(from: root)
         XCTAssertFalse(result.succeeded)
@@ -159,13 +144,9 @@ final class CatalogLoadingTests: XCTestCase {
         let root2 = makeTempDir()
         defer { try? FileManager.default.removeItem(at: root2) }
 
-        let capsDir2 = root2.appendingPathComponent("Capabilities")
-        let bundlesDir2 = root2.appendingPathComponent("Bundles")
-        let runtimeDir2 = root2.appendingPathComponent("Runtime")
-        let artifactDir2 = root2.appendingPathComponent("Artifacts/OtherService")
-        try FileManager.default.createDirectory(at: capsDir2, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: bundlesDir2, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: runtimeDir2, withIntermediateDirectories: true)
+        let serviceDir2 = root2.appendingPathComponent("other-service")
+        let artifactDir2 = serviceDir2.appendingPathComponent("Artifacts/OtherService")
+        try FileManager.default.createDirectory(at: serviceDir2, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: artifactDir2, withIntermediateDirectories: true)
 
         try """
@@ -175,7 +156,7 @@ final class CatalogLoadingTests: XCTestCase {
             "version": "2.0.0",
             "description": "A different service."
         }
-        """.data(using: .utf8)!.write(to: capsDir2.appendingPathComponent("other.json"))
+        """.data(using: .utf8)!.write(to: serviceDir2.appendingPathComponent("capability.json"))
 
         try """
         {
@@ -184,17 +165,17 @@ final class CatalogLoadingTests: XCTestCase {
             "capability": "haven.capability.other-service",
             "runtimeUnits": ["haven.unit.other-service"]
         }
-        """.data(using: .utf8)!.write(to: bundlesDir2.appendingPathComponent("other.json"))
+        """.data(using: .utf8)!.write(to: serviceDir2.appendingPathComponent("bundle.json"))
 
         try """
-        {
+        [{
             "id": "haven.unit.other-service",
             "bundleID": "haven.bundle.other-service-basic",
             "runtimeType": "native",
             "installSource": "Artifacts/OtherService",
             "launchArguments": ["run"]
-        }
-        """.data(using: .utf8)!.write(to: runtimeDir2.appendingPathComponent("other.json"))
+        }]
+        """.data(using: .utf8)!.write(to: serviceDir2.appendingPathComponent("runtime.json"))
 
         // Load from folder 1
         let result1 = SpecLoader.load(from: root1)
@@ -211,28 +192,23 @@ final class CatalogLoadingTests: XCTestCase {
         XCTAssertNotNil(reg2.capabilitiesByID["haven.capability.other-service"])
     }
 
-    // MARK: - Multiple capabilities in one folder
+    // MARK: - Multiple services in one catalog
 
-    func testMultipleCapabilitiesInCatalog() throws {
+    func testMultipleServicesInCatalog() throws {
         let root = makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let fm = FileManager.default
-        let capsDir = root.appendingPathComponent("Capabilities")
-        let bundlesDir = root.appendingPathComponent("Bundles")
-        let runtimeDir = root.appendingPathComponent("Runtime")
-        let artifact1 = root.appendingPathComponent("Artifacts/Svc1")
-        let artifact2 = root.appendingPathComponent("Artifacts/Svc2")
-        try fm.createDirectory(at: capsDir, withIntermediateDirectories: true)
-        try fm.createDirectory(at: bundlesDir, withIntermediateDirectories: true)
-        try fm.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
-        try fm.createDirectory(at: artifact1, withIntermediateDirectories: true)
-        try fm.createDirectory(at: artifact2, withIntermediateDirectories: true)
 
         for (i, name) in ["svc-one", "svc-two"].enumerated() {
+            let serviceDir = root.appendingPathComponent(name)
+            let artifactDir = serviceDir.appendingPathComponent("Artifacts/Svc\(i + 1)")
+            try fm.createDirectory(at: serviceDir, withIntermediateDirectories: true)
+            try fm.createDirectory(at: artifactDir, withIntermediateDirectories: true)
+
             try """
             {"id": "haven.capability.\(name)", "name": "\(name)", "version": "1.0.0"}
-            """.data(using: .utf8)!.write(to: capsDir.appendingPathComponent("\(name).json"))
+            """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("capability.json"))
 
             try """
             {
@@ -241,17 +217,17 @@ final class CatalogLoadingTests: XCTestCase {
                 "capability": "haven.capability.\(name)",
                 "runtimeUnits": ["haven.unit.\(name)"]
             }
-            """.data(using: .utf8)!.write(to: bundlesDir.appendingPathComponent("\(name).json"))
+            """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("bundle.json"))
 
             try """
-            {
+            [{
                 "id": "haven.unit.\(name)",
                 "bundleID": "haven.bundle.\(name)",
                 "runtimeType": "native",
                 "installSource": "Artifacts/Svc\(i + 1)",
                 "launchArguments": ["run"]
-            }
-            """.data(using: .utf8)!.write(to: runtimeDir.appendingPathComponent("\(name).json"))
+            }]
+            """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtime.json"))
         }
 
         let result = SpecLoader.load(from: root)
@@ -272,21 +248,11 @@ final class CatalogLoadingTests: XCTestCase {
         let fm = FileManager.default
         XCTAssertFalse(fm.fileExists(atPath: root.path), "Folder should not exist yet")
 
-        // Simulate what ServiceManager.ensureCatalogFolderExists does
-        let subdirs = ["Capabilities", "Bundles", "Runtime"]
-        for subdir in subdirs {
-            try fm.createDirectory(
-                at: root.appendingPathComponent(subdir),
-                withIntermediateDirectories: true
-            )
-        }
+        // Simulate what ServiceManager.ensureCatalogFolderExists now does
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
-        // Verify all subdirectories were created
+        // Verify the folder was created
         XCTAssertTrue(fm.fileExists(atPath: root.path))
-        for subdir in subdirs {
-            let subPath = root.appendingPathComponent(subdir).path
-            XCTAssertTrue(fm.fileExists(atPath: subPath), "\(subdir) should exist")
-        }
 
         // Loading from the now-existing empty folder should succeed
         let result = SpecLoader.load(from: root)
@@ -301,32 +267,31 @@ final class CatalogLoadingTests: XCTestCase {
         let root = makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // Auto-create structure
-        try createCatalogSubdirs(at: root)
+        // Auto-create root
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
         // Initially empty
         let emptyResult = SpecLoader.load(from: root)
         XCTAssertTrue(emptyResult.succeeded)
         XCTAssertEqual(try XCTUnwrap(emptyResult.registry).capabilitiesByID.count, 0)
 
-        // Add a spec
-        let capsDir = root.appendingPathComponent("Capabilities")
-        let bundlesDir = root.appendingPathComponent("Bundles")
-        let runtimeDir = root.appendingPathComponent("Runtime")
-        let artifactDir = root.appendingPathComponent("Artifacts/TestSvc")
+        // Add a service
+        let serviceDir = root.appendingPathComponent("test-svc")
+        let artifactDir = serviceDir.appendingPathComponent("Artifacts/TestSvc")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
 
         try """
         {"id": "test.cap", "name": "Test", "version": "1.0.0"}
-        """.data(using: .utf8)!.write(to: capsDir.appendingPathComponent("test.json"))
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("capability.json"))
 
         try """
         {"id": "test.bundle", "name": "Test", "capability": "test.cap", "runtimeUnits": ["test.unit"]}
-        """.data(using: .utf8)!.write(to: bundlesDir.appendingPathComponent("test.json"))
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("bundle.json"))
 
         try """
-        {"id": "test.unit", "bundleID": "test.bundle", "runtimeType": "native", "installSource": "Artifacts/TestSvc", "launchArguments": ["run"]}
-        """.data(using: .utf8)!.write(to: runtimeDir.appendingPathComponent("test.json"))
+        [{"id": "test.unit", "bundleID": "test.bundle", "runtimeType": "native", "installSource": "Artifacts/TestSvc", "launchArguments": ["run"]}]
+        """.data(using: .utf8)!.write(to: serviceDir.appendingPathComponent("runtime.json"))
 
         // Reload should now find the spec
         let populatedResult = SpecLoader.load(from: root)
@@ -359,17 +324,20 @@ final class CatalogLoadingTests: XCTestCase {
         let root = makeTempDir()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try createCatalogSubdirs(at: root)
+        let fm = FileManager.default
 
-        let capsDir = root.appendingPathComponent("Capabilities")
-
-        // One valid capability and one malformed
+        // One valid service folder
+        let goodDir = root.appendingPathComponent("good-service")
+        try fm.createDirectory(at: goodDir, withIntermediateDirectories: true)
         try """
         {"id": "test.cap", "name": "Test", "version": "1.0.0"}
-        """.data(using: .utf8)!.write(to: capsDir.appendingPathComponent("good.json"))
+        """.data(using: .utf8)!.write(to: goodDir.appendingPathComponent("capability.json"))
 
+        // One service folder with malformed JSON
+        let badDir = root.appendingPathComponent("bad-service")
+        try fm.createDirectory(at: badDir, withIntermediateDirectories: true)
         try "{ broken json }".data(using: .utf8)!
-            .write(to: capsDir.appendingPathComponent("bad.json"))
+            .write(to: badDir.appendingPathComponent("capability.json"))
 
         let result = SpecLoader.load(from: root)
         XCTAssertFalse(result.succeeded, "Should fail due to malformed JSON")
@@ -377,7 +345,7 @@ final class CatalogLoadingTests: XCTestCase {
 
         let jsonIssues = result.issues.filter { $0.kind == .malformedJSON }
         XCTAssertEqual(jsonIssues.count, 1)
-        XCTAssertEqual(jsonIssues.first?.source, "bad.json")
+        XCTAssertEqual(jsonIssues.first?.source, "bad-service/capability.json")
     }
 
     // MARK: - Install uses loaded capability ID

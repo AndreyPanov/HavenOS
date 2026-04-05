@@ -20,11 +20,13 @@ struct CatalogCounts: Equatable {
 enum CatalogState: Equatable {
     /// Catalog has not been loaded yet.
     case notLoaded
-    /// Catalog loaded successfully.
+    /// Catalog loaded successfully with no issues.
     case loaded(counts: CatalogCounts)
+    /// Catalog loaded successfully but with non-fatal warnings.
+    case loadedWithWarnings(counts: CatalogCounts, warnings: [SpecLoadIssue])
     /// Catalog folder does not exist at the configured path.
     case folderNotFound(path: String)
-    /// Catalog loaded but SpecLoader reported validation issues.
+    /// Catalog failed to load due to errors.
     case issues([SpecLoadIssue])
 }
 
@@ -200,21 +202,15 @@ final class ServiceManager {
 
     // MARK: - Catalog Folder Setup
 
-    /// Ensure the catalog folder and its expected subdirectories exist.
+    /// Ensure the catalog folder exists.
     private func ensureCatalogFolderExists(at url: URL) {
         let fm = FileManager.default
-        let subdirs = ["Capabilities", "Bundles", "Runtime"]
 
         if !fm.fileExists(atPath: url.path) {
             log.info("Creating default catalog folder at: \(url.path)")
             do {
-                for subdir in subdirs {
-                    try fm.createDirectory(
-                        at: url.appendingPathComponent(subdir),
-                        withIntermediateDirectories: true
-                    )
-                }
-                log.info("Created catalog folder with subdirectories: \(subdirs.joined(separator: ", "))")
+                try fm.createDirectory(at: url, withIntermediateDirectories: true)
+                log.info("Created catalog folder")
             } catch {
                 log.error("Failed to create catalog folder: \(error.localizedDescription)")
             }
@@ -259,7 +255,16 @@ final class ServiceManager {
                 bundles: loadedRegistry.bundlesByID.count,
                 runtimeUnits: loadedRegistry.runtimeUnitsByID.count
             )
-            catalogState = .loaded(counts: counts)
+
+            let warnings = result.issues.filter { !$0.isError }
+            if warnings.isEmpty {
+                catalogState = .loaded(counts: counts)
+            } else {
+                for warning in warnings {
+                    log.warning("  \(warning.description)")
+                }
+                catalogState = .loadedWithWarnings(counts: counts, warnings: warnings)
+            }
             log.info("Catalog loaded: \(counts.capabilities) capabilities, \(counts.bundles) bundles, \(counts.runtimeUnits) runtime units")
         } else {
             log.error("Catalog loading failed with \(result.issues.count) issues")

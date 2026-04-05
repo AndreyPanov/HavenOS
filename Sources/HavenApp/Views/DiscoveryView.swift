@@ -153,22 +153,23 @@ struct DiscoveryView: View {
                     .font(.headline)
 
                 Text("""
-                Place JSON spec files in these subdirectories \
-                of your catalog folder:
+                Each service is a subfolder of your catalog folder \
+                containing its spec files:
                 """)
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    structureLine("Capabilities/", description: "What the service provides")
-                    structureLine("Bundles/", description: "Which implementation to use")
-                    structureLine("Runtime/", description: "How to run it (binary, args, ports)")
+                    structureLine("my-service/", description: "A service folder")
+                    specFileLine("capability.json", description: "What the service provides")
+                    specFileLine("bundle.json", description: "Which implementation to use")
+                    specFileLine("runtime.json", description: "How to run it (array of units)")
                 }
                 .padding(.leading, 4)
 
                 Text("""
                 The RuntimeUnit `installSource` field can be a \
-                path relative to the catalog folder \
+                path relative to the service folder \
                 (e.g. `Artifacts/MyService`).
                 """)
                     .font(.caption)
@@ -192,6 +193,20 @@ struct DiscoveryView: View {
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    private func specFileLine(_ filename: String, description: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "doc.text")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            Text(filename)
+                .font(.system(.caption, design: .monospaced))
+            Text("  \u{2014}  \(description)")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.leading, 24)
     }
 }
 

@@ -49,8 +49,9 @@ final class SpecLoaderTests: XCTestCase {
         let db = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.test-db"])
         XCTAssertEqual(db.bundleID, "haven.bundle.test-library-basic")
         XCTAssertEqual(db.runtimeType, .native)
-        // installSource is relative in JSON — SpecLoader resolves it to absolute.
-        let expectedInstallSource = root.appendingPathComponent("Artifacts/HelloService").path
+        // installSource is relative in JSON — SpecLoader resolves it against the service folder.
+        let serviceFolder = root.appendingPathComponent("test-library")
+        let expectedInstallSource = serviceFolder.appendingPathComponent("Artifacts/HelloService").path
         XCTAssertEqual(db.installSource, expectedInstallSource)
         XCTAssertNotNil(db.healthcheck)
 
@@ -150,8 +151,8 @@ final class SpecLoaderTests: XCTestCase {
         let jsonIssues = result.issues.filter { $0.kind == .malformedJSON }
         XCTAssertFalse(jsonIssues.isEmpty, "Expected at least one malformedJSON issue.")
         XCTAssertTrue(
-            jsonIssues.contains { $0.source == "broken.json" },
-            "Expected issue sourced to 'broken.json', got: \(jsonIssues)"
+            jsonIssues.contains { $0.source == "broken-service/capability.json" },
+            "Expected issue sourced to 'broken-service/capability.json', got: \(jsonIssues)"
         )
     }
 
@@ -162,13 +163,9 @@ final class SpecLoaderTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let capsDir = tmpDir.appendingPathComponent("Capabilities")
-        let bundlesDir = tmpDir.appendingPathComponent("Bundles")
-        let runtimeDir = tmpDir.appendingPathComponent("Runtime")
-        let artifactDir = tmpDir.appendingPathComponent("Artifacts/HelloService")
-        try FileManager.default.createDirectory(at: capsDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: bundlesDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
+        let serviceDir = tmpDir.appendingPathComponent("ep-test")
+        let artifactDir = serviceDir.appendingPathComponent("Artifacts/HelloService")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
 
         let capJSON = """
@@ -179,7 +176,7 @@ final class SpecLoaderTests: XCTestCase {
             "description": "Entrypoint test."
         }
         """.data(using: .utf8)!
-        try capJSON.write(to: capsDir.appendingPathComponent("ep-cap.json"))
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
 
         let bundleJSON = """
         {
@@ -190,10 +187,10 @@ final class SpecLoaderTests: XCTestCase {
             "version": "2.0.0"
         }
         """.data(using: .utf8)!
-        try bundleJSON.write(to: bundlesDir.appendingPathComponent("ep-bundle.json"))
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
 
         let unitJSON = """
-        {
+        [{
             "id": "haven.unit.ep-test",
             "bundleID": "haven.bundle.ep-test",
             "runtimeType": "native",
@@ -204,9 +201,9 @@ final class SpecLoaderTests: XCTestCase {
                 "env": {"PORT": "8080"}
             },
             "version": "2.0.0"
-        }
+        }]
         """.data(using: .utf8)!
-        try unitJSON.write(to: runtimeDir.appendingPathComponent("ep-unit.json"))
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtime.json"))
 
         let result = SpecLoader.load(from: tmpDir)
         XCTAssertTrue(result.succeeded, "Expected success but got issues: \(result.issues)")
@@ -331,7 +328,7 @@ final class SpecLoaderTests: XCTestCase {
 
     // MARK: - installSource path resolution
 
-    /// Helper: creates a minimal valid spec set in a temp directory and returns the root URL.
+    /// Helper: creates a minimal valid spec set in a temp directory using per-service layout.
     private func makeSpecsDir(
         installSource: String,
         createArtifact: Bool = true,
@@ -339,39 +336,35 @@ final class SpecLoaderTests: XCTestCase {
     ) throws -> URL {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
-        let capsDir = tmpDir.appendingPathComponent("Capabilities")
-        let bundlesDir = tmpDir.appendingPathComponent("Bundles")
-        let runtimeDir = tmpDir.appendingPathComponent("Runtime")
-        try FileManager.default.createDirectory(at: capsDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: bundlesDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: runtimeDir, withIntermediateDirectories: true)
+        let serviceDir = tmpDir.appendingPathComponent("test-service")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
 
         if createArtifact {
             let artifactPath = artifactRelativePath ?? installSource
-            let artifactDir = tmpDir.appendingPathComponent(artifactPath)
+            let artifactDir = serviceDir.appendingPathComponent(artifactPath)
             try FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
         }
 
         let capJSON = """
         {"id": "test.cap", "name": "Test", "version": "1.0.0"}
         """.data(using: .utf8)!
-        try capJSON.write(to: capsDir.appendingPathComponent("cap.json"))
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
 
         let bundleJSON = """
         {"id": "test.bundle", "name": "Test", "capability": "test.cap", "runtimeUnits": ["test.unit"]}
         """.data(using: .utf8)!
-        try bundleJSON.write(to: bundlesDir.appendingPathComponent("bundle.json"))
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
 
         let unitJSON = """
-        {
+        [{
             "id": "test.unit",
             "bundleID": "test.bundle",
             "runtimeType": "native",
             "installSource": "\(installSource)",
             "launchArguments": ["test"]
-        }
+        }]
         """.data(using: .utf8)!
-        try unitJSON.write(to: runtimeDir.appendingPathComponent("unit.json"))
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtime.json"))
 
         return tmpDir
     }
@@ -385,9 +378,9 @@ final class SpecLoaderTests: XCTestCase {
         let registry = try XCTUnwrap(result.registry)
 
         let unit = try XCTUnwrap(registry.runtimeUnitsByID["test.unit"])
-        let expected = root.appendingPathComponent("Artifacts/MyService").path
-        XCTAssertEqual(unit.installSource, expected, "Relative path should be resolved to absolute.")
         XCTAssertTrue(unit.installSource.hasPrefix("/"), "Resolved path must be absolute.")
+        XCTAssertTrue(unit.installSource.hasSuffix("test-service/Artifacts/MyService"),
+                      "Relative path should be resolved under service folder.")
     }
 
     func testAbsoluteInstallSourceUnchanged() throws {
@@ -412,23 +405,25 @@ final class SpecLoaderTests: XCTestCase {
         let registry = try XCTUnwrap(result.registry)
 
         let unit = try XCTUnwrap(registry.runtimeUnitsByID["test.unit"])
-        let expected = root.appendingPathComponent("My Artifacts/Hello Service").path
-        XCTAssertEqual(unit.installSource, expected, "Path with spaces should resolve correctly.")
+        XCTAssertTrue(unit.installSource.hasPrefix("/"), "Resolved path must be absolute.")
+        XCTAssertTrue(unit.installSource.hasSuffix("test-service/My Artifacts/Hello Service"),
+                      "Path with spaces should resolve correctly.")
     }
 
-    func testInvalidRelativePathFails() throws {
+    func testMissingRelativePathProducesWarning() throws {
         let root = try makeSpecsDir(installSource: "Nonexistent/Missing", createArtifact: false)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let result = SpecLoader.load(from: root)
-        XCTAssertFalse(result.succeeded, "Expected failure for missing installSource path.")
-        XCTAssertNil(result.registry)
+        // Missing installSource is a warning, not a fatal error — catalog still loads.
+        XCTAssertTrue(result.succeeded, "Expected success (with warnings) but got errors: \(result.issues)")
+        XCTAssertNotNil(result.registry)
 
-        let validationIssues = result.issues.filter { $0.kind == .validationFailure }
-        XCTAssertFalse(validationIssues.isEmpty, "Expected at least one validationFailure issue.")
+        let warnings = result.warnings
+        XCTAssertFalse(warnings.isEmpty, "Expected at least one warning.")
         XCTAssertTrue(
-            validationIssues.contains { $0.source == "test.unit" && $0.detail.contains("Nonexistent/Missing") },
-            "Expected issue mentioning the missing path, got: \(validationIssues)"
+            warnings.contains { $0.source == "test.unit" && $0.detail.contains("Nonexistent/Missing") },
+            "Expected warning mentioning the missing path, got: \(warnings)"
         )
     }
 }

@@ -1,0 +1,62 @@
+[
+    {
+        "id": "haven.unit.test-db",
+        "bundleID": "haven.bundle.test-library-basic",
+        "runtimeType": "native",
+        "installSource": "Artifacts/HelloService",
+        "launchArguments": [
+            "/opt/haven/bin/test-db",
+            "--datadir",
+            "${data_dir}/db"
+        ],
+        "healthcheck": {
+            "type": "tcp",
+            "target": "localhost:5432",
+            "intervalSeconds": 10,
+            "retries": 3
+        },
+        "environment": {
+            "DB_DATA": "${data_path}"
+        }
+    },
+    {
+        "id": "haven.unit.test-worker",
+        "bundleID": "haven.bundle.test-library-basic",
+        "runtimeType": "native",
+        "installSource": "Artifacts/HelloService",
+        "launchArguments": [
+            "/opt/haven/bin/test-worker",
+            "--config",
+            "${config_dir}/worker.toml"
+        ],
+        "dependsOn": ["haven.unit.test-db"],
+        "environment": {
+            "WORKER_DATA": "${data_path}",
+            "WORKER_LOGS": "${logs_dir}"
+        }
+    },
+    {
+        "id": "haven.unit.test-web",
+        "bundleID": "haven.bundle.test-library-basic",
+        "runtimeType": "native",
+        "installSource": "Artifacts/HelloService",
+        "launchArguments": [
+            "/opt/haven/bin/test-web",
+            "--port",
+            "${port}"
+        ],
+        "healthcheck": {
+            "type": "http",
+            "target": "http://localhost:${port}/health",
+            "intervalSeconds": 15,
+            "retries": 3
+        },
+        "port": 8080,
+        "dependsOn": ["haven.unit.test-worker"],
+        "environment": {
+            "WEB_PORT": "${port}",
+            "WEB_DATA": "${data_path}",
+            "WEB_LOGS": "${logs_dir}"
+        }
+    }
+]

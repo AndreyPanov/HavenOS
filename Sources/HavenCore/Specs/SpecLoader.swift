@@ -5,9 +5,10 @@ import Foundation
 /// Expected layout under the root URL:
 /// ```
 /// <root>/
-///   Capabilities/   *.json  →  Capability
-///   Bundles/         *.json  →  Bundle
-///   Runtime/         *.json  →  RuntimeUnit
+///   my-service/
+///     capability.json   — single Capability object
+///     bundle.json       — single Bundle object
+///     runtime.json      — JSON array of RuntimeUnit objects
 /// ```
 ///
 /// Usage:
@@ -31,32 +32,54 @@ public enum SpecLoader {
     public static func load(from rootURL: URL) -> SpecLoadResult {
         var issues: [SpecLoadIssue] = []
 
-        let capabilities = decodeSpecs(
-            Capability.self,
-            directory: rootURL.appendingPathComponent("Capabilities"),
-            knownKeys: StrictJSONDecoder.capabilityKeys,
-            issues: &issues
-        )
-        let bundles = decodeSpecs(
-            Bundle.self,
-            directory: rootURL.appendingPathComponent("Bundles"),
-            knownKeys: StrictJSONDecoder.bundleKeys,
-            issues: &issues
-        )
-        let rawRuntimeUnits = decodeSpecs(
-            RuntimeUnit.self,
-            directory: rootURL.appendingPathComponent("Runtime"),
-            knownKeys: StrictJSONDecoder.runtimeUnitKeys,
-            issues: &issues
-        )
+        // Enumerate subdirectories of root — each is a service folder.
+        let serviceFolders = enumerateServiceFolders(rootURL)
 
-        // --- Resolve relative installSource paths ---
-        let runtimeUnits = resolveInstallSources(rawRuntimeUnits, rootURL: rootURL, issues: &issues)
+        var capabilities: [Capability] = []
+        var bundles: [Bundle] = []
+        var allRuntimeUnits: [RuntimeUnit] = []
+
+        for folder in serviceFolders {
+            let folderName = folder.lastPathComponent
+
+            // capability.json — single object
+            if let cap: Capability = decodeSingleSpec(
+                Capability.self,
+                file: folder.appendingPathComponent("capability.json"),
+                knownKeys: StrictJSONDecoder.capabilityKeys,
+                folderName: folderName,
+                issues: &issues
+            ) {
+                capabilities.append(cap)
+            }
+
+            // bundle.json — single object
+            if let bun: Bundle = decodeSingleSpec(
+                Bundle.self,
+                file: folder.appendingPathComponent("bundle.json"),
+                knownKeys: StrictJSONDecoder.bundleKeys,
+                folderName: folderName,
+                issues: &issues
+            ) {
+                bundles.append(bun)
+            }
+
+            // runtime.json — JSON array of RuntimeUnit objects
+            let rawUnits = decodeRuntimeArray(
+                file: folder.appendingPathComponent("runtime.json"),
+                folderName: folderName,
+                issues: &issues
+            )
+
+            // Resolve relative installSource paths against the service folder.
+            let resolvedUnits = resolveInstallSources(rawUnits, rootURL: folder, issues: &issues)
+            allRuntimeUnits.append(contentsOf: resolvedUnits)
+        }
 
         // --- Duplicate ID detection ---
         let capsByID = deduplicateByID(capabilities, kind: "Capability", issues: &issues)
         let bundlesByID = deduplicateByID(bundles, kind: "Bundle", issues: &issues)
-        let unitsByID = deduplicateByID(runtimeUnits, kind: "RuntimeUnit", issues: &issues)
+        let unitsByID = deduplicateByID(allRuntimeUnits, kind: "RuntimeUnit", issues: &issues)
 
         // --- Cross-reference validation ---
         crossValidate(
@@ -71,58 +94,115 @@ public enum SpecLoader {
         validateAll(bundlesByID.values, issues: &issues)
         validateAll(unitsByID.values, issues: &issues)
 
-        if issues.isEmpty {
+        let hasErrors = issues.contains { $0.isError }
+
+        if hasErrors {
+            return SpecLoadResult(registry: nil, issues: issues)
+        } else {
             let registry = SpecRegistry(
                 capabilitiesByID: capsByID,
                 bundlesByID: bundlesByID,
                 runtimeUnitsByID: unitsByID
             )
-            return SpecLoadResult(registry: registry, issues: [])
-        } else {
-            return SpecLoadResult(registry: nil, issues: issues)
+            return SpecLoadResult(registry: registry, issues: issues)
         }
     }
 
     // MARK: - Internals
 
-    /// Read every `.json` file in `directory`, strict-decode each one.
-    private static func decodeSpecs<T: Decodable & Identifiable>(
-        _ type: T.Type,
-        directory: URL,
-        knownKeys: Set<String>,
-        issues: inout [SpecLoadIssue]
-    ) -> [T] where T.ID == String {
+    /// Returns URLs for all immediate subdirectories of `rootURL`, sorted by name.
+    private static func enumerateServiceFolders(_ rootURL: URL) -> [URL] {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
+            at: rootURL,
+            includingPropertiesForKeys: [.isDirectoryKey]
         ) else {
-            // Directory may not exist — that is fine (no specs of this kind).
+            return []
+        }
+        return contents
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    /// Decode a single spec object from a well-known filename.
+    /// Returns nil if the file does not exist (not every service folder must have all files).
+    private static func decodeSingleSpec<T: Decodable & Identifiable>(
+        _ type: T.Type,
+        file: URL,
+        knownKeys: Set<String>,
+        folderName: String,
+        issues: inout [SpecLoadIssue]
+    ) -> T? where T.ID == String {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: file.path) else { return nil }
+
+        let source = "\(folderName)/\(file.lastPathComponent)"
+        guard let data = try? Data(contentsOf: file) else {
+            issues.append(SpecLoadIssue(
+                kind: .malformedJSON,
+                source: source,
+                detail: "Could not read file."
+            ))
+            return nil
+        }
+        let (value, fileIssues) = StrictJSONDecoder.decode(
+            type, from: data, knownKeys: knownKeys, source: source
+        )
+        issues.append(contentsOf: fileIssues)
+        return value
+    }
+
+    /// Decode an array of RuntimeUnit objects from runtime.json.
+    /// Returns an empty array if the file does not exist.
+    private static func decodeRuntimeArray(
+        file: URL,
+        folderName: String,
+        issues: inout [SpecLoadIssue]
+    ) -> [RuntimeUnit] {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: file.path) else { return [] }
+
+        let source = "\(folderName)/\(file.lastPathComponent)"
+        guard let data = try? Data(contentsOf: file) else {
+            issues.append(SpecLoadIssue(
+                kind: .malformedJSON,
+                source: source,
+                detail: "Could not read file."
+            ))
             return []
         }
 
-        let jsonFiles = contents
-            .filter { $0.pathExtension.lowercased() == "json" }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-
-        var results: [T] = []
-        for fileURL in jsonFiles {
-            let filename = fileURL.lastPathComponent
-            guard let data = try? Data(contentsOf: fileURL) else {
-                issues.append(SpecLoadIssue(
-                    kind: .malformedJSON,
-                    source: filename,
-                    detail: "Could not read file."
-                ))
-                continue
+        // Unknown-key check: parse as array of dictionaries first.
+        do {
+            if let topLevel = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                for (index, dict) in topLevel.enumerated() {
+                    let extraKeys = Set(dict.keys).subtracting(StrictJSONDecoder.runtimeUnitKeys)
+                    for key in extraKeys.sorted() {
+                        issues.append(SpecLoadIssue(
+                            kind: .unknownField,
+                            source: "\(source)[\(index)]",
+                            detail: "Unknown field '\(key)'."
+                        ))
+                    }
+                }
             }
-            let (value, fileIssues) = StrictJSONDecoder.decode(
-                type, from: data, knownKeys: knownKeys, source: filename
-            )
-            issues.append(contentsOf: fileIssues)
-            if let value { results.append(value) }
+        } catch {
+            // Will be caught in decode pass below.
         }
-        return results
+
+        // Decode as [RuntimeUnit].
+        let decoder = JSONDecoder()
+        do {
+            let units = try decoder.decode([RuntimeUnit].self, from: data)
+            return units
+        } catch {
+            issues.append(SpecLoadIssue(
+                kind: .malformedJSON,
+                source: source,
+                detail: error.localizedDescription
+            ))
+            return []
+        }
     }
 
     /// Collect items into a dictionary keyed by ID, flagging duplicates.
@@ -186,11 +266,11 @@ public enum SpecLoader {
         }
     }
 
-    /// Resolve relative `installSource` paths against the specs root directory.
+    /// Resolve relative `installSource` paths against the service folder.
     ///
     /// - Paths starting with `/` are treated as absolute and kept as-is.
-    /// - All other paths are resolved relative to `rootURL`.
-    /// - If the resolved path does not exist on disk, a `.validationFailure` is emitted.
+    /// - All other paths are resolved relative to `rootURL` (the service folder).
+    /// - If the resolved path does not exist on disk, a warning is emitted.
     private static func resolveInstallSources(
         _ units: [RuntimeUnit],
         rootURL: URL,
@@ -203,13 +283,14 @@ public enum SpecLoader {
                 // Absolute path — keep as-is.
                 return unit
             }
-            // Relative path — resolve from specs root.
+            // Relative path — resolve from service folder.
             let resolved = rootURL.appendingPathComponent(source).path
             if !fm.fileExists(atPath: resolved) {
                 issues.append(SpecLoadIssue(
                     kind: .validationFailure,
                     source: unit.id,
-                    detail: "installSource path does not exist: '\(resolved)' (resolved from '\(source)')."
+                    detail: "installSource path does not exist: '\(resolved)' (resolved from '\(source)').",
+                    severity: .warning
                 ))
             }
             return unit.withInstallSource(resolved)
