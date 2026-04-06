@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct ServiceCardView: View {
     @Environment(ServiceManager.self) private var serviceManager
+    @State private var showingInfo = false
     let service: InstalledService
 
     var body: some View {
@@ -13,16 +15,9 @@ struct ServiceCardView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 32, height: 32)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(service.name)
-                        .font(.headline)
-                        .lineLimit(1)
-                    if let port = service.port {
-                        Text("Port \(port)")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+                Text(service.name)
+                    .font(.headline)
+                    .lineLimit(1)
 
                 Spacer()
 
@@ -36,13 +31,6 @@ struct ServiceCardView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
 
-            // Local URL
-            if let url = service.localURL {
-                Text(url)
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-            }
-
             Divider()
 
             // Action buttons
@@ -52,6 +40,13 @@ struct ServiceCardView: View {
                         Task { await serviceManager.stopService(capabilityID: service.id) }
                     }
                     .disabled(serviceManager.isPerformingAction)
+
+                    if let url = service.localURL,
+                       let openURL = URL(string: url) {
+                        CardActionButton(title: "Open", icon: "globe") {
+                            NSWorkspace.shared.open(openURL)
+                        }
+                    }
                 } else {
                     CardActionButton(title: "Start", icon: "play.circle") {
                         Task { await serviceManager.startService(capabilityID: service.id) }
@@ -60,6 +55,19 @@ struct ServiceCardView: View {
                 }
 
                 Spacer()
+
+                if service.port != nil {
+                    Button {
+                        showingInfo.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
+                        ServiceInfoPopover(service: service)
+                    }
+                }
 
                 Menu {
                     Button("Restart", systemImage: "arrow.clockwise") {
@@ -98,6 +106,38 @@ private struct CardActionButton: View {
         }
         .buttonStyle(.glass)
         .controlSize(.small)
+    }
+}
+
+private struct ServiceInfoPopover: View {
+    let service: InstalledService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let port = service.port {
+                InfoRow(label: "Port", value: "\(port)")
+            }
+            if let url = service.localURL {
+                InfoRow(label: "Address", value: url)
+            }
+        }
+        .font(.callout)
+        .padding(12)
+    }
+}
+
+private struct InfoRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .textSelection(.enabled)
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ServiceDetailView: View {
@@ -82,6 +83,15 @@ struct ServiceDetailView: View {
                         .buttonStyle(.glass)
                         .controlSize(.large)
                         .disabled(serviceManager.isPerformingAction)
+
+                        if let url = service.localURL,
+                           let openURL = URL(string: url) {
+                            Button("Open in Browser", systemImage: "globe") {
+                                NSWorkspace.shared.open(openURL)
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.large)
+                        }
                     } else {
                         Button("Start", systemImage: "play.circle") {
                             Task { await serviceManager.startService(capabilityID: service.id) }
