@@ -26,11 +26,26 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
 
         /// Module-based entrypoint — translates to `python3 -m <module>`.
         public struct PythonEntrypoint: Codable, Equatable, Sendable {
-            /// The Python module to run (e.g. `"cps"` → `python3 -m cps`).
+            /// The Python module to run (e.g. `"calibreweb"` → `python3 -m calibreweb`).
             public let module: String
 
-            public init(module: String) {
+            /// Additional command-line arguments appended after `-m <module>`.
+            /// Supports `${placeholder}` template expansion (e.g. `${data_dir}`).
+            public let args: [String]
+
+            public init(module: String, args: [String] = []) {
                 self.module = module
+                self.args = args
+            }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                module = try c.decode(String.self, forKey: .module)
+                args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
+            }
+
+            private enum CodingKeys: String, CodingKey {
+                case module, args
             }
         }
 
@@ -169,8 +184,16 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         let ep = try c.decodeIfPresent(Entrypoint.self, forKey: .entrypoint)
         entrypoint = ep
 
-        // Entrypoint.args takes precedence over top-level launchArguments.
-        if let epArgs = ep?.args {
+        let pythonConfig = try c.decodeIfPresent(PythonConfig.self, forKey: .python)
+        python = pythonConfig
+
+        // Determine launchArguments priority:
+        // 1. python.entrypoint.args (for Python units)
+        // 2. entrypoint.args (for native/artifact units)
+        // 3. top-level launchArguments
+        if let pyArgs = pythonConfig?.entrypoint.args, !pyArgs.isEmpty {
+            launchArguments = pyArgs
+        } else if let epArgs = ep?.args {
             launchArguments = epArgs
         } else {
             launchArguments = try c.decodeIfPresent([String].self, forKey: .launchArguments) ?? []
@@ -187,7 +210,6 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         dependsOn = try c.decodeIfPresent([String].self, forKey: .dependsOn) ?? []
         port = try c.decodeIfPresent(Int.self, forKey: .port)
         version = try c.decodeIfPresent(String.self, forKey: .version)
-        python = try c.decodeIfPresent(PythonConfig.self, forKey: .python)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -337,7 +359,10 @@ extension RuntimeUnit {
         python: PythonConfig(
             package: "calibreweb",
             version: "0.6.26",
-            entrypoint: .init(module: "cps")
+            entrypoint: .init(
+                module: "calibreweb",
+                args: ["-p", "${data_dir}/app.db"]
+            )
         )
     )
 

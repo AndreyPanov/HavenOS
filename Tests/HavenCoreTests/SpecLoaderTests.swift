@@ -537,6 +537,60 @@ final class SpecLoaderTests: XCTestCase {
         XCTAssertNoThrow(try unit.validate())
     }
 
+    func testNestedUnknownFieldsDetected() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let serviceDir = tmpDir.appendingPathComponent("nested-check")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let capJSON = """
+        {"id": "test.cap", "name": "Test", "version": "1.0.0"}
+        """.data(using: .utf8)!
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
+
+        let bundleJSON = """
+        {"id": "test.bundle", "name": "Test", "capability": "test.cap", "runtimeUnits": ["test.unit"]}
+        """.data(using: .utf8)!
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
+
+        // runtimes.json with unknown fields at multiple nesting levels
+        let unitJSON = """
+        [{
+            "id": "test.unit",
+            "bundleID": "test.bundle",
+            "runtimeType": "python",
+            "python": {
+                "package": "pkg", "version": "1.0",
+                "entrypoint": { "module": "mod", "bogusEntryField": true },
+                "bogusConfigField": "bad"
+            },
+            "healthcheck": {
+                "type": "http", "target": "http://localhost:8080/",
+                "intervalSeconds": 10, "retries": 3,
+                "bogusHCField": 42
+            }
+        }]
+        """.data(using: .utf8)!
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
+
+        let result = SpecLoader.load(from: tmpDir)
+        let unknowns = result.issues.filter { $0.kind == .unknownField }
+
+        XCTAssertTrue(
+            unknowns.contains { $0.detail.contains("bogusConfigField") },
+            "Expected warning for python.bogusConfigField, got: \(unknowns)"
+        )
+        XCTAssertTrue(
+            unknowns.contains { $0.detail.contains("bogusEntryField") },
+            "Expected warning for python.entrypoint.bogusEntryField, got: \(unknowns)"
+        )
+        XCTAssertTrue(
+            unknowns.contains { $0.detail.contains("bogusHCField") },
+            "Expected warning for healthcheck.bogusHCField, got: \(unknowns)"
+        )
+    }
+
     func testArtifactFieldInRuntimesJsonArray() throws {
         // Test that the SpecLoader can load a runtimes.json with artifact fields
         let tmpDir = FileManager.default.temporaryDirectory

@@ -355,11 +355,48 @@ final class RuntimeUnitTests: XCTestCase {
         let original = RuntimeUnit.testPythonExample
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: data)
-        XCTAssertEqual(original, decoded)
         XCTAssertEqual(decoded.python?.package, "calibreweb")
         XCTAssertEqual(decoded.python?.version, "0.6.26")
-        XCTAssertEqual(decoded.python?.entrypoint.module, "cps")
+        XCTAssertEqual(decoded.python?.entrypoint.module, "calibreweb")
+        XCTAssertEqual(decoded.python?.entrypoint.args, ["-p", "${data_dir}/app.db"])
         XCTAssertEqual(decoded.runtimeType, .python)
+        // python.entrypoint.args takes precedence → populates launchArguments on decode
+        XCTAssertEqual(decoded.launchArguments, ["-p", "${data_dir}/app.db"])
+    }
+
+    func testPythonEntrypointArgsTakePrecedence() throws {
+        // python.entrypoint.args should take precedence over top-level launchArguments
+        let json = """
+        {
+            "id": "u.1", "bundleID": "b.1", "runtimeType": "python",
+            "launchArguments": ["--should-be-ignored"],
+            "python": {
+                "package": "pkg", "version": "1.0",
+                "entrypoint": { "module": "mod", "args": ["-p", "/data/app.db"] }
+            }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: json)
+        XCTAssertEqual(decoded.launchArguments, ["-p", "/data/app.db"])
+        XCTAssertEqual(decoded.python?.entrypoint.args, ["-p", "/data/app.db"])
+    }
+
+    func testPythonEntrypointWithoutArgsFallsToLaunchArguments() throws {
+        let json = """
+        {
+            "id": "u.1", "bundleID": "b.1", "runtimeType": "python",
+            "launchArguments": ["--fallback"],
+            "python": {
+                "package": "pkg", "version": "1.0",
+                "entrypoint": { "module": "mod" }
+            }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: json)
+        XCTAssertEqual(decoded.launchArguments, ["--fallback"])
+        XCTAssertEqual(decoded.python?.entrypoint.args, [])
     }
 
     func testEntrypointRoundTrip() throws {

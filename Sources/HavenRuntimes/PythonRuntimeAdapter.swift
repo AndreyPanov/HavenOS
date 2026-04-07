@@ -1,5 +1,8 @@
 import Foundation
 import HavenCore
+import os
+
+private let log = Logger(subsystem: "com.haven", category: "PythonAdapter")
 
 /// Prepares Haven-managed Python applications for launch.
 ///
@@ -83,6 +86,9 @@ public struct PythonRuntimeAdapter: RuntimeAdapter {
         // Managed directories: the venv root must exist before launch.
         var managedDirs = serviceLayout.allDirectories
         managedDirs.append(venvRoot)
+
+        let fullCommand = ([pythonExecutable.path] + arguments).joined(separator: " ")
+        log.info("[prepare] Launch command: \(fullCommand)")
 
         return PreparedRuntime(
             unitID: unit.id,

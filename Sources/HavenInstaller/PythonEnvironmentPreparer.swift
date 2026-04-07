@@ -34,9 +34,9 @@ public struct PythonEnvironmentPreparer: Sendable {
     /// Well-known Python 3 interpreter paths, in priority order.
     /// No $PATH resolution — absolute paths only.
     static let pythonSearchPaths: [String] = [
-        "/usr/bin/python3",
-        "/usr/local/bin/python3",
         "/opt/homebrew/bin/python3",
+        "/usr/local/bin/python3",
+        "/usr/bin/python3",
     ]
 
     private let commandRunner: any PythonCommandRunner
@@ -220,13 +220,41 @@ public struct PythonEnvironmentPreparer: Sendable {
 
     // MARK: - Private
 
+    /// Minimum Python version required by Haven.
+    /// Python 3.10+ ensures OpenSSL support, modern hashlib (scrypt), and
+    /// up-to-date pip/venv behavior.
+    static let minimumPythonVersion = (major: 3, minor: 10)
+
     private func findSystemPython() throws -> String {
         for path in Self.pythonSearchPaths {
-            if fileManager.isExecutableFile(atPath: path) {
-                return path
+            guard fileManager.isExecutableFile(atPath: path) else { continue }
+
+            // Check version: run `python3 --version` → "Python 3.12.8"
+            if let result = try? commandRunner.run(
+                executable: path,
+                arguments: ["--version"],
+                environment: nil
+            ), result.exitCode == 0 {
+                let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let version = Self.parsePythonVersion(output),
+                   (version.major, version.minor) >= Self.minimumPythonVersion
+                {
+                    return path
+                }
+                log.info("[findPython] Skipping \(path): version \(output) is below minimum \(Self.minimumPythonVersion.major).\(Self.minimumPythonVersion.minor)")
             }
         }
         throw PythonEnvironmentError.pythonNotFound
+    }
+
+    /// Parse "Python X.Y.Z" into (major, minor, patch).
+    static func parsePythonVersion(_ output: String) -> (major: Int, minor: Int, patch: Int)? {
+        // Matches "Python 3.12.8" or "Python 3.10.0"
+        let parts = output.replacingOccurrences(of: "Python ", with: "")
+            .split(separator: ".")
+            .compactMap { Int($0) }
+        guard parts.count >= 2 else { return nil }
+        return (parts[0], parts[1], parts.count > 2 ? parts[2] : 0)
     }
 
     private func isVenvValid(

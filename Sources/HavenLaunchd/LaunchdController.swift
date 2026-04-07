@@ -134,12 +134,18 @@ public struct LaunchdController: Sendable {
             )
         }
 
-        guard result.succeeded else {
-            log.error("[uninstall] Bootout failed: \(combinedOutput(result))")
-            throw LaunchdControllerError.unloadFailed(
-                label: label,
-                detail: combinedOutput(result)
-            )
+        if !result.succeeded {
+            let output = combinedOutput(result)
+            // "No such process" means the job is already gone — not an error.
+            if output.contains("No such process") || output.contains("Could not find service") {
+                log.info("[uninstall] Job already unloaded: \(label)")
+            } else {
+                log.error("[uninstall] Bootout failed: \(output)")
+                throw LaunchdControllerError.unloadFailed(
+                    label: label,
+                    detail: output
+                )
+            }
         }
 
         // 2. Remove the plist file

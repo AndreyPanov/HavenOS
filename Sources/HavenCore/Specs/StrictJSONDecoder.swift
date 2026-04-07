@@ -88,4 +88,37 @@ extension StrictJSONDecoder {
     static let healthcheckKeys: Set<String> = [
         "type", "target", "intervalSeconds", "retries"
     ]
+
+    static let pythonConfigKeys: Set<String> = [
+        "package", "version", "entrypoint"
+    ]
+
+    static let pythonEntrypointKeys: Set<String> = [
+        "module", "args"
+    ]
+
+    static let entrypointKeys: Set<String> = [
+        "command", "args", "env"
+    ]
+
+    static let artifactKeys: Set<String> = [
+        "type", "repo", "version", "assets"
+    ]
+
+    /// Check a nested dictionary for unknown keys, appending issues.
+    static func checkNestedKeys(
+        in dict: [String: Any],
+        knownKeys: Set<String>,
+        source: String,
+        issues: inout [SpecLoadIssue]
+    ) {
+        let extraKeys = Set(dict.keys).subtracting(knownKeys)
+        for key in extraKeys.sorted() {
+            issues.append(SpecLoadIssue(
+                kind: .unknownField,
+                source: source,
+                detail: "Unknown field '\(key)'."
+            ))
+        }
+    }
 }

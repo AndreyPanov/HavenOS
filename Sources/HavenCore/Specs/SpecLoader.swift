@@ -176,13 +176,43 @@ public enum SpecLoader {
         do {
             if let topLevel = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                 for (index, dict) in topLevel.enumerated() {
-                    let extraKeys = Set(dict.keys).subtracting(StrictJSONDecoder.runtimeUnitKeys)
-                    for key in extraKeys.sorted() {
-                        issues.append(SpecLoadIssue(
-                            kind: .unknownField,
-                            source: "\(source)[\(index)]",
-                            detail: "Unknown field '\(key)'."
-                        ))
+                    let unitSource = "\(source)[\(index)]"
+
+                    // Top-level keys
+                    StrictJSONDecoder.checkNestedKeys(
+                        in: dict, knownKeys: StrictJSONDecoder.runtimeUnitKeys,
+                        source: unitSource, issues: &issues
+                    )
+
+                    // Nested: python block
+                    if let pythonDict = dict["python"] as? [String: Any] {
+                        StrictJSONDecoder.checkNestedKeys(
+                            in: pythonDict, knownKeys: StrictJSONDecoder.pythonConfigKeys,
+                            source: "\(unitSource).python", issues: &issues
+                        )
+                        // Nested: python.entrypoint
+                        if let epDict = pythonDict["entrypoint"] as? [String: Any] {
+                            StrictJSONDecoder.checkNestedKeys(
+                                in: epDict, knownKeys: StrictJSONDecoder.pythonEntrypointKeys,
+                                source: "\(unitSource).python.entrypoint", issues: &issues
+                            )
+                        }
+                    }
+
+                    // Nested: entrypoint block
+                    if let epDict = dict["entrypoint"] as? [String: Any] {
+                        StrictJSONDecoder.checkNestedKeys(
+                            in: epDict, knownKeys: StrictJSONDecoder.entrypointKeys,
+                            source: "\(unitSource).entrypoint", issues: &issues
+                        )
+                    }
+
+                    // Nested: healthcheck block
+                    if let hcDict = dict["healthcheck"] as? [String: Any] {
+                        StrictJSONDecoder.checkNestedKeys(
+                            in: hcDict, knownKeys: StrictJSONDecoder.healthcheckKeys,
+                            source: "\(unitSource).healthcheck", issues: &issues
+                        )
                     }
                 }
             }
