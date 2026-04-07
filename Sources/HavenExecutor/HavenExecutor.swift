@@ -76,7 +76,15 @@ public struct HavenExecutor: Sendable {
             throw ExecutorError.alreadyInstalled(capabilityID: capabilityID)
         }
 
-        // 2. Plan
+        // 2. Collect ports already in use by other installed services
+        let existingState = try stateStore.load()
+        let usedPorts = Set(
+            existingState.services.values
+                .flatMap(\.portAssignments)
+                .map(\.port)
+        )
+
+        // 3. Plan
         log.info("[install] Planning...")
         let plan: InstallPlan
         do {
@@ -84,7 +92,8 @@ public struct HavenExecutor: Sendable {
                 capabilityID: capabilityID,
                 registry: registry,
                 settings: settings,
-                baseDirectory: paths.base
+                baseDirectory: paths.base,
+                usedPorts: usedPorts
             )
         } catch {
             throw ExecutorError.planningFailed(

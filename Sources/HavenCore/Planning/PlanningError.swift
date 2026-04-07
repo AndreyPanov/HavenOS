@@ -17,6 +17,9 @@ public enum PlanningError: Error, LocalizedError, Equatable, Sendable {
     /// The runtime unit dependency graph contains a cycle.
     case dependencyCycle(unitIDs: [String])
 
+    /// No available port could be found for a runtime unit (all ports exhausted).
+    case noAvailablePorts(unitID: String)
+
     public var errorDescription: String? {
         switch self {
         case .capabilityNotFound(let id):
@@ -29,6 +32,8 @@ public enum PlanningError: Error, LocalizedError, Equatable, Sendable {
             "Required setting '\(key)' missing for bundle '\(bundleID)'."
         case .dependencyCycle(let ids):
             "Dependency cycle detected: \(ids.joined(separator: " → "))."
+        case .noAvailablePorts(let unitID):
+            "No available port found for runtime unit '\(unitID)'."
         }
     }
 }

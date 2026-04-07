@@ -405,4 +405,97 @@ final class PlannerTests: XCTestCase {
         XCTAssertEqual(ctx.values["data_path"], "/testdata")
         XCTAssertEqual(ctx.values["port"], "8080")
     }
+
+    // MARK: - Port conflict avoidance
+
+    func testPortConflictAutoAssignsNextPort() throws {
+        let registry = makeStandardRegistry()
+        // Port 8080 is already in use by another installed service
+        let plan = try Planner.planInstall(
+            capabilityID: "haven.capability.test-library",
+            registry: registry,
+            settings: ["data_path": "/srv/data"],
+            baseDirectory: baseDir,
+            usedPorts: [8080]
+        )
+
+        let webUnit = plan.service.units[2]
+        XCTAssertEqual(webUnit.port?.number, 8081)
+        XCTAssertEqual(webUnit.port?.source, .autoAssigned)
+        // Template expansion should use the reassigned port
+        XCTAssertEqual(webUnit.resolvedEnvironment["WEB_PORT"], "8081")
+        XCTAssertEqual(
+            webUnit.resolvedHealthcheck?.target,
+            "http://localhost:8081/health"
+        )
+    }
+
+    func testNoConflictKeepsSpecPort() throws {
+        let registry = makeStandardRegistry()
+        let plan = try Planner.planInstall(
+            capabilityID: "haven.capability.test-library",
+            registry: registry,
+            settings: ["data_path": "/srv/data"],
+            baseDirectory: baseDir,
+            usedPorts: [3000, 5000]
+        )
+
+        let webUnit = plan.service.units[2]
+        XCTAssertEqual(webUnit.port?.number, 8080)
+        XCTAssertEqual(webUnit.port?.source, .spec)
+    }
+
+    func testSettingOverrideConflictAutoAssigns() throws {
+        let registry = makeStandardRegistry()
+        let plan = try Planner.planInstall(
+            capabilityID: "haven.capability.test-library",
+            registry: registry,
+            settings: ["data_path": "/srv/data", "port": "9999"],
+            baseDirectory: baseDir,
+            usedPorts: [9999]
+        )
+
+        let webUnit = plan.service.units[2]
+        XCTAssertEqual(webUnit.port?.number, 10000)
+        XCTAssertEqual(webUnit.port?.source, .autoAssigned)
+    }
+
+    func testWithinInstallConflictAutoAssigns() throws {
+        // Two units that both want port 9000
+        let unitA = RuntimeUnit(
+            id: "unit.a", bundleID: "b", runtimeType: .native,
+            installSource: "/bin/a",
+            launchArguments: ["/bin/a"],
+            port: 9000
+        )
+        let unitB = RuntimeUnit(
+            id: "unit.b", bundleID: "b", runtimeType: .native,
+            installSource: "/bin/b",
+            launchArguments: ["/bin/b"],
+            port: 9000
+        )
+        let bundle = Bundle(
+            id: "b", name: "B",
+            capability: "cap",
+            runtimeUnits: ["unit.a", "unit.b"]
+        )
+        let cap = Capability(id: "cap", name: "Cap", version: "1.0.0")
+        let registry = SpecRegistry(
+            capabilitiesByID: ["cap": cap],
+            bundlesByID: ["b": bundle],
+            runtimeUnitsByID: ["unit.a": unitA, "unit.b": unitB]
+        )
+
+        let plan = try Planner.planInstall(
+            capabilityID: "cap",
+            registry: registry,
+            baseDirectory: baseDir
+        )
+
+        // First unit keeps its spec port, second gets auto-assigned
+        XCTAssertEqual(plan.service.units[0].port?.number, 9000)
+        XCTAssertEqual(plan.service.units[0].port?.source, .spec)
+        XCTAssertEqual(plan.service.units[1].port?.number, 9001)
+        XCTAssertEqual(plan.service.units[1].port?.source, .autoAssigned)
+    }
 }

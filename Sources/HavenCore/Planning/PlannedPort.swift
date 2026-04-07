@@ -11,6 +11,8 @@ public struct PlannedPort: Equatable, Sendable {
         case spec
         /// Overridden by a user setting.
         case settingOverride
+        /// Automatically reassigned to avoid a port conflict.
+        case autoAssigned
     }
 
     /// How this port number was determined.

@@ -24,7 +24,8 @@ public enum Planner {
         capabilityID: String,
         registry: SpecRegistry,
         settings: [String: String] = [:],
-        baseDirectory: URL
+        baseDirectory: URL,
+        usedPorts: Set<Int> = []
     ) throws -> InstallPlan {
         // 1. Resolve capability
         guard let capability = registry.capabilitiesByID[capabilityID] else {
@@ -62,9 +63,18 @@ public enum Planner {
         // 6. Topological sort of runtime units by dependsOn
         let sortedUnits = try topologicalSort(units)
 
-        // 7. Plan each runtime unit with template expansion
-        let plannedUnits = sortedUnits.map { unit in
-            planUnit(unit, resolvedSettings: resolvedSettings, layout: layout)
+        // 7. Plan each runtime unit with template expansion and port conflict avoidance
+        var assignedPorts = usedPorts
+        var plannedUnits: [PlannedRuntimeUnit] = []
+        for unit in sortedUnits {
+            let planned = try planUnit(
+                unit, resolvedSettings: resolvedSettings,
+                layout: layout, usedPorts: assignedPorts
+            )
+            if let port = planned.port {
+                assignedPorts.insert(port.number)
+            }
+            plannedUnits.append(planned)
         }
 
         let service = PlannedService(
@@ -145,23 +155,47 @@ public enum Planner {
     // MARK: - Unit planning
 
     /// Build a ``PlannedRuntimeUnit`` by expanding templates and assigning ports.
+    ///
+    /// If the resolved port conflicts with a port in `usedPorts`, the planner
+    /// automatically assigns the next available port.
     private static func planUnit(
         _ unit: RuntimeUnit,
         resolvedSettings: [String: String],
-        layout: PlannedDirectoryLayout
-    ) -> PlannedRuntimeUnit {
-        // Determine port
-        let port: PlannedPort?
-        if let portOverride = resolvedSettings["port"].flatMap(Int.init) {
-            if unit.port != nil && portOverride != unit.port {
-                port = PlannedPort(number: portOverride, source: .settingOverride)
-            } else if let specPort = unit.port {
-                port = PlannedPort(number: specPort, source: .spec)
+        layout: PlannedDirectoryLayout,
+        usedPorts: Set<Int>
+    ) throws -> PlannedRuntimeUnit {
+        // Determine candidate port and its source.
+        // Only units that declare a port in their spec get a PlannedPort.
+        // The "port" setting provides a template value for ${port} expansion
+        // but does not add a port to units that don't listen on one.
+        let candidatePort: Int?
+        let candidateSource: PlannedPort.Source
+
+        if let specPort = unit.port {
+            if let portOverride = resolvedSettings["port"].flatMap(Int.init),
+               portOverride != specPort {
+                candidatePort = portOverride
+                candidateSource = .settingOverride
             } else {
-                port = PlannedPort(number: portOverride, source: .settingOverride)
+                candidatePort = specPort
+                candidateSource = .spec
             }
-        } else if let specPort = unit.port {
-            port = PlannedPort(number: specPort, source: .spec)
+        } else {
+            candidatePort = nil
+            candidateSource = .spec // unused when candidatePort is nil
+        }
+
+        // Resolve conflicts: if the candidate port is already taken, find the next free one
+        let port: PlannedPort?
+        if let candidate = candidatePort {
+            if !usedPorts.contains(candidate) {
+                port = PlannedPort(number: candidate, source: candidateSource)
+            } else {
+                let resolved = try nextAvailablePort(
+                    from: candidate, usedPorts: usedPorts, unitID: unit.id
+                )
+                port = PlannedPort(number: resolved, source: .autoAssigned)
+            }
         } else {
             port = nil
         }
@@ -204,5 +238,30 @@ public enum Planner {
             dependsOn: unit.dependsOn,
             templateContext: context
         )
+    }
+
+    // MARK: - Port conflict resolution
+
+    /// Find the next available port starting from `start + 1`.
+    ///
+    /// Searches upward through unprivileged ports (1024–65535), wrapping
+    /// around if necessary. Throws if every port in the range is taken.
+    private static func nextAvailablePort(
+        from start: Int,
+        usedPorts: Set<Int>,
+        unitID: String
+    ) throws -> Int {
+        let range = 1024...65535
+        var candidate = start + 1
+        if candidate > range.upperBound { candidate = range.lowerBound }
+        let initial = candidate
+        repeat {
+            if !usedPorts.contains(candidate) {
+                return candidate
+            }
+            candidate += 1
+            if candidate > range.upperBound { candidate = range.lowerBound }
+        } while candidate != initial
+        throw PlanningError.noAvailablePorts(unitID: unitID)
     }
 }
