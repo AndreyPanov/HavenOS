@@ -103,14 +103,17 @@ final class ArtifactE2ETests: XCTestCase {
         executableName: String = "hello-service",
         entrypointCommand: String? = nil
     ) -> SpecRegistry {
+        let entrypoint: RuntimeUnit.Entrypoint? = entrypointCommand.map {
+            RuntimeUnit.Entrypoint(command: $0)
+        }
         let unit = RuntimeUnit(
             id: "haven.unit.hello",
             bundleID: "haven.bundle.hello-basic",
             runtimeType: .native,
             installSource: "",
-            launchArguments: [],
+            launchArguments: ["--port", "${port}"],
             port: 9090,
-            entrypointCommand: entrypointCommand,
+            entrypoint: entrypoint,
             artifact: Artifact(
                 type: .githubRelease,
                 repo: "owner/hello-service",

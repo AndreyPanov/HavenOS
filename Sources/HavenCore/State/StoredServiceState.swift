@@ -33,6 +33,14 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
     /// The directory layout for this service on disk.
     public let directoryLayout: ServiceDirectoryLayout
 
+    /// Metadata about installed artifacts, one per artifact-based runtime unit.
+    /// Empty for services installed from local sources.
+    public let artifactInfo: [StoredArtifactInfo]
+
+    /// Metadata about installed Python environments, one per Python-based runtime unit.
+    /// Empty for services with no Python units.
+    public let pythonInfo: [StoredPythonInfo]
+
     public init(
         capability: String,
         bundleID: String,
@@ -42,7 +50,9 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         resolvedSettings: [String: String],
         portAssignments: [StoredPortAssignment],
         runtimeUnits: [String],
-        directoryLayout: ServiceDirectoryLayout
+        directoryLayout: ServiceDirectoryLayout,
+        artifactInfo: [StoredArtifactInfo] = [],
+        pythonInfo: [StoredPythonInfo] = []
     ) {
         self.capability = capability
         self.bundleID = bundleID
@@ -53,5 +63,30 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         self.portAssignments = portAssignments
         self.runtimeUnits = runtimeUnits
         self.directoryLayout = directoryLayout
+        self.artifactInfo = artifactInfo
+        self.pythonInfo = pythonInfo
+    }
+
+    // MARK: - Backward-compatible decoding
+
+    private enum CodingKeys: String, CodingKey {
+        case capability, bundleID, installedAt, updatedAt, status
+        case resolvedSettings, portAssignments, runtimeUnits
+        case directoryLayout, artifactInfo, pythonInfo
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        capability = try c.decode(String.self, forKey: .capability)
+        bundleID = try c.decode(String.self, forKey: .bundleID)
+        installedAt = try c.decode(Date.self, forKey: .installedAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        status = try c.decode(ServiceStatus.self, forKey: .status)
+        resolvedSettings = try c.decode([String: String].self, forKey: .resolvedSettings)
+        portAssignments = try c.decode([StoredPortAssignment].self, forKey: .portAssignments)
+        runtimeUnits = try c.decode([String].self, forKey: .runtimeUnits)
+        directoryLayout = try c.decode(ServiceDirectoryLayout.self, forKey: .directoryLayout)
+        artifactInfo = try c.decodeIfPresent([StoredArtifactInfo].self, forKey: .artifactInfo) ?? []
+        pythonInfo = try c.decodeIfPresent([StoredPythonInfo].self, forKey: .pythonInfo) ?? []
     }
 }

@@ -8,20 +8,21 @@ import HavenCore
 /// virtual environment per service unit, installs dependencies, and
 /// produces a launch command that uses the venv's interpreter.
 ///
-/// ## Directory layout under the service root
+/// ## Directory layout
+///
+/// When `PythonConfig` is present (new path), the venv path is passed
+/// via `installSource` by the executor after `PythonEnvironmentPreparer`
+/// creates the environment at:
 ///
 /// ```
-/// run/
-///   venvs/<unit-id>/          ← per-unit virtual environment
-///     bin/python3             ← the interpreter to launch with
-///     lib/                    ← installed packages
+/// ~/.haven/Installed/python/<unit-id>/venv/
 /// ```
 ///
-/// ## Current phase
+/// For legacy units (no PythonConfig), falls back to:
 ///
-/// This adapter computes deterministic paths and launch commands.
-/// Actual venv creation and package installation are deferred to the
-/// execution layer (not yet implemented).
+/// ```
+/// <serviceRoot>/run/venvs/<unit-id>/
+/// ```
 public struct PythonRuntimeAdapter: RuntimeAdapter {
 
     public let runtimeType: RuntimeUnit.RuntimeType = .python
@@ -33,27 +34,44 @@ public struct PythonRuntimeAdapter: RuntimeAdapter {
         plannedUnit: PlannedRuntimeUnit,
         serviceLayout: ServiceDirectoryLayout
     ) throws -> PreparedRuntime {
-        // Validate install source is present
-        let source = unit.installSource.trimmingCharacters(in: .whitespaces)
-        guard !source.isEmpty else {
-            throw RuntimeAdapterError.missingInstallSource(unitID: unit.id)
+        // Determine the venv root and launch arguments based on whether
+        // a PythonConfig is present (new path) or not (legacy path).
+        let venvRoot: URL
+        let arguments: [String]
+
+        if let pythonConfig = unit.python {
+            // New path: PythonConfig-based unit.
+            // The executor sets installSource to the venv directory path
+            // after running PythonEnvironmentPreparer.
+            let source = unit.installSource.trimmingCharacters(in: .whitespaces)
+            if source.isEmpty {
+                // installSource not yet resolved — compute from service layout
+                // (used during planning/validation before executor runs)
+                venvRoot = venvDirectory(for: unit.id, serviceLayout: serviceLayout)
+            } else {
+                venvRoot = URL(fileURLWithPath: source)
+            }
+
+            // Build: ["-m", "<module>"] + resolved args from spec
+            var args = ["-m", pythonConfig.entrypoint.module]
+            args.append(contentsOf: plannedUnit.resolvedLaunchArguments)
+            arguments = args
+        } else {
+            // Legacy path: installSource-based Python unit.
+            let source = unit.installSource.trimmingCharacters(in: .whitespaces)
+            guard !source.isEmpty else {
+                throw RuntimeAdapterError.missingInstallSource(unitID: unit.id)
+            }
+            guard !plannedUnit.resolvedLaunchArguments.isEmpty else {
+                throw RuntimeAdapterError.missingLaunchArguments(unitID: unit.id)
+            }
+            venvRoot = venvDirectory(for: unit.id, serviceLayout: serviceLayout)
+            arguments = plannedUnit.resolvedLaunchArguments
         }
 
-        // Validate launch arguments are present
-        guard !plannedUnit.resolvedLaunchArguments.isEmpty else {
-            throw RuntimeAdapterError.missingLaunchArguments(unitID: unit.id)
-        }
-
-        // Compute the venv root for this unit
-        let venvRoot = venvDirectory(for: unit.id, serviceLayout: serviceLayout)
         let pythonExecutable = venvRoot
             .appendingPathComponent("bin")
             .appendingPathComponent("python3")
-
-        // Arguments are the resolved launch arguments (script/module path and flags).
-        // The executable (venv python) is conveyed via executableURL —
-        // LaunchdJob.make() will prepend it to ProgramArguments.
-        let arguments = plannedUnit.resolvedLaunchArguments
 
         // Build the environment. The venv's bin directory is prepended to PATH
         // so that any subprocess spawned by the Python app also uses the venv.

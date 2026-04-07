@@ -25,6 +25,12 @@ public enum ArtifactInstallerError: Error, LocalizedError, Equatable, Sendable {
     /// Failed to copy or write the artifact to the install directory.
     case installFailed(unitID: String, detail: String)
 
+    /// No executable was found in the install directory after extraction.
+    case executableNotFound(unitID: String, directory: String)
+
+    /// The entrypoint path is invalid (absolute path, path traversal, or empty).
+    case invalidEntrypointPath(unitID: String, path: String)
+
     public var errorDescription: String? {
         switch self {
         case .sourceFileNotFound(_, let path):
@@ -39,6 +45,10 @@ public enum ArtifactInstallerError: Error, LocalizedError, Equatable, Sendable {
             "Artifact not found: \(path)"
         case .installFailed(_, let detail):
             "Install failed: \(detail)"
+        case .executableNotFound(_, let directory):
+            "No executable found after extraction in: \(directory)"
+        case .invalidEntrypointPath(_, let path):
+            "Invalid entrypoint path '\(path)': must be a relative path without path traversal"
         }
     }
 }

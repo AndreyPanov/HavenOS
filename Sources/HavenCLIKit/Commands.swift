@@ -41,11 +41,13 @@ struct CommonOptions: ParsableArguments {
         let stateStore = FileStateStore(paths: paths)
         let launchdController = LaunchdController()
         let artifactInstaller = ArtifactInstaller(paths: paths)
+        let pythonPreparer = PythonEnvironmentPreparer()
         return HavenExecutor(
             paths: paths,
             stateStore: stateStore,
             launchdController: launchdController,
-            artifactInstaller: artifactInstaller
+            artifactInstaller: artifactInstaller,
+            pythonPreparer: pythonPreparer
         )
     }
 

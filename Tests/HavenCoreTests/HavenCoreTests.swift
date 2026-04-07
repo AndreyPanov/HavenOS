@@ -248,6 +248,155 @@ final class RuntimeUnitTests: XCTestCase {
         XCTAssertEqual(RuntimeUnit.RuntimeType.native.rawValue, "native")
         XCTAssertEqual(RuntimeUnit.RuntimeType.python.rawValue, "python")
     }
+
+    // MARK: - Python Validation
+
+    func testPythonUnitValidationSuccess() {
+        XCTAssertNoThrow(try RuntimeUnit.testPythonExample.validate())
+    }
+
+    func testPythonUnitValidationFailsWithoutPythonConfig() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .python,
+            installSource: "", launchArguments: []
+        )
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("python") == true)
+        }
+    }
+
+    func testPythonUnitValidationFailsOnEmptyPackage() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .python,
+            installSource: "", launchArguments: [],
+            python: RuntimeUnit.PythonConfig(
+                package: "", version: "1.0",
+                entrypoint: .init(module: "mod")
+            )
+        )
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("package") == true)
+        }
+    }
+
+    func testPythonUnitValidationFailsOnEmptyVersion() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .python,
+            installSource: "", launchArguments: [],
+            python: RuntimeUnit.PythonConfig(
+                package: "pkg", version: "",
+                entrypoint: .init(module: "mod")
+            )
+        )
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("version") == true)
+        }
+    }
+
+    func testPythonUnitValidationFailsOnEmptyModule() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .python,
+            installSource: "", launchArguments: [],
+            python: RuntimeUnit.PythonConfig(
+                package: "pkg", version: "1.0",
+                entrypoint: .init(module: "")
+            )
+        )
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("module") == true)
+        }
+    }
+
+    func testPythonUnitValidationFailsWithArtifact() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .python,
+            installSource: "", launchArguments: [],
+            artifact: Artifact(
+                type: .githubRelease, repo: "owner/repo", version: "v1.0.0",
+                assets: [ArtifactAsset(os: "macos", arch: "arm64", file: "app.zip")]
+            ),
+            python: RuntimeUnit.PythonConfig(
+                package: "pkg", version: "1.0",
+                entrypoint: .init(module: "mod")
+            )
+        )
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("artifact") == true)
+        }
+    }
+
+    func testNativeUnitValidationFailsWithPythonConfig() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .native,
+            installSource: "/bin/x", launchArguments: ["/bin/x"],
+            python: RuntimeUnit.PythonConfig(
+                package: "pkg", version: "1.0",
+                entrypoint: .init(module: "mod")
+            )
+        )
+        XCTAssertThrowsError(try unit.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("python") == true)
+        }
+    }
+
+    func testPythonUnitAllowsEmptyInstallSourceAndLaunchArgs() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .python,
+            installSource: "", launchArguments: [],
+            python: RuntimeUnit.PythonConfig(
+                package: "pkg", version: "1.0",
+                entrypoint: .init(module: "mod")
+            )
+        )
+        XCTAssertNoThrow(try unit.validate())
+    }
+
+    func testPythonConfigCodableRoundTrip() throws {
+        let original = RuntimeUnit.testPythonExample
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: data)
+        XCTAssertEqual(original, decoded)
+        XCTAssertEqual(decoded.python?.package, "calibreweb")
+        XCTAssertEqual(decoded.python?.version, "0.6.26")
+        XCTAssertEqual(decoded.python?.entrypoint.module, "cps")
+        XCTAssertEqual(decoded.runtimeType, .python)
+    }
+
+    func testEntrypointRoundTrip() throws {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .native,
+            installSource: "/bin/x", launchArguments: ["/bin/x"],
+            entrypoint: RuntimeUnit.Entrypoint(command: "./my-server", args: ["--port", "8080"])
+        )
+        let data = try JSONEncoder().encode(unit)
+        let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: data)
+        XCTAssertEqual(decoded.entrypoint?.command, "./my-server")
+        // entrypoint.args takes precedence over launchArguments
+        XCTAssertEqual(decoded.launchArguments, ["--port", "8080"])
+    }
+
+    func testEntrypointNilWhenAbsent() throws {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .native,
+            installSource: "/bin/x", launchArguments: ["/bin/x"]
+        )
+        XCTAssertNil(unit.entrypoint)
+        let data = try JSONEncoder().encode(unit)
+        let decoded = try JSONDecoder().decode(RuntimeUnit.self, from: data)
+        XCTAssertNil(decoded.entrypoint)
+    }
+
+    func testValidationAllowsEmptyInstallSourceWithArtifact() {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .native,
+            installSource: "", launchArguments: ["--port", "8080"],
+            artifact: Artifact(
+                type: .githubRelease, repo: "owner/repo", version: "v1.0.0",
+                assets: [ArtifactAsset(os: "macos", arch: "arm64", file: "app.zip")]
+            )
+        )
+        XCTAssertNoThrow(try unit.validate())
+    }
 }
 
 // MARK: - ServiceRecord Tests

@@ -26,6 +26,7 @@ public struct HavenExecutor: Sendable {
     private let runtimeRegistry: RuntimeAdapterRegistry
     private let launchdController: LaunchdController
     private let artifactInstaller: ArtifactInstaller?
+    private let pythonPreparer: PythonEnvironmentPreparer?
     private nonisolated(unsafe) let fileManager: FileManager
 
     public init(
@@ -34,6 +35,7 @@ public struct HavenExecutor: Sendable {
         runtimeRegistry: RuntimeAdapterRegistry = .makeDefault(),
         launchdController: LaunchdController,
         artifactInstaller: ArtifactInstaller? = nil,
+        pythonPreparer: PythonEnvironmentPreparer? = nil,
         fileManager: FileManager = .default
     ) {
         self.paths = paths
@@ -41,6 +43,7 @@ public struct HavenExecutor: Sendable {
         self.runtimeRegistry = runtimeRegistry
         self.launchdController = launchdController
         self.artifactInstaller = artifactInstaller
+        self.pythonPreparer = pythonPreparer
         self.fileManager = fileManager
     }
 
@@ -121,32 +124,93 @@ public struct HavenExecutor: Sendable {
             try? fileManager.removeItem(at: serviceLayout.serviceRoot)
         }
 
-        // 4. Install artifacts and prepare runtimes, then install launchd jobs
+        // 4. Install artifacts / Python envs, prepare runtimes, install launchd jobs
+        var collectedArtifactInfo: [StoredArtifactInfo] = []
+        var collectedPythonInfo: [StoredPythonInfo] = []
+
         for plannedUnit in service.units {
             let unit = plannedUnit.spec
             log.info("[install] Processing unit \(unit.id) (runtime=\(unit.runtimeType.rawValue), source=\(unit.installSource))")
 
-            // Reject unsupported runtime types
-            if unit.runtimeType == .python {
-                try rollback(ExecutorError.unsupportedRuntime(
-                    capabilityID: capabilityID,
-                    unitID: unit.id,
-                    detail: "This service requires a runtime that is not yet available in Haven."
-                ))
-            }
-
-            // Install artifact if an installer is configured
             let resolvedUnit: RuntimeUnit
-            if let installer = artifactInstaller {
+
+            if unit.runtimeType == .python {
+                // ── Python path: create venv and pip install ──
+                guard let preparer = pythonPreparer else {
+                    try rollback(ExecutorError.unsupportedRuntime(
+                        capabilityID: capabilityID,
+                        unitID: unit.id,
+                        detail: "Python runtime support is not configured."
+                    ))
+                }
+                guard let pythonConfig = unit.python else {
+                    try rollback(ExecutorError.preparationFailed(
+                        capabilityID: capabilityID,
+                        unitID: unit.id,
+                        detail: "Python unit missing required 'python' configuration block."
+                    ))
+                }
+
+                log.info("[install] Preparing Python environment for \(unit.id)")
+                let envResult: PythonEnvironmentResult
+                do {
+                    envResult = try preparer.prepare(
+                        pythonConfig: pythonConfig,
+                        unitID: unit.id,
+                        basePath: paths.base
+                    )
+                    log.info("[install] Python env ready: cached=\(envResult.wasCached), venv=\(envResult.venvDirectory.path)")
+                } catch {
+                    try rollback(ExecutorError.preparationFailed(
+                        capabilityID: capabilityID,
+                        unitID: unit.id,
+                        detail: error.localizedDescription
+                    ))
+                }
+
+                // Register rollback: only remove if we created a new env (not cached)
+                if !envResult.wasCached {
+                    let unitIDForCleanup = unit.id
+                    let basePath = paths.base
+                    rollbackActions.append {
+                        try? preparer.remove(unitID: unitIDForCleanup, basePath: basePath)
+                    }
+                }
+
+                // Collect Python metadata for persistence
+                collectedPythonInfo.append(StoredPythonInfo(
+                    unitID: unit.id,
+                    package: pythonConfig.package,
+                    version: pythonConfig.version,
+                    module: pythonConfig.entrypoint.module,
+                    venvDirectory: envResult.venvDirectory.path,
+                    pythonPath: envResult.pythonPath.path
+                ))
+
+                // Pass venv path to the adapter via installSource
+                resolvedUnit = unit.withInstallSource(envResult.venvDirectory.path)
+
+            } else if let installer = artifactInstaller {
                 let descriptor: ArtifactDescriptor
                 if let artifact = unit.artifact {
                     // Resolve from artifact spec (e.g. GitHub Release)
                     log.info("[install] Resolving artifact for unit \(unit.id): \(artifact.type.rawValue) \(artifact.repo)@\(artifact.version)")
                     do {
-                        descriptor = try ArtifactResolver.resolve(
+                        var resolved = try ArtifactResolver.resolve(
                             artifact: artifact,
                             unitID: unit.id
                         )
+                        // Pass entrypoint command through for post-extraction validation
+                        if let command = unit.entrypoint?.command {
+                            resolved = ArtifactDescriptor(
+                                unitID: resolved.unitID,
+                                source: resolved.source,
+                                format: resolved.format,
+                                stripFirstDirectory: resolved.stripFirstDirectory,
+                                entrypointCommand: command
+                            )
+                        }
+                        descriptor = resolved
                     } catch {
                         try rollback(ExecutorError.artifactInstallFailed(
                             capabilityID: capabilityID,
@@ -184,12 +248,44 @@ public struct HavenExecutor: Sendable {
                     try? installer.uninstall(unitID: unitIDForCleanup)
                 }
 
+                // Collect artifact metadata for persistence
+                if let artifact = unit.artifact {
+                    let platform = PlatformInfo.current
+                    let matchingAsset = artifact.assets.first {
+                        $0.os == platform.os && $0.arch == platform.arch
+                    }
+                    let formatString: String = switch descriptor.format {
+                    case .zip: "zip"
+                    case .tarGz: "tar.gz"
+                    case .executable: "executable"
+                    }
+                    collectedArtifactInfo.append(StoredArtifactInfo(
+                        unitID: unit.id,
+                        repo: artifact.repo,
+                        version: artifact.version,
+                        assetFile: matchingAsset?.file ?? "",
+                        platform: "\(platform.os)/\(platform.arch)",
+                        format: formatString,
+                        installDirectory: installResult.installDirectory.path,
+                        entrypoint: unit.entrypoint?.command
+                    ))
+                }
+
                 // Resolve installed executable path
                 let installedPath: String
                 if unit.artifact != nil {
-                    // For artifact-based units, point to the install directory.
-                    // NativeRuntimeAdapter.resolveExecutable finds the binary inside.
-                    installedPath = installResult.installDirectory.path
+                    if let command = unit.entrypoint?.command {
+                        // Use explicit entrypoint command relative to install dir.
+                        // Normalize: strip leading "./" prefix.
+                        let normalized = command.hasPrefix("./")
+                            ? String(command.dropFirst(2)) : command
+                        installedPath = installResult.installDirectory
+                            .appendingPathComponent(normalized).path
+                    } else {
+                        // For artifact-based units, point to the install directory.
+                        // NativeRuntimeAdapter.resolveExecutable finds the binary inside.
+                        installedPath = installResult.installDirectory.path
+                    }
                 } else {
                     // For legacy units, resolve to the specific file.
                     let filename = URL(fileURLWithPath: unit.installSource).lastPathComponent
@@ -269,7 +365,9 @@ public struct HavenExecutor: Sendable {
             resolvedSettings: service.resolvedSettings,
             portAssignments: portAssignments,
             runtimeUnits: service.units.map(\.spec.id),
-            directoryLayout: serviceLayout
+            directoryLayout: serviceLayout,
+            artifactInfo: collectedArtifactInfo,
+            pythonInfo: collectedPythonInfo
         )
 
         do {
@@ -310,6 +408,14 @@ public struct HavenExecutor: Sendable {
                     unitID: unitID,
                     detail: error.localizedDescription
                 )
+            }
+        }
+
+        // Best-effort remove Python environments
+        if let preparer = pythonPreparer {
+            for pyInfo in service.pythonInfo {
+                log.info("[uninstall] Removing Python environment for unit: \(pyInfo.unitID)")
+                try? preparer.remove(unitID: pyInfo.unitID, basePath: paths.base)
             }
         }
 

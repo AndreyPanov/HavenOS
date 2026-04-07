@@ -83,4 +83,69 @@ public struct ArtifactCache: Sendable {
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
+
+    // MARK: - Atomic staging
+
+    /// The staging directory for a given runtime unit.
+    ///
+    /// - Parameter unitID: The runtime unit identifier.
+    /// - Returns: `<installedRoot>/<unitID>.installing/`
+    public func stagingDirectory(for unitID: String) -> URL {
+        installedRoot.appendingPathComponent("\(unitID).installing", isDirectory: true)
+    }
+
+    /// Prepare a clean staging directory for atomic installation.
+    ///
+    /// Creates `<unitID>.installing/` as a temporary workspace. Any pre-existing
+    /// staging directory for this unit is removed first.
+    ///
+    /// - Parameter unitID: The runtime unit identifier.
+    /// - Returns: The clean staging directory.
+    @discardableResult
+    public func prepareStagingDirectory(for unitID: String) throws -> URL {
+        let dir = stagingDirectory(for: unitID)
+        if fileManager.fileExists(atPath: dir.path) {
+            try fileManager.removeItem(at: dir)
+        }
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Atomically promote a staging directory to the final install location.
+    ///
+    /// Removes any existing final directory, then renames the staging directory
+    /// into place. This ensures the final directory is never in a partial state.
+    ///
+    /// - Parameter unitID: The runtime unit identifier.
+    public func promoteStagingDirectory(for unitID: String) throws {
+        let staging = stagingDirectory(for: unitID)
+        let final_ = installDirectory(for: unitID)
+
+        // Remove existing final directory if present
+        if fileManager.fileExists(atPath: final_.path) {
+            try fileManager.removeItem(at: final_)
+        }
+
+        try fileManager.moveItem(at: staging, to: final_)
+    }
+
+    /// Remove a leftover staging directory for the given unit.
+    ///
+    /// - Parameter unitID: The runtime unit identifier.
+    public func removeStagingDirectory(for unitID: String) {
+        let dir = stagingDirectory(for: unitID)
+        try? fileManager.removeItem(at: dir)
+    }
+
+    /// Clean up any stale `.installing` directories left from interrupted installs.
+    public func cleanStaleStagingDirectories() throws {
+        guard fileManager.fileExists(atPath: installedRoot.path) else { return }
+        let contents = try fileManager.contentsOfDirectory(
+            at: installedRoot,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+        for item in contents where item.lastPathComponent.hasSuffix(".installing") {
+            try fileManager.removeItem(at: item)
+        }
+    }
 }

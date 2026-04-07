@@ -159,6 +159,234 @@ final class StoredServiceStateTests: XCTestCase {
         XCTAssertEqual(ServiceStatus.stopped.rawValue, "stopped")
         XCTAssertEqual(ServiceStatus.failed.rawValue, "failed")
     }
+
+    func testCodableRoundTripWithArtifactInfo() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let layout = ServiceDirectoryLayout(
+            servicesDirectory: URL(fileURLWithPath: "/tmp/haven/Services"),
+            capabilityID: "haven.capability.test-library"
+        )
+        let state = StoredServiceState(
+            capability: "haven.capability.test-library",
+            bundleID: "haven.bundle.test-library-basic",
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            status: .installed,
+            resolvedSettings: [:],
+            portAssignments: [],
+            runtimeUnits: ["haven.unit.hello"],
+            directoryLayout: layout,
+            artifactInfo: [
+                StoredArtifactInfo(
+                    unitID: "haven.unit.hello",
+                    repo: "owner/hello",
+                    version: "v1.0.0",
+                    assetFile: "hello-macos-arm64.zip",
+                    platform: "macos/arm64",
+                    format: "zip",
+                    installDirectory: "/tmp/haven/Installed/haven.unit.hello",
+                    entrypoint: "./hello"
+                )
+            ]
+        )
+
+        let data = try encoder.encode(state)
+        let decoded = try decoder.decode(StoredServiceState.self, from: data)
+        XCTAssertEqual(state, decoded)
+        XCTAssertEqual(decoded.artifactInfo.count, 1)
+        XCTAssertEqual(decoded.artifactInfo[0].repo, "owner/hello")
+        XCTAssertEqual(decoded.artifactInfo[0].version, "v1.0.0")
+    }
+
+    func testCodableRoundTripWithPythonInfo() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let layout = ServiceDirectoryLayout(
+            servicesDirectory: URL(fileURLWithPath: "/tmp/haven/Services"),
+            capabilityID: "haven.capability.calibre-web"
+        )
+        let state = StoredServiceState(
+            capability: "haven.capability.calibre-web",
+            bundleID: "haven.bundle.calibre-web-basic",
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            status: .installed,
+            resolvedSettings: [:],
+            portAssignments: [StoredPortAssignment(unitID: "haven.unit.calibre-web", port: 8083)],
+            runtimeUnits: ["haven.unit.calibre-web"],
+            directoryLayout: layout,
+            pythonInfo: [
+                StoredPythonInfo(
+                    unitID: "haven.unit.calibre-web",
+                    package: "calibreweb",
+                    version: "0.6.26",
+                    module: "cps",
+                    venvDirectory: "/tmp/haven/Installed/python/haven.unit.calibre-web/venv",
+                    pythonPath: "/tmp/haven/Installed/python/haven.unit.calibre-web/venv/bin/python3"
+                )
+            ]
+        )
+
+        let data = try encoder.encode(state)
+        let decoded = try decoder.decode(StoredServiceState.self, from: data)
+        XCTAssertEqual(state, decoded)
+        XCTAssertEqual(decoded.pythonInfo.count, 1)
+        XCTAssertEqual(decoded.pythonInfo[0].package, "calibreweb")
+        XCTAssertEqual(decoded.pythonInfo[0].version, "0.6.26")
+        XCTAssertEqual(decoded.pythonInfo[0].module, "cps")
+    }
+
+    func testBackwardCompatDecodingWithoutPythonInfo() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let layout = ServiceDirectoryLayout(
+            servicesDirectory: URL(fileURLWithPath: "/tmp/haven/Services"),
+            capabilityID: "haven.capability.test-library"
+        )
+        let state = StoredServiceState(
+            capability: "haven.capability.test-library",
+            bundleID: "haven.bundle.test-library-basic",
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            status: .installed,
+            resolvedSettings: [:],
+            portAssignments: [],
+            runtimeUnits: [],
+            directoryLayout: layout
+        )
+        let jsonData = try encoder.encode(state)
+        var jsonObj = try JSONSerialization.jsonObject(with: jsonData) as! [String: Any]
+        jsonObj.removeValue(forKey: "pythonInfo")
+        let strippedData = try JSONSerialization.data(withJSONObject: jsonObj)
+
+        let decoded = try decoder.decode(StoredServiceState.self, from: strippedData)
+        XCTAssertEqual(decoded.pythonInfo, [])
+    }
+
+    func testBackwardCompatDecodingWithoutArtifactInfo() throws {
+        // Simulate JSON from before artifactInfo was added
+        let layout = ServiceDirectoryLayout(
+            servicesDirectory: URL(fileURLWithPath: "/tmp/haven/Services"),
+            capabilityID: "haven.capability.test-library"
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        // Encode a state without artifactInfo, then manually strip it from JSON
+        let state = StoredServiceState(
+            capability: "haven.capability.test-library",
+            bundleID: "haven.bundle.test-library-basic",
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            status: .installed,
+            resolvedSettings: [:],
+            portAssignments: [],
+            runtimeUnits: [],
+            directoryLayout: layout
+        )
+        let jsonData = try encoder.encode(state)
+        var jsonObj = try JSONSerialization.jsonObject(with: jsonData) as! [String: Any]
+        jsonObj.removeValue(forKey: "artifactInfo")
+        let strippedData = try JSONSerialization.data(withJSONObject: jsonObj)
+
+        let decoded = try decoder.decode(StoredServiceState.self, from: strippedData)
+        XCTAssertEqual(decoded.artifactInfo, [])
+    }
+}
+
+// MARK: - StoredArtifactInfo Tests
+
+final class StoredArtifactInfoTests: XCTestCase {
+
+    func testCodableRoundTrip() throws {
+        let info = StoredArtifactInfo(
+            unitID: "haven.unit.test",
+            repo: "owner/repo",
+            version: "v2.0.0",
+            assetFile: "app-macos-arm64.zip",
+            platform: "macos/arm64",
+            format: "zip",
+            installDirectory: "/tmp/haven/Installed/haven.unit.test",
+            entrypoint: "./app"
+        )
+
+        let data = try JSONEncoder().encode(info)
+        let decoded = try JSONDecoder().decode(StoredArtifactInfo.self, from: data)
+        XCTAssertEqual(info, decoded)
+    }
+
+    func testEquality() {
+        let a = StoredArtifactInfo(
+            unitID: "u", repo: "o/r", version: "v1", assetFile: "f",
+            platform: "macos/arm64", format: "zip",
+            installDirectory: "/tmp/installed/u"
+        )
+        let b = StoredArtifactInfo(
+            unitID: "u", repo: "o/r", version: "v1", assetFile: "f",
+            platform: "macos/arm64", format: "zip",
+            installDirectory: "/tmp/installed/u"
+        )
+        XCTAssertEqual(a, b)
+    }
+
+    func testInequality() {
+        let a = StoredArtifactInfo(
+            unitID: "u", repo: "o/r", version: "v1", assetFile: "f",
+            platform: "macos/arm64", format: "zip",
+            installDirectory: "/tmp/installed/u"
+        )
+        let b = StoredArtifactInfo(
+            unitID: "u", repo: "o/r", version: "v2", assetFile: "f",
+            platform: "macos/arm64", format: "zip",
+            installDirectory: "/tmp/installed/u"
+        )
+        XCTAssertNotEqual(a, b)
+    }
+
+    func testBackwardCompatDecodingWithoutNewFields() throws {
+        // Simulate old JSON without installDirectory and entrypoint
+        let json = """
+        {
+            "unitID": "haven.unit.test",
+            "repo": "owner/repo",
+            "version": "v1.0.0",
+            "assetFile": "app-macos-arm64.zip",
+            "platform": "macos/arm64",
+            "format": "zip"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(StoredArtifactInfo.self, from: json)
+        XCTAssertEqual(decoded.unitID, "haven.unit.test")
+        XCTAssertEqual(decoded.installDirectory, "") // defaults to empty
+        XCTAssertNil(decoded.entrypoint) // defaults to nil
+    }
+
+    func testRoundTripWithEntrypoint() throws {
+        let info = StoredArtifactInfo(
+            unitID: "u", repo: "o/r", version: "v1", assetFile: "f",
+            platform: "macos/arm64", format: "zip",
+            installDirectory: "/tmp/installed/u",
+            entrypoint: "./my-server"
+        )
+        let data = try JSONEncoder().encode(info)
+        let decoded = try JSONDecoder().decode(StoredArtifactInfo.self, from: data)
+        XCTAssertEqual(decoded.entrypoint, "./my-server")
+        XCTAssertEqual(decoded.installDirectory, "/tmp/installed/u")
+        XCTAssertEqual(info, decoded)
+    }
 }
 
 // MARK: - FileStateStore Tests

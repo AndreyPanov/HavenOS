@@ -19,15 +19,21 @@ public struct ArtifactDescriptor: Equatable, Sendable {
     /// after extraction, moving its contents up one level.
     public let stripFirstDirectory: Bool
 
+    /// The executable name from the spec's `entrypoint.command` field.
+    /// When set, post-extraction validation checks for this specific file.
+    public let entrypointCommand: String?
+
     public init(
         unitID: String,
         source: ArtifactSource,
         format: ArtifactFormat,
-        stripFirstDirectory: Bool = false
+        stripFirstDirectory: Bool = false,
+        entrypointCommand: String? = nil
     ) {
         self.unitID = unitID
         self.source = source
         self.format = format
         self.stripFirstDirectory = stripFirstDirectory
+        self.entrypointCommand = entrypointCommand
     }
 }

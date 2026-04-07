@@ -73,32 +73,111 @@ public struct ArtifactInstaller: Sendable {
 
     /// Install an artifact described by the given descriptor.
     ///
-    /// 1. Check cache — if already installed, return immediately.
-    /// 2. Resolve the source to a local file (copy or download).
-    /// 3. Extract or place the artifact into the install directory.
-    /// 4. Return metadata about the installation.
+    /// For artifact-based installs (remote sources), uses atomic staging:
+    /// files are extracted into a `.installing` temp directory, validated,
+    /// then atomically renamed to the final location.
     ///
-    /// - Parameter descriptor: What to install and where to get it.
+    /// - Parameters:
+    ///   - descriptor: What to install and where to get it.
+    ///   - forceReinstall: When `true`, bypasses the cache check and
+    ///     re-downloads/re-extracts even if already installed.
     /// - Returns: The installation result with the final directory.
     /// - Throws: `ArtifactInstallerError` if any step fails.
-    public func install(descriptor: ArtifactDescriptor) throws -> ArtifactInstallResult {
+    public func install(
+        descriptor: ArtifactDescriptor,
+        forceReinstall: Bool = false
+    ) throws -> ArtifactInstallResult {
         let unitID = descriptor.unitID
         log.info("[install] unit=\(unitID), source=\(String(describing: descriptor.source)), format=\(String(describing: descriptor.format))")
 
-        // 1. Check cache
-        if cache.isCached(unitID: unitID) {
+        // 1. Check cache (unless force reinstall)
+        if !forceReinstall && cache.isCached(unitID: unitID) {
             let dir = cache.installDirectory(for: unitID)
-            log.info("[install] Cache hit for \(unitID): \(dir.path)")
-            return ArtifactInstallResult(
-                unitID: unitID,
-                installDirectory: dir,
-                wasCached: true
-            )
+            // Validate that the cached directory actually contains a usable
+            // executable. If not, treat as a broken cache and reinstall.
+            if isCacheValid(descriptor: descriptor, directory: dir) {
+                log.info("[install] Cache hit for \(unitID): \(dir.path)")
+                return ArtifactInstallResult(
+                    unitID: unitID,
+                    installDirectory: dir,
+                    wasCached: true
+                )
+            }
+            log.warning("[install] Broken cache for \(unitID), reinstalling...")
+            try? cache.remove(unitID: unitID)
         }
-        log.info("[install] Cache miss for \(unitID), resolving source...")
+        log.info("[install] \(forceReinstall ? "Force reinstall" : "Cache miss") for \(unitID), resolving source...")
 
         // 2. Resolve source to a local file
-        let localFile: URL
+        let localFile = try resolveLocalFile(descriptor: descriptor)
+
+        // 3. Extract or copy into a work directory.
+        //    Artifact-based installs use atomic staging; legacy uses direct directory.
+        let useAtomicStaging = descriptor.entrypointCommand != nil
+            || descriptor.stripFirstDirectory
+            || forceReinstall
+            || {
+                if case .remote = descriptor.source { return true }
+                return false
+            }()
+
+        let workDir: URL
+        do {
+            if useAtomicStaging {
+                workDir = try cache.prepareStagingDirectory(for: unitID)
+                log.info("[install] Prepared staging dir: \(workDir.path)")
+            } else {
+                workDir = try cache.prepareCleanDirectory(for: unitID)
+                log.info("[install] Prepared install dir: \(workDir.path)")
+            }
+        } catch {
+            throw ArtifactInstallerError.installFailed(
+                unitID: unitID,
+                detail: error.localizedDescription
+            )
+        }
+
+        do {
+            try extractOrCopy(descriptor: descriptor, localFile: localFile, to: workDir)
+
+            // Post-extraction validation for artifact-based installs
+            if useAtomicStaging {
+                try validateExtraction(descriptor: descriptor, directory: workDir)
+            }
+
+            // Promote staging → final
+            if useAtomicStaging {
+                try cache.promoteStagingDirectory(for: unitID)
+                log.info("[install] Promoted staging to final for \(unitID)")
+            }
+        } catch {
+            // Clean up staging on failure (final dir is untouched)
+            if useAtomicStaging {
+                cache.removeStagingDirectory(for: unitID)
+            } else {
+                try? cache.remove(unitID: unitID)
+            }
+            throw error
+        }
+
+        // 4. Clean up downloaded file for remote sources
+        if case .remote = descriptor.source {
+            try? fileManager.removeItem(at: localFile)
+        }
+
+        let finalDir = cache.installDirectory(for: unitID)
+        log.info("[install] Artifact install complete for \(unitID)")
+        return ArtifactInstallResult(
+            unitID: unitID,
+            installDirectory: finalDir,
+            wasCached: false
+        )
+    }
+
+    // MARK: - Source resolution
+
+    private func resolveLocalFile(descriptor: ArtifactDescriptor) throws -> URL {
+        let unitID = descriptor.unitID
         switch descriptor.source {
         case .local(let fileURL):
             log.info("[install] Local source: \(fileURL.path)")
@@ -109,13 +188,14 @@ public struct ArtifactInstaller: Sendable {
                     path: fileURL.path
                 )
             }
-            localFile = fileURL
+            return fileURL
 
         case .remote(let remoteURL):
             log.info("[install] Downloading from: \(remoteURL.absoluteString)")
             do {
-                localFile = try downloadClient.download(from: remoteURL)
+                let localFile = try downloadClient.download(from: remoteURL)
                 log.info("[install] Downloaded to: \(localFile.path)")
+                return localFile
             } catch {
                 log.error("[install] Download failed: \(error.localizedDescription)")
                 throw ArtifactInstallerError.downloadFailed(
@@ -125,33 +205,27 @@ public struct ArtifactInstaller: Sendable {
                 )
             }
         }
+    }
 
-        // 3. Prepare clean install directory
-        let installDir: URL
-        do {
-            installDir = try cache.prepareCleanDirectory(for: unitID)
-            log.info("[install] Prepared install dir: \(installDir.path)")
-        } catch {
-            throw ArtifactInstallerError.installFailed(
-                unitID: unitID,
-                detail: error.localizedDescription
-            )
-        }
+    // MARK: - Extraction
 
-        // 4. Extract or copy
+    private func extractOrCopy(
+        descriptor: ArtifactDescriptor,
+        localFile: URL,
+        to directory: URL
+    ) throws {
+        let unitID = descriptor.unitID
         switch descriptor.format {
         case .zip, .tarGz:
-            log.info("[install] Extracting archive to \(installDir.path)...")
+            log.info("[install] Extracting archive to \(directory.path)...")
             do {
                 try extractor.extract(
                     archiveURL: localFile,
-                    to: installDir,
+                    to: directory,
                     format: descriptor.format
                 )
                 log.info("[install] Extraction complete")
             } catch {
-                // Clean up partial extraction
-                try? cache.remove(unitID: unitID)
                 log.error("[install] Extraction failed: \(error.localizedDescription)")
                 throw ArtifactInstallerError.extractionFailed(
                     unitID: unitID,
@@ -162,10 +236,9 @@ public struct ArtifactInstaller: Sendable {
             // Strip the top-level directory if requested.
             if descriptor.stripFirstDirectory {
                 do {
-                    try stripFirstDirectory(in: installDir)
+                    try stripFirstDirectory(in: directory)
                     log.info("[install] Stripped first directory level")
                 } catch {
-                    try? cache.remove(unitID: unitID)
                     log.error("[install] Strip first directory failed: \(error.localizedDescription)")
                     throw ArtifactInstallerError.installFailed(
                         unitID: unitID,
@@ -176,7 +249,7 @@ public struct ArtifactInstaller: Sendable {
 
         case .executable:
             do {
-                let destFile = installDir.appendingPathComponent(
+                let destFile = directory.appendingPathComponent(
                     localFile.lastPathComponent
                 )
                 log.info("[install] Copying executable: \(localFile.path) -> \(destFile.path)")
@@ -188,7 +261,6 @@ public struct ArtifactInstaller: Sendable {
                 )
                 log.info("[install] Executable copied and permissions set")
             } catch {
-                try? cache.remove(unitID: unitID)
                 log.error("[install] Copy failed: \(error.localizedDescription)")
                 throw ArtifactInstallerError.installFailed(
                     unitID: unitID,
@@ -196,18 +268,129 @@ public struct ArtifactInstaller: Sendable {
                 )
             }
         }
+    }
 
-        // 5. Clean up downloaded file for remote sources
-        if case .remote = descriptor.source {
-            try? fileManager.removeItem(at: localFile)
+    // MARK: - Post-extraction validation
+
+    /// Validate that the extraction produced a usable result.
+    ///
+    /// - If `entrypointCommand` is set, validates the path (rejects absolute
+    ///   paths), normalizes it (strips `./` prefix), then checks the file
+    ///   exists and is executable in the install directory.
+    /// - Otherwise, checks that at least one executable file exists (shallow).
+    private func validateExtraction(
+        descriptor: ArtifactDescriptor,
+        directory: URL
+    ) throws {
+        let unitID = descriptor.unitID
+
+        if let command = descriptor.entrypointCommand {
+            // Reject absolute paths — artifact entrypoints must be relative
+            guard !command.hasPrefix("/") else {
+                log.error("[install] Absolute entrypoint path rejected: \(command)")
+                throw ArtifactInstallerError.invalidEntrypointPath(
+                    unitID: unitID,
+                    path: command
+                )
+            }
+
+            // Normalize: strip leading "./" if present
+            let normalized = command.hasPrefix("./")
+                ? String(command.dropFirst(2))
+                : command
+
+            guard !normalized.isEmpty else {
+                log.error("[install] Empty entrypoint command after normalization")
+                throw ArtifactInstallerError.invalidEntrypointPath(
+                    unitID: unitID,
+                    path: command
+                )
+            }
+
+            // Reject path traversal
+            guard !normalized.contains("..") else {
+                log.error("[install] Path traversal in entrypoint rejected: \(command)")
+                throw ArtifactInstallerError.invalidEntrypointPath(
+                    unitID: unitID,
+                    path: command
+                )
+            }
+
+            // Check for the specific named executable
+            let expectedPath = directory.appendingPathComponent(normalized)
+            guard fileManager.fileExists(atPath: expectedPath.path) else {
+                log.error("[install] Expected executable '\(normalized)' not found in \(directory.path)")
+                throw ArtifactInstallerError.executableNotFound(
+                    unitID: unitID,
+                    directory: directory.path
+                )
+            }
+            guard fileManager.isExecutableFile(atPath: expectedPath.path) else {
+                log.error("[install] Entrypoint '\(normalized)' exists but is not executable")
+                throw ArtifactInstallerError.executableNotFound(
+                    unitID: unitID,
+                    directory: directory.path
+                )
+            }
+            log.info("[install] Validated entrypoint command: \(normalized)")
+        } else {
+            // Check that at least one executable exists
+            guard let contents = try? fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            ) else {
+                throw ArtifactInstallerError.executableNotFound(
+                    unitID: unitID,
+                    directory: directory.path
+                )
+            }
+
+            let hasExecutable = contents.contains { url in
+                var isDir: ObjCBool = false
+                return fileManager.fileExists(atPath: url.path, isDirectory: &isDir)
+                    && !isDir.boolValue
+                    && fileManager.isExecutableFile(atPath: url.path)
+            }
+
+            guard hasExecutable else {
+                log.error("[install] No executable found in \(directory.path)")
+                throw ArtifactInstallerError.executableNotFound(
+                    unitID: unitID,
+                    directory: directory.path
+                )
+            }
+            log.info("[install] Validated: executable found in extraction directory")
+        }
+    }
+
+    // MARK: - Cache validation
+
+    /// Check whether a cached directory contains a valid installation.
+    ///
+    /// - If `entrypointCommand` is set, checks for the specific file.
+    /// - Otherwise, checks for at least one executable file (shallow).
+    private func isCacheValid(descriptor: ArtifactDescriptor, directory: URL) -> Bool {
+        if let command = descriptor.entrypointCommand {
+            let normalized = command.hasPrefix("./")
+                ? String(command.dropFirst(2)) : command
+            guard !normalized.isEmpty else { return false }
+            let path = directory.appendingPathComponent(normalized)
+            return fileManager.isExecutableFile(atPath: path.path)
         }
 
-        log.info("[install] Artifact install complete for \(unitID)")
-        return ArtifactInstallResult(
-            unitID: unitID,
-            installDirectory: installDir,
-            wasCached: false
-        )
+        // No specific command — check for any executable
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else {
+            return false
+        }
+        return contents.contains { url in
+            var isDir: ObjCBool = false
+            return fileManager.fileExists(atPath: url.path, isDirectory: &isDir)
+                && !isDir.boolValue
+                && fileManager.isExecutableFile(atPath: url.path)
+        }
     }
 
     // MARK: - Strip first directory

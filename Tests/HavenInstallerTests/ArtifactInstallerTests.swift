@@ -63,9 +63,13 @@ final class MockArchiveExtractor: ArchiveExtractor, @unchecked Sendable {
                 at: destinationDirectory,
                 withIntermediateDirectories: true
             )
-            // Create a marker file to simulate extracted content
+            // Create a marker file to simulate extracted content (executable)
             let marker = destinationDirectory.appendingPathComponent("extracted-marker")
-            try Data("extracted".utf8).write(to: marker)
+            try Data("#!/bin/sh\necho extracted".utf8).write(to: marker)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: marker.path
+            )
         }
     }
 }
@@ -231,6 +235,8 @@ final class ArtifactInstallerErrorTests: XCTestCase {
             .unsupportedFormat(unitID: "u", detail: "d"),
             .artifactNotFound(unitID: "u", path: "/x"),
             .installFailed(unitID: "u", detail: "d"),
+            .executableNotFound(unitID: "u", directory: "/x"),
+            .invalidEntrypointPath(unitID: "u", path: "/abs/path"),
         ]
         let forbidden = ["pip", "python", "brew", "PATH", "launchctl", "venv", "tar", "ditto", "unzip"]
 
@@ -564,10 +570,14 @@ final class ArtifactInstallerCacheTests: XCTestCase {
     }
 
     func testCacheHitAvoidsDuplicateExtraction() throws {
-        // Pre-populate the cache
+        // Pre-populate the cache with a valid executable
         let unitDir = installedDir.appendingPathComponent("haven.unit.test-db")
         try FileManager.default.createDirectory(at: unitDir, withIntermediateDirectories: true)
-        try Data("cached-content".utf8).write(to: unitDir.appendingPathComponent("test-db"))
+        let cachedFile = unitDir.appendingPathComponent("test-db")
+        try Data("cached-content".utf8).write(to: cachedFile)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: cachedFile.path
+        )
 
         let fixtureDir = tempDir.appendingPathComponent("fixtures")
         try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
@@ -903,12 +913,6 @@ final class ArtifactInstallerStripTests: XCTestCase {
         ext.simulateExtraction = false
 
         let cache = ArtifactCache(installedRoot: installedDir)
-        let installer = ArtifactInstaller(
-            cache: cache,
-            downloadClient: MockDownloadClient(),
-            extractor: ext,
-            downloadsDirectory: downloadsDir
-        )
 
         // Create a fixture archive file
         let fixtureDir = tempDir.appendingPathComponent("fixtures")
@@ -1036,6 +1040,7 @@ final class ArtifactInstallerStripTests: XCTestCase {
 // MARK: - Test-only archive extractors
 
 /// Simulates an archive that extracts with a single wrapper directory.
+/// The first file in the `files` dictionary is made executable.
 private final class WrappedDirectoryExtractor: ArchiveExtractor, @unchecked Sendable {
     let wrapperName: String
     let files: [String: Data]
@@ -1048,13 +1053,22 @@ private final class WrappedDirectoryExtractor: ArchiveExtractor, @unchecked Send
     func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
         let wrapper = destinationDirectory.appendingPathComponent(wrapperName)
         try FileManager.default.createDirectory(at: wrapper, withIntermediateDirectories: true)
+        var first = true
         for (name, data) in files {
-            try data.write(to: wrapper.appendingPathComponent(name))
+            let path = wrapper.appendingPathComponent(name)
+            try data.write(to: path)
+            if first {
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: path.path
+                )
+                first = false
+            }
         }
     }
 }
 
 /// Simulates an archive that extracts flat files (no wrapper directory).
+/// The first file in the `files` dictionary is made executable.
 private final class FlatFilesExtractor: ArchiveExtractor, @unchecked Sendable {
     let files: [String: Data]
 
@@ -1064,8 +1078,801 @@ private final class FlatFilesExtractor: ArchiveExtractor, @unchecked Sendable {
 
     func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
         try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        var first = true
         for (name, data) in files {
-            try data.write(to: destinationDirectory.appendingPathComponent(name))
+            let path = destinationDirectory.appendingPathComponent(name)
+            try data.write(to: path)
+            if first {
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: path.path
+                )
+                first = false
+            }
         }
+    }
+}
+
+/// Simulates an archive that extracts but produces NO executable files.
+private final class NoExecutableExtractor: ArchiveExtractor, @unchecked Sendable {
+
+    func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
+        try FileManager.default.createDirectory(
+            at: destinationDirectory, withIntermediateDirectories: true
+        )
+        // Create a non-executable file
+        let dataFile = destinationDirectory.appendingPathComponent("data.txt")
+        try Data("just data".utf8).write(to: dataFile)
+    }
+}
+
+/// Simulates an archive that extracts a named executable.
+private final class NamedExecutableExtractor: ArchiveExtractor, @unchecked Sendable {
+    let executableName: String
+
+    init(executableName: String) {
+        self.executableName = executableName
+    }
+
+    func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
+        try FileManager.default.createDirectory(
+            at: destinationDirectory, withIntermediateDirectories: true
+        )
+        let execFile = destinationDirectory.appendingPathComponent(executableName)
+        try Data("#!/bin/sh\necho hello".utf8).write(to: execFile)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: execFile.path
+        )
+    }
+}
+
+/// Extractor that always fails.
+private final class FailingExtractor: ArchiveExtractor, @unchecked Sendable {
+    func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
+        throw ProcessArchiveExtractorError.extractionFailed(exitCode: 1, stderr: "simulated failure")
+    }
+}
+
+// MARK: - Atomic Staging Tests
+
+final class ArtifactInstallerAtomicTests: XCTestCase {
+
+    private var tempDir: URL!
+    private var installedDir: URL!
+    private var downloadsDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-atomic-test-\(UUID().uuidString)")
+        installedDir = tempDir.appendingPathComponent("Installed")
+        downloadsDir = tempDir.appendingPathComponent("Downloads")
+        try? FileManager.default.createDirectory(at: installedDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    private func makeFixtureFile(_ name: String = "app.zip") throws -> URL {
+        let fixtureDir = tempDir.appendingPathComponent("fixtures")
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+        let file = fixtureDir.appendingPathComponent(name)
+        try Data("fake-archive".utf8).write(to: file)
+        return file
+    }
+
+    func testExtractionFailureLeavesNoFinalDirectory() throws {
+        let archive = try makeFixtureFile()
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: MockDownloadClient(),
+            extractor: FailingExtractor(),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(URL(string: "https://example.com/app.zip")!),
+            format: .zip
+        )
+
+        // Set up mock download to return the fixture
+        let mockDl = MockDownloadClient()
+        mockDl.responses[URL(string: "https://example.com/app.zip")!] = archive
+        let installer2 = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: FailingExtractor(),
+            downloadsDirectory: downloadsDir
+        )
+
+        XCTAssertThrowsError(try installer2.install(descriptor: descriptor))
+
+        // Final directory should not exist
+        XCTAssertFalse(cache.isCached(unitID: "haven.unit.test"))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: cache.installDirectory(for: "haven.unit.test").path
+            )
+        )
+        // Staging directory should be cleaned up
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: cache.stagingDirectory(for: "haven.unit.test").path
+            )
+        )
+    }
+
+    func testSuccessfulAtomicInstallCreatesFinalDirectory() throws {
+        let archive = try makeFixtureFile()
+        let mockDl = MockDownloadClient()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        mockDl.responses[remoteURL] = archive
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: NamedExecutableExtractor(executableName: "my-app"),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+
+        XCTAssertFalse(result.wasCached)
+        XCTAssertTrue(cache.isCached(unitID: "haven.unit.test"))
+        // Staging directory should be gone
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: cache.stagingDirectory(for: "haven.unit.test").path
+            )
+        )
+        // Executable should be in the final directory
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("my-app").path
+            )
+        )
+    }
+
+    func testForceReinstallBypassesCache() throws {
+        let archive = try makeFixtureFile()
+
+        // Pre-populate the cache
+        let unitDir = installedDir.appendingPathComponent("haven.unit.test")
+        try FileManager.default.createDirectory(at: unitDir, withIntermediateDirectories: true)
+        let oldExec = unitDir.appendingPathComponent("old-binary")
+        try Data("old".utf8).write(to: oldExec)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: oldExec.path)
+
+        let mockDl = MockDownloadClient()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        mockDl.responses[remoteURL] = archive
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        XCTAssertTrue(cache.isCached(unitID: "haven.unit.test"))
+
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: NamedExecutableExtractor(executableName: "new-binary"),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip
+        )
+
+        let result = try installer.install(descriptor: descriptor, forceReinstall: true)
+
+        XCTAssertFalse(result.wasCached)
+        // New binary should be present
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("new-binary").path
+            )
+        )
+        // Old binary should be gone
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("old-binary").path
+            )
+        )
+        // Download should have been called
+        XCTAssertEqual(mockDl.downloadedURLs, [remoteURL])
+    }
+}
+
+// MARK: - Post-extraction Validation Tests
+
+final class ArtifactInstallerValidationTests: XCTestCase {
+
+    private var tempDir: URL!
+    private var installedDir: URL!
+    private var downloadsDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-validation-test-\(UUID().uuidString)")
+        installedDir = tempDir.appendingPathComponent("Installed")
+        downloadsDir = tempDir.appendingPathComponent("Downloads")
+        try? FileManager.default.createDirectory(at: installedDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    private func makeFixtureFile() throws -> URL {
+        let fixtureDir = tempDir.appendingPathComponent("fixtures")
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+        let file = fixtureDir.appendingPathComponent("app.zip")
+        try Data("fake-archive".utf8).write(to: file)
+        return file
+    }
+
+    func testValidationFailsWhenNoExecutableFound() throws {
+        let archive = try makeFixtureFile()
+        let mockDl = MockDownloadClient()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        mockDl.responses[remoteURL] = archive
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: NoExecutableExtractor(),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip
+        )
+
+        XCTAssertThrowsError(try installer.install(descriptor: descriptor)) { error in
+            guard case .executableNotFound(let unitID, _) = error as? ArtifactInstallerError else {
+                XCTFail("Expected executableNotFound, got \(error)")
+                return
+            }
+            XCTAssertEqual(unitID, "haven.unit.test")
+        }
+        // Should clean up staging
+        XCTAssertFalse(cache.isCached(unitID: "haven.unit.test"))
+    }
+
+    func testValidationSucceedsWithEntrypointCommand() throws {
+        let archive = try makeFixtureFile()
+        let mockDl = MockDownloadClient()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        mockDl.responses[remoteURL] = archive
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: NamedExecutableExtractor(executableName: "my-server"),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "my-server"
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+        XCTAssertFalse(result.wasCached)
+        XCTAssertTrue(cache.isCached(unitID: "haven.unit.test"))
+    }
+
+    func testValidationFailsWithWrongEntrypointCommand() throws {
+        let archive = try makeFixtureFile()
+        let mockDl = MockDownloadClient()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        mockDl.responses[remoteURL] = archive
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: NamedExecutableExtractor(executableName: "actual-server"),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "wrong-name"
+        )
+
+        XCTAssertThrowsError(try installer.install(descriptor: descriptor)) { error in
+            guard case .executableNotFound = error as? ArtifactInstallerError else {
+                XCTFail("Expected executableNotFound, got \(error)")
+                return
+            }
+        }
+    }
+}
+
+// MARK: - ArtifactCache Staging Tests
+
+final class ArtifactCacheStagingTests: XCTestCase {
+
+    private var tempDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-staging-test-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    func testPrepareStagingDirectoryCreatesInstallingDir() throws {
+        let cache = ArtifactCache(installedRoot: tempDir)
+        let dir = try cache.prepareStagingDirectory(for: "haven.unit.test")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.path))
+        XCTAssertTrue(dir.lastPathComponent.hasSuffix(".installing"))
+    }
+
+    func testPromoteStagingToFinal() throws {
+        let cache = ArtifactCache(installedRoot: tempDir)
+        let staging = try cache.prepareStagingDirectory(for: "haven.unit.test")
+        // Add content to staging
+        try Data("content".utf8).write(to: staging.appendingPathComponent("app"))
+
+        try cache.promoteStagingDirectory(for: "haven.unit.test")
+
+        // Final directory should exist with content
+        let final_ = cache.installDirectory(for: "haven.unit.test")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: final_.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: final_.appendingPathComponent("app").path
+            )
+        )
+        // Staging should be gone
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+    }
+
+    func testPromoteReplacesFinalDirectory() throws {
+        let cache = ArtifactCache(installedRoot: tempDir)
+
+        // Create a final directory with old content
+        let finalDir = cache.installDirectory(for: "haven.unit.test")
+        try FileManager.default.createDirectory(at: finalDir, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: finalDir.appendingPathComponent("old-file"))
+
+        // Create staging with new content
+        let staging = try cache.prepareStagingDirectory(for: "haven.unit.test")
+        try Data("new".utf8).write(to: staging.appendingPathComponent("new-file"))
+
+        try cache.promoteStagingDirectory(for: "haven.unit.test")
+
+        // New content should be present, old should be gone
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: finalDir.appendingPathComponent("new-file").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: finalDir.appendingPathComponent("old-file").path
+            )
+        )
+    }
+
+    func testCleanStaleStagingDirectories() throws {
+        let cache = ArtifactCache(installedRoot: tempDir)
+
+        // Create some stale staging dirs
+        let stale1 = tempDir.appendingPathComponent("unit-a.installing")
+        let stale2 = tempDir.appendingPathComponent("unit-b.installing")
+        let legitimate = tempDir.appendingPathComponent("unit-c") // not a staging dir
+        try FileManager.default.createDirectory(at: stale1, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: stale2, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: legitimate, withIntermediateDirectories: true)
+
+        try cache.cleanStaleStagingDirectories()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale1.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale2.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legitimate.path))
+    }
+
+    func testPrepareStagingCleansOldStaging() throws {
+        let cache = ArtifactCache(installedRoot: tempDir)
+
+        // Create an old staging directory with content
+        let oldStaging = cache.stagingDirectory(for: "haven.unit.test")
+        try FileManager.default.createDirectory(at: oldStaging, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: oldStaging.appendingPathComponent("old"))
+
+        // Prepare new staging — should replace old
+        let newStaging = try cache.prepareStagingDirectory(for: "haven.unit.test")
+
+        XCTAssertEqual(oldStaging.path, newStaging.path)
+        // Old content should be gone
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: newStaging.appendingPathComponent("old").path
+            )
+        )
+        // Directory should exist and be empty
+        let contents = try FileManager.default.contentsOfDirectory(atPath: newStaging.path)
+        XCTAssertTrue(contents.isEmpty)
+    }
+}
+
+// MARK: - Entrypoint Path Validation Tests
+
+final class ArtifactInstallerEntrypointPathTests: XCTestCase {
+
+    private var tempDir: URL!
+    private var installedDir: URL!
+    private var downloadsDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-entrypoint-test-\(UUID().uuidString)")
+        installedDir = tempDir.appendingPathComponent("Installed")
+        downloadsDir = tempDir.appendingPathComponent("Downloads")
+        try? FileManager.default.createDirectory(at: installedDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    private func makeFixtureFile() throws -> URL {
+        let fixtureDir = tempDir.appendingPathComponent("fixtures")
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+        let file = fixtureDir.appendingPathComponent("app.zip")
+        try Data("fake-archive".utf8).write(to: file)
+        return file
+    }
+
+    private func makeInstallerWith(remoteURL: URL, archive: URL, extractor: some ArchiveExtractor) -> (ArtifactInstaller, MockDownloadClient) {
+        let mockDl = MockDownloadClient()
+        mockDl.responses[remoteURL] = archive
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: extractor,
+            downloadsDirectory: downloadsDir
+        )
+        return (installer, mockDl)
+    }
+
+    func testDotSlashBinaryEntrypointSucceeds() throws {
+        let archive = try makeFixtureFile()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let (installer, _) = makeInstallerWith(
+            remoteURL: remoteURL, archive: archive,
+            extractor: NamedExecutableExtractor(executableName: "my-server")
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "./my-server"
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+        XCTAssertFalse(result.wasCached)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("my-server").path
+            )
+        )
+    }
+
+    func testDotSlashNestedPathEntrypointSucceeds() throws {
+        // Extractor that creates bin/my-server inside the directory
+        let ext = NestedExecutableExtractor(relativePath: "bin/my-server")
+        let archive = try makeFixtureFile()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let (installer, _) = makeInstallerWith(
+            remoteURL: remoteURL, archive: archive, extractor: ext
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "./bin/my-server"
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+        XCTAssertFalse(result.wasCached)
+    }
+
+    func testBareNameEntrypointSucceeds() throws {
+        // bare "my-server" (no ./) should also work — treated as relative to root
+        let archive = try makeFixtureFile()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let (installer, _) = makeInstallerWith(
+            remoteURL: remoteURL, archive: archive,
+            extractor: NamedExecutableExtractor(executableName: "my-server")
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "my-server"
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+        XCTAssertFalse(result.wasCached)
+    }
+
+    func testAbsolutePathEntrypointIsRejected() throws {
+        let archive = try makeFixtureFile()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let (installer, _) = makeInstallerWith(
+            remoteURL: remoteURL, archive: archive,
+            extractor: NamedExecutableExtractor(executableName: "my-server")
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "/usr/bin/my-server"
+        )
+
+        XCTAssertThrowsError(try installer.install(descriptor: descriptor)) { error in
+            guard case .invalidEntrypointPath(let unitID, let path) = error as? ArtifactInstallerError else {
+                XCTFail("Expected invalidEntrypointPath, got \(error)")
+                return
+            }
+            XCTAssertEqual(unitID, "haven.unit.test")
+            XCTAssertEqual(path, "/usr/bin/my-server")
+        }
+    }
+
+    func testPathTraversalEntrypointIsRejected() throws {
+        let archive = try makeFixtureFile()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let (installer, _) = makeInstallerWith(
+            remoteURL: remoteURL, archive: archive,
+            extractor: NamedExecutableExtractor(executableName: "my-server")
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "../../../etc/passwd"
+        )
+
+        XCTAssertThrowsError(try installer.install(descriptor: descriptor)) { error in
+            guard case .invalidEntrypointPath = error as? ArtifactInstallerError else {
+                XCTFail("Expected invalidEntrypointPath, got \(error)")
+                return
+            }
+        }
+    }
+
+    func testEmptyDotSlashEntrypointIsRejected() throws {
+        let archive = try makeFixtureFile()
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let (installer, _) = makeInstallerWith(
+            remoteURL: remoteURL, archive: archive,
+            extractor: NamedExecutableExtractor(executableName: "my-server")
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "./"
+        )
+
+        XCTAssertThrowsError(try installer.install(descriptor: descriptor)) { error in
+            guard case .invalidEntrypointPath = error as? ArtifactInstallerError else {
+                XCTFail("Expected invalidEntrypointPath, got \(error)")
+                return
+            }
+        }
+    }
+}
+
+// MARK: - Broken Cache Recovery Tests
+
+final class ArtifactInstallerBrokenCacheTests: XCTestCase {
+
+    private var tempDir: URL!
+    private var installedDir: URL!
+    private var downloadsDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-broken-cache-test-\(UUID().uuidString)")
+        installedDir = tempDir.appendingPathComponent("Installed")
+        downloadsDir = tempDir.appendingPathComponent("Downloads")
+        try? FileManager.default.createDirectory(at: installedDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    private func makeFixtureFile() throws -> URL {
+        let fixtureDir = tempDir.appendingPathComponent("fixtures")
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+        let file = fixtureDir.appendingPathComponent("app.zip")
+        try Data("fake-archive".utf8).write(to: file)
+        return file
+    }
+
+    func testBrokenCacheTriggersReinstall() throws {
+        let archive = try makeFixtureFile()
+
+        // Pre-populate the cache with a non-executable file (broken)
+        let unitDir = installedDir.appendingPathComponent("haven.unit.test")
+        try FileManager.default.createDirectory(at: unitDir, withIntermediateDirectories: true)
+        try Data("not-executable".utf8).write(to: unitDir.appendingPathComponent("data.txt"))
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        XCTAssertTrue(cache.isCached(unitID: "haven.unit.test")) // non-empty → "cached"
+
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let mockDl = MockDownloadClient()
+        mockDl.responses[remoteURL] = archive
+
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: NamedExecutableExtractor(executableName: "my-app"),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+
+        // Should NOT be a cache hit — broken cache was detected and replaced
+        XCTAssertFalse(result.wasCached)
+        // New executable should be present
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("my-app").path
+            )
+        )
+        // Download should have been called
+        XCTAssertEqual(mockDl.downloadedURLs, [remoteURL])
+    }
+
+    func testBrokenCacheWithEntrypointTriggersReinstall() throws {
+        let archive = try makeFixtureFile()
+
+        // Pre-populate with wrong executable name
+        let unitDir = installedDir.appendingPathComponent("haven.unit.test")
+        try FileManager.default.createDirectory(at: unitDir, withIntermediateDirectories: true)
+        let wrongExec = unitDir.appendingPathComponent("wrong-name")
+        try Data("#!/bin/sh\necho hi".utf8).write(to: wrongExec)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: wrongExec.path
+        )
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        XCTAssertTrue(cache.isCached(unitID: "haven.unit.test"))
+
+        let remoteURL = URL(string: "https://example.com/app.zip")!
+        let mockDl = MockDownloadClient()
+        mockDl.responses[remoteURL] = archive
+
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: NamedExecutableExtractor(executableName: "my-server"),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(remoteURL),
+            format: .zip,
+            entrypointCommand: "./my-server"
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+
+        // Cache was broken (wrong executable), so should reinstall
+        XCTAssertFalse(result.wasCached)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.installDirectory.appendingPathComponent("my-server").path
+            )
+        )
+    }
+
+    func testValidCacheStillReturnsCacheHit() throws {
+        // Pre-populate with a valid executable
+        let unitDir = installedDir.appendingPathComponent("haven.unit.test")
+        try FileManager.default.createDirectory(at: unitDir, withIntermediateDirectories: true)
+        let exec = unitDir.appendingPathComponent("my-app")
+        try Data("#!/bin/sh\necho hi".utf8).write(to: exec)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: exec.path
+        )
+
+        let cache = ArtifactCache(installedRoot: installedDir)
+        let mockDl = MockDownloadClient()
+        let installer = ArtifactInstaller(
+            cache: cache,
+            downloadClient: mockDl,
+            extractor: MockArchiveExtractor(),
+            downloadsDirectory: downloadsDir
+        )
+
+        let descriptor = ArtifactDescriptor(
+            unitID: "haven.unit.test",
+            source: .remote(URL(string: "https://example.com/app.zip")!),
+            format: .zip
+        )
+
+        let result = try installer.install(descriptor: descriptor)
+
+        // Valid cache — should be a cache hit, no download
+        XCTAssertTrue(result.wasCached)
+        XCTAssertTrue(mockDl.downloadedURLs.isEmpty)
+    }
+}
+
+// MARK: - Test-only helper: Nested executable extractor
+
+/// Simulates an archive that extracts an executable at a nested path.
+private final class NestedExecutableExtractor: ArchiveExtractor, @unchecked Sendable {
+    let relativePath: String
+
+    init(relativePath: String) {
+        self.relativePath = relativePath
+    }
+
+    func extract(archiveURL: URL, to destinationDirectory: URL, format: ArtifactFormat) throws {
+        let fullPath = destinationDirectory.appendingPathComponent(relativePath)
+        let parentDir = fullPath.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\necho hello".utf8).write(to: fullPath)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: fullPath.path
+        )
     }
 }

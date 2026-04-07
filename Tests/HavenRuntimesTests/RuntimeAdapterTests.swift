@@ -236,7 +236,7 @@ final class PythonRuntimeAdapterTests: XCTestCase {
         XCTAssertEqual(adapter.runtimeType, .python)
     }
 
-    func testSuccessfulPreparation() throws {
+    func testSuccessfulPreparationLegacy() throws {
         let unit = RuntimeUnit(
             id: "haven.unit.py-app",
             bundleID: "haven.bundle.py-svc",
@@ -260,7 +260,7 @@ final class PythonRuntimeAdapterTests: XCTestCase {
             unit: unit, plannedUnit: planned, serviceLayout: layout
         )
 
-        // Executable should be the venv python
+        // Executable should be the venv python (legacy path under run/venvs/)
         let expectedVenvRoot = layout.run
             .appendingPathComponent("venvs")
             .appendingPathComponent("haven.unit.py-app")
@@ -293,6 +293,79 @@ final class PythonRuntimeAdapterTests: XCTestCase {
         XCTAssertEqual(prepared.healthcheck?.type, .http)
         XCTAssertEqual(prepared.port, 9000)
         XCTAssertEqual(prepared.dependsOn, [])
+    }
+
+    func testSuccessfulPreparationWithPythonConfig() throws {
+        // Simulate executor setting installSource to the venv path
+        let venvPath = "/Users/test/.haven/Installed/python/haven.unit.calibre-web/venv"
+        let unit = RuntimeUnit(
+            id: "haven.unit.calibre-web",
+            bundleID: "haven.bundle.calibre-web-basic",
+            runtimeType: .python,
+            installSource: venvPath,
+            launchArguments: [],
+            healthcheck: Healthcheck(type: .http, target: "http://localhost:8083/", intervalSeconds: 15, retries: 3),
+            port: 8083,
+            environment: ["PORT": "8083"],
+            python: RuntimeUnit.PythonConfig(
+                package: "calibreweb", version: "0.6.26",
+                entrypoint: .init(module: "cps")
+            )
+        )
+        let planned = makePlannedUnit(
+            from: unit,
+            resolvedArgs: ["--port", "8083"],
+            resolvedEnv: ["PORT": "8083"],
+            resolvedHealthcheck: Healthcheck(type: .http, target: "http://localhost:8083/", intervalSeconds: 15, retries: 3),
+            port: PlannedPort(number: 8083, source: .spec)
+        )
+        let layout = makeLayout(capabilityID: "haven.capability.calibre-web")
+
+        let prepared = try adapter.prepare(
+            unit: unit, plannedUnit: planned, serviceLayout: layout
+        )
+
+        // Executable should use the venv path from installSource
+        let expectedVenvRoot = URL(fileURLWithPath: venvPath)
+        let expectedPython = expectedVenvRoot
+            .appendingPathComponent("bin")
+            .appendingPathComponent("python3")
+        XCTAssertEqual(prepared.executableURL, expectedPython)
+
+        // Arguments: "-m cps" + resolved args from planned unit
+        XCTAssertEqual(prepared.arguments, ["-m", "cps", "--port", "8083"])
+
+        // Environment
+        XCTAssertEqual(prepared.environment["VIRTUAL_ENV"], expectedVenvRoot.path)
+        XCTAssertEqual(prepared.environment["PORT"], "8083")
+        XCTAssertTrue(prepared.environment["PATH"]?.hasPrefix(expectedVenvRoot.appendingPathComponent("bin").path) == true)
+
+        XCTAssertEqual(prepared.runtimeType, .python)
+        XCTAssertEqual(prepared.port, 8083)
+    }
+
+    func testPythonConfigWithEmptyInstallSourceFallsBackToServiceLayout() throws {
+        let unit = RuntimeUnit(
+            id: "haven.unit.py-test",
+            bundleID: "haven.bundle.py-test",
+            runtimeType: .python,
+            installSource: "",
+            launchArguments: [],
+            python: RuntimeUnit.PythonConfig(
+                package: "testpkg", version: "1.0.0",
+                entrypoint: .init(module: "testmod")
+            )
+        )
+        let planned = makePlannedUnit(from: unit, resolvedArgs: [])
+        let layout = makeLayout(capabilityID: "haven.capability.py-test")
+
+        let prepared = try adapter.prepare(
+            unit: unit, plannedUnit: planned, serviceLayout: layout
+        )
+
+        // Should fall back to the service layout path
+        XCTAssertTrue(prepared.executableURL.path.contains("run/venvs/haven.unit.py-test"))
+        XCTAssertEqual(prepared.arguments, ["-m", "testmod"])
     }
 
     func testVenvDirectoryIsDeterministic() {

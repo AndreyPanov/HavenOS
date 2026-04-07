@@ -4,7 +4,7 @@
 
 Haven is a macOS-first service management system. It lets users install, configure, start, stop, and monitor self-hosted services on their Mac — without ever needing to understand the underlying tooling, runtimes, or system plumbing.
 
-**Target:** macOS 14+, Swift 5.9+, Swift Package Manager.
+**Target:** macOS 26+, Swift 6.2+, Swift Package Manager.
 
 ## Core Abstraction Chain
 
@@ -126,7 +126,7 @@ Pure value types with Codable, Equatable, Sendable, validation, and static examp
 |---|---|---|
 | `Capability.swift` | `Capability` | ID, name, version, description. Example: `.testLibraryExample` |
 | `Bundle.swift` | `Bundle` | ID, name, capability (singular), runtimeUnits, settings, version. Custom `init(from:)` for optional fields. Example: `.testLibraryBasicExample` |
-| `RuntimeUnit.swift` | `RuntimeUnit` | ID, bundleID, runtimeType (native/python), installSource (can be relative to Specs directory — SpecLoader resolves to absolute), launchArguments, healthcheck, dependsOn, port, environment, version. Supports `entrypoint` block (args → launchArguments, env → environment). Custom `init(from:)`. Examples: `.testDBExample`, `.testWorkerExample`, `.testWebExample` |
+| `RuntimeUnit.swift` | `RuntimeUnit` | ID, bundleID, runtimeType (native/python), installSource (can be relative to Specs directory — SpecLoader resolves to absolute), launchArguments, healthcheck, dependsOn, port, environment, version, artifact, python. Supports `entrypoint` block (args → launchArguments, env → environment). Nested `PythonConfig` (package, version, entrypoint.module) and `PythonEntrypoint`. Validation: `.native` requires nil python; `.python` requires non-nil python + nil artifact + non-empty package/version/module. Custom `init(from:)`. Examples: `.testDBExample`, `.testWorkerExample`, `.testWebExample`, `.testPythonExample` |
 | `Healthcheck.swift` | `Healthcheck` | type (http/tcp/exec), target, intervalSeconds, retries |
 | `SettingField.swift` | `SettingField` | key, label, fieldType (string/integer/boolean/path), defaultValue, required. Regex-validated key |
 | `ServiceRecord.swift` | `ServiceRecord` | Read-only aggregate of capability + bundle + units. Example: `.testLibraryExample` |
@@ -168,8 +168,9 @@ Filesystem layout and persistent state store. Thread-safe, atomic writes.
 | `HavenPaths.swift` | `HavenPaths` | Resolves all paths from a base URL: `State/`, `Downloads/`, `Installed/`, `Services/`, `State/services.json` |
 | `ServiceDirectoryLayout.swift` | `ServiceDirectoryLayout` | Codable value type for `Services/<cap-id>/{data,config,logs,run}` |
 | `ServiceStatus.swift` | `ServiceStatus` | Enum: installed, running, stopped, failed |
-| `StoredServiceState.swift` | `StoredServiceState` | capability, bundleID, installedAt, updatedAt, status, resolvedSettings, portAssignments, runtimeUnits, directoryLayout |
+| `StoredServiceState.swift` | `StoredServiceState` | capability, bundleID, installedAt, updatedAt, status, resolvedSettings, portAssignments, runtimeUnits, directoryLayout, pythonInfo (default `[]`, backward-compatible decode) |
 | `StoredPortAssignment.swift` | `StoredPortAssignment` | unitID + port |
+| `StoredPythonInfo.swift` | `StoredPythonInfo` | unitID, package, version, module, venvDirectory, pythonPath — persists Python venv metadata |
 | `HavenState.swift` | `HavenState` | Top-level container: `[capabilityID: StoredServiceState]` |
 | `StateStore.swift` | `StateStore` | Protocol: load, save, service(for:), upsert, remove |
 | `AtomicFileWriter.swift` | `AtomicFileWriter` | Temp file + rename, creates parent dirs |
@@ -184,7 +185,7 @@ Runtime adapter layer that prepares RuntimeUnits for launch. Encapsulates all ru
 | `RuntimeAdapter.swift` | `RuntimeAdapter` | Protocol: `prepare(unit:plannedUnit:serviceLayout:)` → `PreparedRuntime`, `teardown(preparedRuntime:serviceLayout:)` |
 | `PreparedRuntime.swift` | `PreparedRuntime` | Launch-ready output: executableURL, arguments (flags only — does NOT include executable path), environment, workingDirectory, managedDirectories, runtimeType, healthcheck, port, dependsOn |
 | `NativeRuntimeAdapter.swift` | `NativeRuntimeAdapter` | Prepares native macOS binaries — resolves executable from installSource (handles directories via `resolveExecutable`), strips leading executable from arguments if present (legacy spec compat), passes through planned env |
-| `PythonRuntimeAdapter.swift` | `PythonRuntimeAdapter` | Prepares Haven-managed Python apps — computes per-unit venv under `run/venvs/<unit-id>/`, sets VIRTUAL_ENV, controlled PATH, python3 as interpreter |
+| `PythonRuntimeAdapter.swift` | `PythonRuntimeAdapter` | Prepares Haven-managed Python apps. Two code paths: (1) PythonConfig present — uses installSource as venv root (set by executor), builds `-m <module>` args; (2) Legacy (no PythonConfig) — computes venv under `run/venvs/<unit-id>/`. Sets VIRTUAL_ENV, controlled PATH, python3 as interpreter |
 | `RuntimeAdapterRegistry.swift` | `RuntimeAdapterRegistry` | Resolves adapter by `RuntimeType`, convenience `prepare()`, `makeDefault()` factory |
 | `RuntimeAdapterError.swift` | `RuntimeAdapterError` | Service-oriented errors: missingInstallSource, executableNotFound, missingLaunchArguments, unsupportedRuntimeType, environmentSetupFailed |
 
@@ -192,7 +193,7 @@ Key design rules:
 - Adapters are pure preparation — no process execution, no filesystem I/O, no downloads
 - `PreparedRuntime.arguments` contains only flags/args, never the executable path — `LaunchdJob.make()` prepends `executableURL.path` to build the full `ProgramArguments` array
 - `PreparedRuntime` is runtime-agnostic — execution layer treats all runtimes identically
-- Python venvs live under `run/venvs/<unit-id>/` within the service directory
+- Python venvs live under `Installed/python/<unit-id>/venv/` (when PythonConfig is set), or `run/venvs/<unit-id>/` (legacy path)
 - PATH is controlled (venv bin + `/usr/bin:/bin`) — no user PATH leakage
 - Error cases use service-oriented language, never mention pip/brew/venv/PATH
 
@@ -213,6 +214,10 @@ Artifact installer layer that fetches, caches, and places service artifacts in H
 | `ProcessArchiveExtractor.swift` | `ProcessArchiveExtractor` | Production implementation: `/usr/bin/ditto -xk` for ZIP, `/usr/bin/tar -xzf` for tar.gz |
 | `ArtifactCache.swift` | `ArtifactCache` | Manages `<base>/Installed/<unit-id>/` directories. isCached, remove, prepareCleanDirectory |
 | `ArtifactInstaller.swift` | `ArtifactInstaller` | Primary API: `install(descriptor:)` → `ArtifactInstallResult`, `uninstall(unitID:)`. Orchestrates cache check → source resolution → extraction/copy |
+| `PythonCommandRunner.swift` | `PythonCommandRunner`, `ProcessPythonCommandRunner` | Protocol + production impl for running Python commands via Foundation.Process. Enables mock-based testing |
+| `PythonEnvironmentError.swift` | `PythonEnvironmentError` | Error enum: pythonNotFound, venvCreationFailed, packageInstallFailed, moduleValidationFailed |
+| `PythonEnvironmentResult.swift` | `PythonEnvironmentResult` | unitID, venvDirectory, pythonPath, package, version, wasCached |
+| `PythonEnvironmentPreparer.swift` | `PythonEnvironmentPreparer` | Creates/manages per-unit Python venvs at `Installed/python/<unit-id>/venv/`. Atomic staging (`<unitID>.creating` → final), cache validation (python exists + module imports), system Python discovery from absolute paths only. API: `prepare(pythonConfig:unitID:basePath:)`, `remove(unitID:basePath:)` |
 
 Key design rules:
 - Install directories are deterministic: `<base>/Installed/<unit-id>/`
@@ -267,17 +272,17 @@ MVP end-to-end orchestrator that wires together spec loading, planning, runtime 
 
 | File | Type | Notes |
 |---|---|---|
-| `HavenExecutor.swift` | `HavenExecutor` | Primary API: `install(capabilityID:registry:settings:)`, `uninstall(capabilityID:)`, `start(capabilityID:)`, `stop(capabilityID:)`, `status(capabilityID:)`. Injectable dependencies: HavenPaths, StateStore, RuntimeAdapterRegistry, LaunchdController, ArtifactInstaller (optional) |
+| `HavenExecutor.swift` | `HavenExecutor` | Primary API: `install(capabilityID:registry:settings:)`, `uninstall(capabilityID:)`, `start(capabilityID:)`, `stop(capabilityID:)`, `status(capabilityID:)`. Injectable dependencies: HavenPaths, StateStore, RuntimeAdapterRegistry, LaunchdController, ArtifactInstaller (optional), PythonEnvironmentPreparer (optional) |
 | `ExecutorError.swift` | `ExecutorError` | 11 cases: alreadyInstalled, notInstalled, planningFailed, unsupportedRuntime, artifactInstallFailed, preparationFailed, serviceInstallFailed, serviceUninstallFailed, startFailed, stopFailed, statusQueryFailed. All carry capabilityID + optional unitID + detail |
 | `ServiceStatusReport.swift` | `ServiceStatusReport`, `UnitStatusReport` | Combines persisted state with live launchd status per unit. Reports capability, bundleID, status, and per-unit state/pid/lastExitStatus |
 
 Key design rules:
-- Install flow: guard not installed → Planner.planInstall → create directories → for each unit: reject unsupported runtimes (python) → install artifact (if installer configured) → resolve installed path → prepare runtime → make LaunchdJob → install job → persist state (.installed)
-- Install rollback: on failure, a lightweight rollback stack unwinds completed steps in reverse — uninstalls launchd jobs, removes artifacts, deletes service directory. Best-effort cleanup; original error is always preserved as the thrown result
-- Uninstall flow: for each unit (reverse order): best-effort stop + uninstall → best-effort remove artifacts → remove state → best-effort remove service directory
+- Install flow: guard not installed → Planner.planInstall → create directories → for each unit: if python → prepare venv via PythonEnvironmentPreparer, set installSource to venv path; if native → install artifact (if installer configured) → resolve installed path → prepare runtime → make LaunchdJob → install job → persist state (.installed) with pythonInfo
+- Install rollback: on failure, a lightweight rollback stack unwinds completed steps in reverse — uninstalls launchd jobs, removes artifacts, removes newly-created Python venvs (preserves pre-existing cached venvs), deletes service directory. Best-effort cleanup; original error is always preserved as the thrown result
+- Uninstall flow: for each unit (reverse order): best-effort stop + uninstall → best-effort remove Python venvs → best-effort remove artifacts → remove state → best-effort remove service directory
 - Start/stop operate in dependency order (forward/reverse) and update persisted status
 - ArtifactInstaller is optional (nil by default) — when present, artifacts are installed into `Installed/<unit-id>/` and the RuntimeUnit's installSource is resolved to the installed location
-- Python runtime units are rejected early with `.unsupportedRuntime` — no artifacts fetched, no launchd calls made
+- PythonEnvironmentPreparer is optional — when present, Python units get venvs prepared at `Installed/python/<unit-id>/venv/`, installSource set to venv path via `unit.withInstallSource()`
 - All operations are synchronous (no async) and throw on failure
 - Error cases use service-oriented language — no launchctl/pip/brew/PATH exposure
 
@@ -306,35 +311,40 @@ Under the Haven base directory:
     services.json          ← persisted service state
   Downloads/               ← temporary download staging
   Installed/
-    <runtime-unit-id>/     ← one per installed runtime unit
+    <runtime-unit-id>/     ← one per installed native runtime unit
       ...                  ← extracted archive contents or copied executable
+    python/
+      <unit-id>/           ← one per installed Python unit
+        venv/              ← isolated virtual environment
+          bin/python3      ← Haven-managed interpreter
+          bin/pip3         ← package manager
+          lib/             ← installed packages
+        <unit-id>.creating ← atomic staging (temporary, promoted to venv/)
   Services/
     <capability-id>/       ← one per installed capability
       data/                ← persistent data
       config/              ← configuration files
       logs/                ← log files
       run/                 ← runtime state (PIDs, sockets)
-        venvs/             ← Python venvs (only for python units)
-          <unit-id>/       ← per-unit virtual environment
-            bin/python3    ← Haven-managed interpreter
 ```
 
 ## Test Structure
 
 | File | Tests | Covers |
 |---|---|---|
-| `HavenCoreTests.swift` | 40 | Domain models: Codable, validation, examples |
+| `HavenCoreTests.swift` | 51 | Domain models: Codable, validation, examples. Python validation: success, missing config, empty package/version/module, python+artifact mutual exclusivity, native+python mutual exclusivity, empty installSource/launchArgs allowed for python, PythonConfig codable round-trip |
 | `SpecLoaderTests.swift` | 11 | Spec loading: valid, unknown field, duplicate ID, missing ref, malformed JSON, empty dir, entrypoint mapping, relative installSource resolution (4 — relative resolved, absolute unchanged, path with spaces, invalid relative path fails) |
 | `PlannerTests.swift` | 14 | Planning: success, placeholder expansion (env/args/healthcheck), port override, directory layout, errors (missing cap/bundle/unit, required settings, cycles), topological order, default settings, template context |
-| `StateTests.swift` | 29 | HavenPaths (7), ServiceDirectoryLayout (5), StoredServiceState (2), FileStateStore (15 — empty load, save/reload, upsert, remove, atomic write, thread safety) |
-| `HavenExecutorTests.swift` | 46 | Install (9 — creates state, correct unit IDs, creates directories, calls bootstrap for each unit, installed status, port assignments, already-installed throws, invalid capability throws, persists resolved settings), Uninstall (6 — removes state, calls bootout for each unit, removes service directory, stops before unloading, not-installed throws, reverses dependency order), Start/Stop (6 — start calls launchd for each unit, updates to running, not-installed throws, stop reverses order, updates to stopped), Status (3 — returns unit statuses, not-installed throws, queries launchd for each unit), End-to-End (1 — full lifecycle), Artifact (7 — copies executables, deterministic paths, missing artifact throws, uninstall removes artifacts, calls bootstrap, full lifecycle with artifacts, installed artifact produces correct ProgramArguments), Python (3 — rejects cleanly, does not create state, does not call launchd), Rollback (8 — first job failure cleans up job, second job failure cleans up both, artifact failure cleans up artifact, missing artifact cleans up earlier artifacts, failure removes service directory, preserves original error, successful install unaffected, no partial install remains), ExecutorError (3 — equality, inequality, no tooling leaks) |
+| `StateTests.swift` | 31 | HavenPaths (7), ServiceDirectoryLayout (5), StoredServiceState (4 — round-trip, round-trip with pythonInfo, backward-compat decode without pythonInfo), FileStateStore (15 — empty load, save/reload, upsert, remove, atomic write, thread safety) |
+| `HavenExecutorTests.swift` | 46 | Install (9 — creates state, correct unit IDs, creates directories, calls bootstrap for each unit, installed status, port assignments, already-installed throws, invalid capability throws, persists resolved settings), Uninstall (6 — removes state, calls bootout for each unit, removes service directory, stops before unloading, not-installed throws, reverses dependency order), Start/Stop (6 — start calls launchd for each unit, updates to running, not-installed throws, stop reverses order, updates to stopped), Status (3 — returns unit statuses, not-installed throws, queries launchd for each unit), End-to-End (1 — full lifecycle), Artifact (7 — copies executables, deterministic paths, missing artifact throws, uninstall removes artifacts, calls bootstrap, full lifecycle with artifacts, installed artifact produces correct ProgramArguments), Python (3 — no preparer rejects cleanly, does not create state, does not call launchd), Rollback (8 — first job failure cleans up job, second job failure cleans up both, artifact failure cleans up artifact, missing artifact cleans up earlier artifacts, failure removes service directory, preserves original error, successful install unaffected, no partial install remains), ExecutorError (3 — equality, inequality, no tooling leaks) |
 | `HavenCLITests.swift` | 20 | Install (8 — required arg, parsed ID, specsDir default/override, set single/multiple, baseDir default/override), Uninstall (2), Start (2), Stop (2), Status (2), List (2 — no args, baseDir override), Havenctl (2 — subcommands, default subcommand) |
-| `RuntimeAdapterTests.swift` | 26 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (7 — type, success, venv paths, empty source/args, PATH isolation, teardown), PreparedRuntime (2 — equality), RuntimeAdapterError (3 — equality, no tooling leaks) |
+| `RuntimeAdapterTests.swift` | 29 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (10 — type, legacy success, venv paths, empty source/args, PATH isolation, teardown, PythonConfig-based preparation with `-m module` args, PythonConfig empty installSource fallback), PreparedRuntime (2 — equality), RuntimeAdapterError (3 — equality, no tooling leaks) |
 | `LaunchdJobTests.swift` | 38 | LaunchdLabel (5 — prefix, generation, determinism, uniqueness), LaunchdKeepAlivePolicy (5 — plist values, shouldInclude, equality), LaunchdJob native (4 — make, log paths, env passthrough, custom keepAlive), LaunchdJob python (2 — make, log paths), ProgramArguments integration (4 — native args start with executable, entrypoint-style args, python args start with interpreter, plist round-trip preserves args), Plist encoding (12 — required keys, label, args, runAtLoad, empty/nonempty env, keepAlive variants, XML validity, round-trip, env round-trip), Equality (2), LogPath (4 — stdout, stderr, under logs, deterministic) |
 | `LaunchdControllerTests.swift` | 50 | LaunchdPaths (7 — default dir, custom dir, plist path, determinism, uniqueness, extension, equality), LaunchdJobStatus (6 — running/stopped/installed/notFound, equality/inequality), LaunchdControllerError (3 — equality, inequality, no tooling leaks), LaunchctlResult (3 — succeeded, failed, equality), Install (5 — writes plist, valid plist content, calls bootstrap, bootstrap failure, client throws), Uninstall (4 — calls bootout, removes plist, tolerates missing plist, bootout failure), Start/Stop (6 — calls client, failure cases, client throws), Status (6 — running, stopped, installed when plist exists, notFound, calls print, client throws), Status parsing (6 — running with PID, stopped, PID overrides state, empty output, whitespace, label preserved), Integration (2 — install-then-uninstall, creates directory), ProcessLaunchctlClient (2 — domain target, service target) |
 | `ArtifactInstallerTests.swift` | 41 | ArtifactSource (6 — local, remote, string init http/https/local, equality), ArtifactFormat (4 — detect zip, tar.gz, unknown, equality), ArtifactDescriptor (2 — properties, equality), ArtifactInstallResult (2 — properties, equality), ArtifactInstallerError (3 — equality, inequality, no tooling leaks), ArtifactCache (8 — install dir, not cached, cached after content, empty dir not cached, remove, remove nonexistent, prepare clean removes existing, deterministic), Installer executable (2 — local executable, not found error), Installer archive (3 — zip, tar.gz, extraction failure cleanup), Installer cache (2 — cache hit avoids extraction, uninstall removes), Installer download (2 — remote URL, download failure error), Installer paths (2 — deterministic directory, HavenPaths convenience init), HavenPaths installed (2 — directory path, in top-level), ProcessArchiveExtractor (3 — real zip, real tar.gz, invalid archive error) |
+| `PythonEnvironmentPreparerTests.swift` | 9 | MockPythonCommandRunner with FIFO results + side-effect callback. Successful preparation (3 commands, atomic promote), venv creation failure (error + cleanup), pip install failure, module validation failure, cached venv reuse (wasCached: true, 1 command), broken venv triggers reinstall (4 commands), remove directory, remove nonexistent (no-op), path helpers |
 
-**Total: 316 tests, all passing.**
+**Total: 410 tests, all passing.**
 
 Test fixtures use a synthetic `test-library` capability (not real third-party apps):
 - Capability: `haven.capability.test-library`
@@ -347,8 +357,7 @@ Test fixtures use a synthetic `test-library` capability (not real third-party ap
 
 ## What Does Not Exist Yet
 
-- No actual venv creation or package installation (adapters compute paths but don't touch filesystem)
-- No Python runtime support in the executor (rejected with `.unsupportedRuntime` — adapters exist but executor blocks Python units)
 - UI uses mock data only — not wired to HavenExecutor or state store yet
 - No networking (URLSessionDownloadClient exists but no orchestration layer uses it yet)
 - No update/upgrade support (must uninstall and reinstall)
+- Python runtime support exists (PythonEnvironmentPreparer + executor integration) but has not been tested end-to-end with a real Python service yet
