@@ -76,8 +76,7 @@ struct DiscoveryView: View {
                     )
 
                     Button("Open Settings") {
-                        // Navigate to settings via notification pattern if needed;
-                        // for now this is a visual cue that settings needs attention.
+                        // TODO: Navigate to Settings tab
                     }
 
                 case .issues(let issues):

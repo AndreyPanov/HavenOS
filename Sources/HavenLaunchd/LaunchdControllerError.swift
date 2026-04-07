@@ -31,9 +31,6 @@ public enum LaunchdControllerError: Error, LocalizedError, Equatable, Sendable {
     /// The status query failed.
     case statusQueryFailed(label: String, detail: String)
 
-    /// The job was expected to exist but was not found.
-    case jobNotFound(label: String)
-
     public var errorDescription: String? {
         switch self {
         case .plistSerializationFailed(_, let detail):
@@ -52,8 +49,6 @@ public enum LaunchdControllerError: Error, LocalizedError, Equatable, Sendable {
             "Service stop failed: \(detail)"
         case .statusQueryFailed(_, let detail):
             "Status query failed: \(detail)"
-        case .jobNotFound(let label):
-            "Job '\(label)' not found."
         }
     }
 }

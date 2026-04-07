@@ -55,7 +55,7 @@ public enum Planner {
         )
 
         // 5. Directory layout
-        let layout = PlannedDirectoryLayout(
+        let layout = ServiceDirectoryLayout(
             baseDirectory: baseDirectory,
             capabilityID: capabilityID
         )
@@ -161,7 +161,7 @@ public enum Planner {
     private static func planUnit(
         _ unit: RuntimeUnit,
         resolvedSettings: [String: String],
-        layout: PlannedDirectoryLayout,
+        layout: ServiceDirectoryLayout,
         usedPorts: Set<Int>
     ) throws -> PlannedRuntimeUnit {
         // Determine candidate port and its source.

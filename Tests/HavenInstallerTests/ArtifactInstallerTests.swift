@@ -232,8 +232,6 @@ final class ArtifactInstallerErrorTests: XCTestCase {
             .sourceFileNotFound(unitID: "u", path: "/x"),
             .downloadFailed(unitID: "u", url: "http://x", detail: "d"),
             .extractionFailed(unitID: "u", detail: "d"),
-            .unsupportedFormat(unitID: "u", detail: "d"),
-            .artifactNotFound(unitID: "u", path: "/x"),
             .installFailed(unitID: "u", detail: "d"),
             .executableNotFound(unitID: "u", directory: "/x"),
             .invalidEntrypointPath(unitID: "u", path: "/abs/path"),

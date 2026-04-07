@@ -16,12 +16,6 @@ public enum ArtifactInstallerError: Error, LocalizedError, Equatable, Sendable {
     /// The artifact could not be extracted.
     case extractionFailed(unitID: String, detail: String)
 
-    /// The archive format is not supported.
-    case unsupportedFormat(unitID: String, detail: String)
-
-    /// The expected artifact was not found after installation.
-    case artifactNotFound(unitID: String, path: String)
-
     /// Failed to copy or write the artifact to the install directory.
     case installFailed(unitID: String, detail: String)
 
@@ -39,10 +33,6 @@ public enum ArtifactInstallerError: Error, LocalizedError, Equatable, Sendable {
             "Download failed for \(url): \(detail)"
         case .extractionFailed(_, let detail):
             "Extraction failed: \(detail)"
-        case .unsupportedFormat(_, let detail):
-            "Unsupported format: \(detail)"
-        case .artifactNotFound(_, let path):
-            "Artifact not found: \(path)"
         case .installFailed(_, let detail):
             "Install failed: \(detail)"
         case .executableNotFound(_, let directory):

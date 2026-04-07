@@ -39,6 +39,15 @@ public struct ServiceDirectoryLayout: Codable, Equatable, Sendable {
         self.run = root.appendingPathComponent("run")
     }
 
+    /// Derive the standard layout for a capability under a base directory
+    /// (appends `Services/<capabilityID>`).
+    public init(baseDirectory: URL, capabilityID: String) {
+        self.init(
+            servicesDirectory: baseDirectory.appendingPathComponent("Services"),
+            capabilityID: capabilityID
+        )
+    }
+
     /// All directories that should be created, in order.
     public var allDirectories: [URL] {
         [serviceRoot, data, config, logs, run]

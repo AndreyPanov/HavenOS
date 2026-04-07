@@ -16,14 +16,14 @@ public struct PlannedService: Equatable, Sendable {
     public let resolvedSettings: [String: String]
 
     /// The directory layout for this service.
-    public let directoryLayout: PlannedDirectoryLayout
+    public let directoryLayout: ServiceDirectoryLayout
 
     public init(
         capability: Capability,
         bundle: Bundle,
         units: [PlannedRuntimeUnit],
         resolvedSettings: [String: String],
-        directoryLayout: PlannedDirectoryLayout
+        directoryLayout: ServiceDirectoryLayout
     ) {
         self.capability = capability
         self.bundle = bundle

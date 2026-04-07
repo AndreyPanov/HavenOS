@@ -77,10 +77,14 @@ struct SettingsView: View {
             Section("Advanced") {
                 Toggle("Show Internal Details", isOn: $settings.showInternalDetails)
                 LabeledContent("Logs") {
-                    Button("Open Logs Folder") {}
+                    Button("Open Logs Folder") {
+                        // TODO: Open ~/.haven/Services/*/logs in Finder
+                    }
                 }
                 LabeledContent("Service State") {
-                    Button("Rebuild Service State") {}
+                    Button("Rebuild Service State") {
+                        // TODO: Reconcile persisted state with launchd reality
+                    }
                 }
             }
 

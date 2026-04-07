@@ -109,79 +109,43 @@ final class ServiceManager {
 
     /// Install a service by capability ID. Runs the executor on a background thread.
     func installService(capabilityID: String) async {
-        log.info("Installing service: \(capabilityID)")
-        isPerformingAction = true
-        lastError = nil
-
         guard let registry = self.registry else {
             lastError = "No catalog loaded. Configure your catalog folder in Settings."
-            isPerformingAction = false
             return
         }
-
-        let executor = self.executor
-
-        do {
-            _ = try await Task.detached {
-                try executor.install(capabilityID: capabilityID, registry: registry)
-            }.value
-            log.info("Install succeeded: \(capabilityID)")
-            refresh()
-        } catch {
-            log.error("Install failed: \(error.localizedDescription)")
-            lastError = error.localizedDescription
+        await performAction("Install", capabilityID: capabilityID) { executor in
+            _ = try executor.install(capabilityID: capabilityID, registry: registry)
         }
-
-        isPerformingAction = false
     }
 
     /// Uninstall a service by capability ID.
     func uninstallService(capabilityID: String) async {
-        log.info("Uninstalling service: \(capabilityID)")
-        isPerformingAction = true
-        lastError = nil
-
-        let executor = self.executor
-
-        do {
-            try await Task.detached {
-                try executor.uninstall(capabilityID: capabilityID)
-            }.value
-            log.info("Uninstall succeeded: \(capabilityID)")
-            refresh()
-        } catch {
-            log.error("Uninstall failed: \(error.localizedDescription)")
-            lastError = error.localizedDescription
+        await performAction("Uninstall", capabilityID: capabilityID) { executor in
+            try executor.uninstall(capabilityID: capabilityID)
         }
-
-        isPerformingAction = false
     }
 
     /// Start an installed service.
     func startService(capabilityID: String) async {
-        log.info("Starting service: \(capabilityID)")
-        isPerformingAction = true
-        lastError = nil
-
-        let executor = self.executor
-
-        do {
-            try await Task.detached {
-                try executor.start(capabilityID: capabilityID)
-            }.value
-            log.info("Start succeeded: \(capabilityID)")
-            refresh()
-        } catch {
-            log.error("Start failed: \(error.localizedDescription)")
-            lastError = error.localizedDescription
+        await performAction("Start", capabilityID: capabilityID) { executor in
+            try executor.start(capabilityID: capabilityID)
         }
-
-        isPerformingAction = false
     }
 
     /// Stop a running service.
     func stopService(capabilityID: String) async {
-        log.info("Stopping service: \(capabilityID)")
+        await performAction("Stop", capabilityID: capabilityID) { executor in
+            try executor.stop(capabilityID: capabilityID)
+        }
+    }
+
+    /// Run a lifecycle action on a background thread with standard error handling.
+    private func performAction(
+        _ label: String,
+        capabilityID: String,
+        action: @Sendable @escaping (HavenExecutor) throws -> Void
+    ) async {
+        log.info("\(label) service: \(capabilityID)")
         isPerformingAction = true
         lastError = nil
 
@@ -189,12 +153,12 @@ final class ServiceManager {
 
         do {
             try await Task.detached {
-                try executor.stop(capabilityID: capabilityID)
+                try action(executor)
             }.value
-            log.info("Stop succeeded: \(capabilityID)")
+            log.info("\(label) succeeded: \(capabilityID)")
             refresh()
         } catch {
-            log.error("Stop failed: \(error.localizedDescription)")
+            log.error("\(label) failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
 

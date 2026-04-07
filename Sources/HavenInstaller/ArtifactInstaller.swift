@@ -295,9 +295,7 @@ public struct ArtifactInstaller: Sendable {
             }
 
             // Normalize: strip leading "./" if present
-            let normalized = command.hasPrefix("./")
-                ? String(command.dropFirst(2))
-                : command
+            let normalized = command.strippingDotSlashPrefix
 
             guard !normalized.isEmpty else {
                 log.error("[install] Empty entrypoint command after normalization")
@@ -371,8 +369,7 @@ public struct ArtifactInstaller: Sendable {
     /// - Otherwise, checks for at least one executable file (shallow).
     private func isCacheValid(descriptor: ArtifactDescriptor, directory: URL) -> Bool {
         if let command = descriptor.entrypointCommand {
-            let normalized = command.hasPrefix("./")
-                ? String(command.dropFirst(2)) : command
+            let normalized = command.strippingDotSlashPrefix
             guard !normalized.isEmpty else { return false }
             let path = directory.appendingPathComponent(normalized)
             return fileManager.isExecutableFile(atPath: path.path)

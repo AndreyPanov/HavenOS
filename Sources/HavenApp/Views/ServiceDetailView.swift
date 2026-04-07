@@ -115,7 +115,7 @@ struct ServiceDetailView: View {
         }
         .navigationTitle(service.name)
         .frame(maxWidth: 640)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

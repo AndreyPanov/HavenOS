@@ -121,7 +121,7 @@ struct DiscoveryDetailView: View {
         }
         .navigationTitle(plugin.name)
         .frame(maxWidth: 640)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

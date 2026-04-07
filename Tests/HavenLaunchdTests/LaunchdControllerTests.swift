@@ -181,7 +181,6 @@ final class LaunchdControllerErrorTests: XCTestCase {
             .startFailed(label: "l", detail: "d"),
             .stopFailed(label: "l", detail: "d"),
             .statusQueryFailed(label: "l", detail: "d"),
-            .jobNotFound(label: "l"),
         ]
         let forbidden = ["launchctl", "bootstrap", "bootout", "kickstart"]
 

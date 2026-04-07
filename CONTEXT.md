@@ -110,6 +110,7 @@ Native macOS SwiftUI app with mock data. Uses `NavigationSplitView` with sidebar
 | `ContentView.swift` | `ContentView` | `NavigationSplitView` with sidebar (Home, Discovery, Settings). Switches detail view based on selection |
 
 Key design rules:
+- ServiceManager uses a private `performAction` helper that wraps all lifecycle methods (install/uninstall/start/stop) with consistent `isPerformingAction`/`lastError`/`Task.detached` pattern
 - All data is mock — no backend integration yet
 - No internal implementation details exposed (no launchd, pip, PATH, runtime references)
 - User-facing language only: Service, Installed, Running, Stopped, Open, Add, Remove
@@ -131,6 +132,7 @@ Pure value types with Codable, Equatable, Sendable, validation, and static examp
 | `SettingField.swift` | `SettingField` | key, label, fieldType (string/integer/boolean/path), defaultValue, required. Regex-validated key |
 | `ServiceRecord.swift` | `ServiceRecord` | Read-only aggregate of capability + bundle + units. Example: `.testLibraryExample` |
 | `ValidationError.swift` | `ValidationError` | Simple Error struct with message |
+| `String+Path.swift` | `String` extension | `strippingDotSlashPrefix` — shared helper for normalizing relative paths with `./` prefix |
 
 ### Specs (`Sources/HavenCore/Specs/`)
 
@@ -139,7 +141,7 @@ Strict JSON spec loading from a directory tree. Never throws — collects all is
 | File | Type | Notes |
 |---|---|---|
 | `SpecLoader.swift` | `SpecLoader` | Loads from `Capabilities/`, `Bundles/`, `Runtime/` subdirectories. Resolves relative `installSource` paths against specs root. Deduplicates, cross-validates references, runs per-model validation |
-| `StrictJSONDecoder.swift` | `StrictJSONDecoder` | Two-pass: JSONSerialization rejects unknown keys, then JSONDecoder decodes. Known key sets per type |
+| `StrictJSONDecoder.swift` | `StrictJSONDecoder` | Two-pass: JSONSerialization rejects unknown keys, then JSONDecoder decodes. Known key sets: capability, bundle, runtimeUnit (including `python`), healthcheck |
 | `SpecRegistry.swift` | `SpecRegistry` | In-memory store: `capabilitiesByID`, `bundlesByID`, `runtimeUnitsByID` |
 | `SpecLoadResult.swift` | `SpecLoadResult` | Optional registry + issue array |
 | `SpecLoadIssue.swift` | `SpecLoadIssue` | Kind (malformedJSON/unknownField/duplicateID/missingReference/validationFailure), source, detail |
@@ -150,13 +152,12 @@ Pure planner that resolves intent into a deterministic install plan. No I/O.
 
 | File | Type | Notes |
 |---|---|---|
-| `Planner.swift` | `Planner` | Resolves capability → bundle → units, validates settings, topological sort with cycle detection, `${placeholder}` template expansion, port assignment |
-| `PlanningError.swift` | `PlanningError` | capabilityNotFound, bundleNotFound, runtimeUnitNotFound, requiredSettingMissing, dependencyCycle |
+| `Planner.swift` | `Planner` | Resolves capability → bundle → units, validates settings, topological sort with cycle detection, `${placeholder}` template expansion, port assignment with automatic conflict avoidance via `usedPorts` parameter |
+| `PlanningError.swift` | `PlanningError` | capabilityNotFound, bundleNotFound, runtimeUnitNotFound, requiredSettingMissing, dependencyCycle, noAvailablePorts |
 | `TemplateContext.swift` | `TemplateContext` | Key-value bag with `expand(_:)`, `expandValues(in:)`, `expandAll(_:)` for `${placeholder}` substitution |
-| `PlannedDirectoryLayout.swift` | `PlannedDirectoryLayout` | `Services/<cap-id>/{data,config,logs,run}` — used during planning |
-| `PlannedService.swift` | `PlannedService` | capability + bundle + resolved units + settings + layout |
+| `PlannedService.swift` | `PlannedService` | capability + bundle + resolved units + settings + layout (uses `ServiceDirectoryLayout`) |
 | `PlannedRuntimeUnit.swift` | `PlannedRuntimeUnit` | Resolved launch args, env, port, healthcheck, dependsOn, template context |
-| `PlannedPort.swift` | `PlannedPort` | number + source (spec or settingOverride) |
+| `PlannedPort.swift` | `PlannedPort` | number + source (spec, settingOverride, or autoAssigned) |
 | `InstallPlan.swift` | `InstallPlan` | Wraps a PlannedService |
 
 ### State (`Sources/HavenCore/State/`)
@@ -166,7 +167,7 @@ Filesystem layout and persistent state store. Thread-safe, atomic writes.
 | File | Type | Notes |
 |---|---|---|
 | `HavenPaths.swift` | `HavenPaths` | Resolves all paths from a base URL: `State/`, `Downloads/`, `Installed/`, `Services/`, `State/services.json` |
-| `ServiceDirectoryLayout.swift` | `ServiceDirectoryLayout` | Codable value type for `Services/<cap-id>/{data,config,logs,run}` |
+| `ServiceDirectoryLayout.swift` | `ServiceDirectoryLayout` | Codable value type for `Services/<cap-id>/{data,config,logs,run}`. Two inits: `init(servicesDirectory:capabilityID:)` and convenience `init(baseDirectory:capabilityID:)`. Used by both planning and state persistence |
 | `ServiceStatus.swift` | `ServiceStatus` | Enum: installed, running, stopped, failed |
 | `StoredServiceState.swift` | `StoredServiceState` | capability, bundleID, installedAt, updatedAt, status, resolvedSettings, portAssignments, runtimeUnits, directoryLayout, pythonInfo (default `[]`, backward-compatible decode) |
 | `StoredPortAssignment.swift` | `StoredPortAssignment` | unitID + port |
@@ -207,7 +208,7 @@ Artifact installer layer that fetches, caches, and places service artifacts in H
 | `ArtifactFormat.swift` | `ArtifactFormat` | Enum: `.executable`, `.zip`, `.tarGz`. Static `detect(from:)` for extension-based detection |
 | `ArtifactDescriptor.swift` | `ArtifactDescriptor` | unitID + source + format — describes what to install and where to get it |
 | `ArtifactInstallResult.swift` | `ArtifactInstallResult` | unitID + installDirectory + wasCached — result of a successful installation |
-| `ArtifactInstallerError.swift` | `ArtifactInstallerError` | 6 cases: sourceFileNotFound, downloadFailed, extractionFailed, unsupportedFormat, artifactNotFound, installFailed |
+| `ArtifactInstallerError.swift` | `ArtifactInstallerError` | 6 cases: sourceFileNotFound, downloadFailed, extractionFailed, installFailed, executableNotFound, invalidEntrypointPath |
 | `DownloadClient.swift` | `DownloadClient` | Protocol: `download(from:) → URL`. Enables mock-based testing |
 | `URLSessionDownloadClient.swift` | `URLSessionDownloadClient` | Production implementation via URLSession.shared.downloadTask |
 | `ArchiveExtractor.swift` | `ArchiveExtractor` | Protocol: `extract(archiveURL:to:format:)`. Enables mock-based testing |
@@ -250,7 +251,7 @@ Launchd job modeling and execution layer. Translates `PreparedRuntime` values in
 | `LaunchdJobStatus.swift` | `LaunchdJobStatus` | Observed runtime status: state (installed/running/stopped/notFound), pid, lastExitStatus, label |
 | `LaunchctlClient.swift` | `LaunchctlClient` | Protocol: bootstrap, bootout, start, stop, print. Enables mock-based testing |
 | `ProcessLaunchctlClient.swift` | `ProcessLaunchctlClient` | Production implementation via Foundation.Process. Targets `gui/<uid>` domain |
-| `LaunchdControllerError.swift` | `LaunchdControllerError` | Structured errors: plistSerializationFailed, plistWriteFailed, plistRemoveFailed, loadFailed, unloadFailed, startFailed, stopFailed, statusQueryFailed, jobNotFound |
+| `LaunchdControllerError.swift` | `LaunchdControllerError` | Structured errors: plistSerializationFailed, plistWriteFailed, plistRemoveFailed, loadFailed, unloadFailed, startFailed, stopFailed, statusQueryFailed |
 
 Key design rules:
 - Labels are deterministic and predictable: `app.haven.<cap-id>.<unit-id>`
@@ -277,7 +278,7 @@ MVP end-to-end orchestrator that wires together spec loading, planning, runtime 
 | `ServiceStatusReport.swift` | `ServiceStatusReport`, `UnitStatusReport` | Combines persisted state with live launchd status per unit. Reports capability, bundleID, status, and per-unit state/pid/lastExitStatus |
 
 Key design rules:
-- Install flow: guard not installed → Planner.planInstall → create directories → for each unit: if python → prepare venv via PythonEnvironmentPreparer, set installSource to venv path; if native → install artifact (if installer configured) → resolve installed path → prepare runtime → make LaunchdJob → install job → persist state (.installed) with pythonInfo
+- Install flow: guard not installed → collect usedPorts from existing state → Planner.planInstall (with usedPorts for automatic port conflict avoidance) → create directories → for each unit: if python → prepare venv via PythonEnvironmentPreparer, set installSource to venv path; if native → install artifact (if installer configured) → resolve installed path → prepare runtime → make LaunchdJob → install job → persist state (.installed) with pythonInfo
 - Install rollback: on failure, a lightweight rollback stack unwinds completed steps in reverse — uninstalls launchd jobs, removes artifacts, removes newly-created Python venvs (preserves pre-existing cached venvs), deletes service directory. Best-effort cleanup; original error is always preserved as the thrown result
 - Uninstall flow: for each unit (reverse order): best-effort stop + uninstall → best-effort remove Python venvs → best-effort remove artifacts → remove state → best-effort remove service directory
 - Start/stop operate in dependency order (forward/reverse) and update persisted status
@@ -332,19 +333,22 @@ Under the Haven base directory:
 
 | File | Tests | Covers |
 |---|---|---|
-| `HavenCoreTests.swift` | 51 | Domain models: Codable, validation, examples. Python validation: success, missing config, empty package/version/module, python+artifact mutual exclusivity, native+python mutual exclusivity, empty installSource/launchArgs allowed for python, PythonConfig codable round-trip |
-| `SpecLoaderTests.swift` | 11 | Spec loading: valid, unknown field, duplicate ID, missing ref, malformed JSON, empty dir, entrypoint mapping, relative installSource resolution (4 — relative resolved, absolute unchanged, path with spaces, invalid relative path fails) |
-| `PlannerTests.swift` | 14 | Planning: success, placeholder expansion (env/args/healthcheck), port override, directory layout, errors (missing cap/bundle/unit, required settings, cycles), topological order, default settings, template context |
-| `StateTests.swift` | 31 | HavenPaths (7), ServiceDirectoryLayout (5), StoredServiceState (4 — round-trip, round-trip with pythonInfo, backward-compat decode without pythonInfo), FileStateStore (15 — empty load, save/reload, upsert, remove, atomic write, thread safety) |
+| `HavenCoreTests.swift` | 49 | Domain models: Codable, validation, examples. Python validation: success, missing config, empty package/version/module, python+artifact mutual exclusivity, native+python mutual exclusivity, empty installSource/launchArgs allowed for python, PythonConfig codable round-trip |
+| `SpecLoaderTests.swift` | 20 | Spec loading: valid, unknown field, duplicate ID, missing ref, malformed JSON, empty dir, entrypoint mapping, relative installSource resolution, per-service folder layout |
+| `PlannerTests.swift` | 18 | Planning: success, placeholder expansion (env/args/healthcheck), port override, directory layout, errors (missing cap/bundle/unit, required settings, cycles), topological order, default settings, template context, port conflict avoidance (4 — auto-assign on conflict, no conflict keeps spec port, setting override conflict, within-install conflict) |
+| `StateTests.swift` | 38 | HavenPaths (7), ServiceDirectoryLayout (5), StoredServiceState (4 — round-trip, round-trip with pythonInfo, backward-compat decode without pythonInfo), FileStateStore (15 — empty load, save/reload, upsert, remove, atomic write, thread safety), StoredArtifactInfo, StoredPortAssignment |
 | `HavenExecutorTests.swift` | 46 | Install (9 — creates state, correct unit IDs, creates directories, calls bootstrap for each unit, installed status, port assignments, already-installed throws, invalid capability throws, persists resolved settings), Uninstall (6 — removes state, calls bootout for each unit, removes service directory, stops before unloading, not-installed throws, reverses dependency order), Start/Stop (6 — start calls launchd for each unit, updates to running, not-installed throws, stop reverses order, updates to stopped), Status (3 — returns unit statuses, not-installed throws, queries launchd for each unit), End-to-End (1 — full lifecycle), Artifact (7 — copies executables, deterministic paths, missing artifact throws, uninstall removes artifacts, calls bootstrap, full lifecycle with artifacts, installed artifact produces correct ProgramArguments), Python (3 — no preparer rejects cleanly, does not create state, does not call launchd), Rollback (8 — first job failure cleans up job, second job failure cleans up both, artifact failure cleans up artifact, missing artifact cleans up earlier artifacts, failure removes service directory, preserves original error, successful install unaffected, no partial install remains), ExecutorError (3 — equality, inequality, no tooling leaks) |
+| `ArtifactE2ETests.swift` | 2 | End-to-end artifact install/uninstall with real archives |
 | `HavenCLITests.swift` | 20 | Install (8 — required arg, parsed ID, specsDir default/override, set single/multiple, baseDir default/override), Uninstall (2), Start (2), Stop (2), Status (2), List (2 — no args, baseDir override), Havenctl (2 — subcommands, default subcommand) |
-| `RuntimeAdapterTests.swift` | 29 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (10 — type, legacy success, venv paths, empty source/args, PATH isolation, teardown, PythonConfig-based preparation with `-m module` args, PythonConfig empty installSource fallback), PreparedRuntime (2 — equality), RuntimeAdapterError (3 — equality, no tooling leaks) |
+| `RuntimeAdapterTests.swift` | 28 | Registry (7 — lookup, default adapters, supported types, empty registry, unsupported type, convenience prepare), NativeAdapter (7 — type, success, dependencies, empty source/args, deterministic paths, teardown), PythonAdapter (10 — type, legacy success, venv paths, empty source/args, PATH isolation, teardown, PythonConfig-based preparation with `-m module` args, PythonConfig empty installSource fallback), PreparedRuntime (2 — equality), RuntimeAdapterError (2 — equality, no tooling leaks) |
 | `LaunchdJobTests.swift` | 38 | LaunchdLabel (5 — prefix, generation, determinism, uniqueness), LaunchdKeepAlivePolicy (5 — plist values, shouldInclude, equality), LaunchdJob native (4 — make, log paths, env passthrough, custom keepAlive), LaunchdJob python (2 — make, log paths), ProgramArguments integration (4 — native args start with executable, entrypoint-style args, python args start with interpreter, plist round-trip preserves args), Plist encoding (12 — required keys, label, args, runAtLoad, empty/nonempty env, keepAlive variants, XML validity, round-trip, env round-trip), Equality (2), LogPath (4 — stdout, stderr, under logs, deterministic) |
 | `LaunchdControllerTests.swift` | 50 | LaunchdPaths (7 — default dir, custom dir, plist path, determinism, uniqueness, extension, equality), LaunchdJobStatus (6 — running/stopped/installed/notFound, equality/inequality), LaunchdControllerError (3 — equality, inequality, no tooling leaks), LaunchctlResult (3 — succeeded, failed, equality), Install (5 — writes plist, valid plist content, calls bootstrap, bootstrap failure, client throws), Uninstall (4 — calls bootout, removes plist, tolerates missing plist, bootout failure), Start/Stop (6 — calls client, failure cases, client throws), Status (6 — running, stopped, installed when plist exists, notFound, calls print, client throws), Status parsing (6 — running with PID, stopped, PID overrides state, empty output, whitespace, label preserved), Integration (2 — install-then-uninstall, creates directory), ProcessLaunchctlClient (2 — domain target, service target) |
-| `ArtifactInstallerTests.swift` | 41 | ArtifactSource (6 — local, remote, string init http/https/local, equality), ArtifactFormat (4 — detect zip, tar.gz, unknown, equality), ArtifactDescriptor (2 — properties, equality), ArtifactInstallResult (2 — properties, equality), ArtifactInstallerError (3 — equality, inequality, no tooling leaks), ArtifactCache (8 — install dir, not cached, cached after content, empty dir not cached, remove, remove nonexistent, prepare clean removes existing, deterministic), Installer executable (2 — local executable, not found error), Installer archive (3 — zip, tar.gz, extraction failure cleanup), Installer cache (2 — cache hit avoids extraction, uninstall removes), Installer download (2 — remote URL, download failure error), Installer paths (2 — deterministic directory, HavenPaths convenience init), HavenPaths installed (2 — directory path, in top-level), ProcessArchiveExtractor (3 — real zip, real tar.gz, invalid archive error) |
+| `ArtifactInstallerTests.swift` | 64 | ArtifactSource (6 — local, remote, string init http/https/local, equality), ArtifactFormat (4 — detect zip, tar.gz, unknown, equality), ArtifactDescriptor (2 — properties, equality), ArtifactInstallResult (2 — properties, equality), ArtifactInstallerError (3 — equality, inequality, no tooling leaks), ArtifactResolver (21), ArtifactCache (8 — install dir, not cached, cached after content, empty dir not cached, remove, remove nonexistent, prepare clean removes existing, deterministic), Installer executable (2 — local executable, not found error), Installer archive (3 — zip, tar.gz, extraction failure cleanup), Installer cache (2 — cache hit avoids extraction, uninstall removes), Installer download (2 — remote URL, download failure error), Installer paths (2 — deterministic directory, HavenPaths convenience init), HavenPaths installed (2 — directory path, in top-level), ProcessArchiveExtractor (3 — real zip, real tar.gz, invalid archive error) |
 | `PythonEnvironmentPreparerTests.swift` | 9 | MockPythonCommandRunner with FIFO results + side-effect callback. Successful preparation (3 commands, atomic promote), venv creation failure (error + cleanup), pip install failure, module validation failure, cached venv reuse (wasCached: true, 1 command), broken venv triggers reinstall (4 commands), remove directory, remove nonexistent (no-op), path helpers |
 
-**Total: 410 tests, all passing.**
+| `CatalogLoadingTests.swift` | 11 | SpecLoader integration tests with temp directories |
+
+**Total: 394 tests, all passing.**
 
 Test fixtures use a synthetic `test-library` capability (not real third-party apps):
 - Capability: `haven.capability.test-library`

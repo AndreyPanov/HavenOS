@@ -72,7 +72,7 @@ public struct HavenExecutor: Sendable {
         log.info("[install] Starting install for \(capabilityID)")
 
         // 1. Guard not already installed
-        if let _ = try stateStore.service(for: capabilityID) {
+        guard try stateStore.service(for: capabilityID) == nil else {
             throw ExecutorError.alreadyInstalled(capabilityID: capabilityID)
         }
 
@@ -286,10 +286,8 @@ public struct HavenExecutor: Sendable {
                     if let command = unit.entrypoint?.command {
                         // Use explicit entrypoint command relative to install dir.
                         // Normalize: strip leading "./" prefix.
-                        let normalized = command.hasPrefix("./")
-                            ? String(command.dropFirst(2)) : command
                         installedPath = installResult.installDirectory
-                            .appendingPathComponent(normalized).path
+                            .appendingPathComponent(command.strippingDotSlashPrefix).path
                     } else {
                         // For artifact-based units, point to the install directory.
                         // NativeRuntimeAdapter.resolveExecutable finds the binary inside.
