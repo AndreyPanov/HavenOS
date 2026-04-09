@@ -8,9 +8,11 @@ enum MockData {
             name: "Hello Service",
             serviceDescription: "A simple greeting service for testing and verifying your Haven setup.",
             icon: "hand.wave",
+            iconImagePath: nil,
             status: .running,
             port: 8080,
-            dataPath: "~/.haven/Services/haven.capability.hello-service/data"
+            dataPath: "~/.haven/Services/haven.capability.hello-service/data",
+            instructions: nil
         ),
     ]
 
@@ -20,9 +22,11 @@ enum MockData {
             name: "Hello Service",
             summary: "A simple greeting service for testing Haven.",
             icon: "hand.wave",
+            iconImagePath: nil,
             notes: ["Lightweight", "Native service"],
             isInstalled: false,
-            fullDescription: "Hello Service is a minimal service that responds to HTTP requests with a greeting. Useful for testing your Haven setup and verifying connectivity."
+            fullDescription: "Hello Service is a minimal service that responds to HTTP requests with a greeting. Useful for testing your Haven setup and verifying connectivity.",
+            screenshotPaths: []
         ),
     ]
 }

@@ -27,13 +27,17 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     /// Optional version string for the bundle.
     public let version: String?
 
+    /// Post-install setup instructions shown to the user after installation.
+    public let instructions: String?
+
     public init(
         id: String,
         name: String,
         capability: String,
         runtimeUnits: [String] = [],
         settings: [SettingField] = [],
-        version: String? = nil
+        version: String? = nil,
+        instructions: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -41,6 +45,7 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         self.runtimeUnits = runtimeUnits
         self.settings = settings
         self.version = version
+        self.instructions = instructions
     }
 
     public init(from decoder: Decoder) throws {
@@ -51,6 +56,7 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         runtimeUnits = try c.decodeIfPresent([String].self, forKey: .runtimeUnits) ?? []
         settings = try c.decodeIfPresent([SettingField].self, forKey: .settings) ?? []
         version = try c.decodeIfPresent(String.self, forKey: .version)
+        instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
     }
 
     /// Validates that the bundle is well-formed.

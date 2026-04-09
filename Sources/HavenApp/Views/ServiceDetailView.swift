@@ -10,10 +10,7 @@ struct ServiceDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 HStack(spacing: 16) {
-                    Image(systemName: service.icon)
-                        .font(.system(size: 36))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 56, height: 56)
+                    ServiceIconView(systemName: service.icon, imagePath: service.iconImagePath, size: 56)
                         .glassEffect(in: .rect(cornerRadius: 12))
 
                     VStack(alignment: .leading, spacing: 4) {

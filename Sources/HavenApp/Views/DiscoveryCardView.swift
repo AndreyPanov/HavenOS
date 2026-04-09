@@ -8,10 +8,7 @@ struct DiscoveryCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack(spacing: 10) {
-                Image(systemName: plugin.icon)
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
+                ServiceIconView(systemName: plugin.icon, imagePath: plugin.iconImagePath)
 
                 Text(plugin.name)
                     .font(.headline)

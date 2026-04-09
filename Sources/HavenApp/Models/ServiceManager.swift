@@ -55,6 +55,9 @@ final class ServiceManager {
     /// Description of the last error, cleared on next action.
     var lastError: String?
 
+    /// Set after a successful install to trigger the post-install instructions sheet.
+    var pendingInstructions: PendingInstructions?
+
     /// Current catalog loading state for the UI.
     private(set) var catalogState: CatalogState = .notLoaded
 
@@ -115,6 +118,17 @@ final class ServiceManager {
         }
         await performAction("Install", capabilityID: capabilityID) { executor in
             _ = try executor.install(capabilityID: capabilityID, registry: registry)
+        }
+
+        // Show post-install instructions if the bundle provides them.
+        if lastError == nil,
+           let entry = catalog.first(where: { $0.capability.id == capabilityID }),
+           let instructions = entry.bundle.instructions, !instructions.isEmpty
+        {
+            pendingInstructions = PendingInstructions(
+                serviceName: entry.capability.name,
+                instructions: instructions
+            )
         }
     }
 
@@ -211,7 +225,12 @@ final class ServiceManager {
                     log.warning("No bundle for capability \(cap.id), skipping")
                     return nil
                 }
-                let meta = CatalogEntry.knownMetadata[cap.id] ?? CatalogEntry.defaultMetadata
+                let meta = CatalogMetadata(
+                    icon: cap.icon ?? "shippingbox",
+                    iconImagePath: cap.iconImage,
+                    notes: cap.notes,
+                    fullDescription: cap.fullDescription ?? cap.description ?? ""
+                )
                 return CatalogEntry(capability: cap, bundle: bundle, metadata: meta)
             }
 
@@ -282,9 +301,11 @@ final class ServiceManager {
                 name: entry?.capability.name ?? Self.displayName(from: stored.capability),
                 serviceDescription: entry?.capability.description ?? "",
                 icon: meta.icon,
+                iconImagePath: meta.iconImagePath,
                 status: mapStatus(stored.status),
                 port: port,
-                dataPath: stored.directoryLayout.data.path
+                dataPath: stored.directoryLayout.data.path,
+                instructions: entry?.bundle.instructions
             )
         }
 
@@ -295,9 +316,11 @@ final class ServiceManager {
                 name: entry.capability.name,
                 summary: entry.capability.description ?? "",
                 icon: entry.metadata.icon,
+                iconImagePath: entry.metadata.iconImagePath,
                 notes: entry.metadata.notes,
                 isInstalled: installedCapIDs.contains(entry.capability.id),
-                fullDescription: entry.metadata.fullDescription
+                fullDescription: entry.metadata.fullDescription,
+                screenshotPaths: entry.capability.screenshots
             )
         }
     }
@@ -334,27 +357,29 @@ struct CatalogEntry: Identifiable {
     var id: String { capability.id }
 }
 
-/// UI metadata that HavenCore specs do not carry (icons, etc.).
+/// UI metadata derived from capability spec fields.
 struct CatalogMetadata {
     let icon: String
+    let iconImagePath: String?
     let notes: [String]
     let fullDescription: String
 }
 
 extension CatalogEntry {
-    /// UI metadata for known services, keyed by capability ID.
-    static let knownMetadata: [String: CatalogMetadata] = [
-        "haven.capability.hello-service": CatalogMetadata(
-            icon: "hand.wave",
-            notes: ["Lightweight", "Native service"],
-            fullDescription: "Hello Service is a minimal service that responds to HTTP requests with a greeting. Useful for testing your Haven setup and verifying connectivity."
-        ),
-    ]
-
-    /// Fallback metadata for capabilities without a known entry.
+    /// Fallback metadata for capabilities without a catalog entry.
     static let defaultMetadata = CatalogMetadata(
         icon: "shippingbox",
+        iconImagePath: nil,
         notes: [],
         fullDescription: ""
     )
+}
+
+// MARK: - Post-Install Instructions
+
+/// Transient state that triggers the post-install instructions sheet.
+struct PendingInstructions: Identifiable {
+    let id = UUID()
+    let serviceName: String
+    let instructions: String
 }

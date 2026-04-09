@@ -50,6 +50,42 @@ final class CapabilityTests: XCTestCase {
             XCTAssertTrue((error as? ValidationError)?.message.contains("version") == true)
         }
     }
+
+    func testNewFieldsRoundTrip() throws {
+        let cap = Capability(
+            id: "cap.test", name: "Test", version: "1.0.0",
+            description: "Desc",
+            icon: "books.vertical",
+            fullDescription: "A rich description.",
+            notes: ["Python", "Web"],
+            screenshots: ["/path/to/shot.png"]
+        )
+        let data = try JSONEncoder().encode(cap)
+        let decoded = try JSONDecoder().decode(Capability.self, from: data)
+        XCTAssertEqual(decoded.icon, "books.vertical")
+        XCTAssertEqual(decoded.fullDescription, "A rich description.")
+        XCTAssertEqual(decoded.notes, ["Python", "Web"])
+        XCTAssertEqual(decoded.screenshots, ["/path/to/shot.png"])
+    }
+
+    func testNewFieldsDefaultToNilOrEmpty() throws {
+        let json = """
+        {"id": "cap.x", "name": "X", "version": "1.0.0"}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(Capability.self, from: json)
+        XCTAssertNil(decoded.icon)
+        XCTAssertNil(decoded.fullDescription)
+        XCTAssertEqual(decoded.notes, [])
+        XCTAssertEqual(decoded.screenshots, [])
+    }
+
+    func testWithResolvedImages() {
+        let cap = Capability(id: "cap.x", name: "X", version: "1.0.0", iconImage: "icon.png", screenshots: ["a.png"])
+        let resolved = cap.withResolvedImages(iconImage: "/abs/icon.png", screenshots: ["/abs/a.png"])
+        XCTAssertEqual(resolved.screenshots, ["/abs/a.png"])
+        XCTAssertEqual(resolved.iconImage, "/abs/icon.png")
+        XCTAssertEqual(resolved.id, cap.id)
+    }
 }
 
 // MARK: - SettingField Tests
@@ -184,6 +220,24 @@ final class BundleTests: XCTestCase {
         XCTAssertThrowsError(try bundle.validate()) { error in
             XCTAssertTrue((error as? ValidationError)?.message.contains("identifier") == true)
         }
+    }
+
+    func testInstructionsRoundTrip() throws {
+        let bundle = Bundle(
+            id: "b.1", name: "B", capability: "cap.x",
+            instructions: "Step 1: Do this\nStep 2: Do that"
+        )
+        let data = try JSONEncoder().encode(bundle)
+        let decoded = try JSONDecoder().decode(Bundle.self, from: data)
+        XCTAssertEqual(decoded.instructions, "Step 1: Do this\nStep 2: Do that")
+    }
+
+    func testInstructionsDefaultsToNil() throws {
+        let json = """
+        {"id": "b.1", "name": "B", "capability": "cap.x"}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(Bundle.self, from: json)
+        XCTAssertNil(decoded.instructions)
     }
 }
 

@@ -54,6 +54,12 @@ struct ContentView: View {
                 Text(error)
             }
         }
+        .sheet(item: Binding(
+            get: { serviceManager.pendingInstructions },
+            set: { serviceManager.pendingInstructions = $0 }
+        )) { info in
+            PostInstallSheet(info: info)
+        }
     }
 }
 

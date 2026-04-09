@@ -70,12 +70,13 @@ enum StrictJSONDecoder {
 extension StrictJSONDecoder {
 
     static let capabilityKeys: Set<String> = [
-        "id", "name", "version", "description"
+        "id", "name", "version", "description",
+        "icon", "iconImage", "fullDescription", "notes", "screenshots"
     ]
 
     static let bundleKeys: Set<String> = [
         "id", "name", "capability", "runtimeUnits", "settings",
-        "version"
+        "version", "instructions"
     ]
 
     static let runtimeUnitKeys: Set<String> = [

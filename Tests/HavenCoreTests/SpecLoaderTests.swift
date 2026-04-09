@@ -640,4 +640,97 @@ final class SpecLoaderTests: XCTestCase {
         XCTAssertEqual(unit.artifact?.repo, "owner/hello-service")
         XCTAssertEqual(unit.artifact?.assets.count, 2)
     }
+
+    // MARK: - Capability metadata fields
+
+    func testCapabilityMetadataFieldsLoaded() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let serviceDir = tmpDir.appendingPathComponent("meta-service")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let capJSON = """
+        {
+            "id": "test.cap", "name": "Test", "version": "1.0.0",
+            "description": "Short desc",
+            "icon": "books.vertical",
+            "fullDescription": "A rich description.",
+            "notes": ["Python", "Web"]
+        }
+        """.data(using: .utf8)!
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
+
+        let bundleJSON = """
+        {
+            "id": "test.bundle", "name": "Test", "capability": "test.cap",
+            "runtimeUnits": ["test.unit"],
+            "instructions": "Step 1: Log in"
+        }
+        """.data(using: .utf8)!
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
+
+        let artifactDir = serviceDir.appendingPathComponent("Artifacts/Test")
+        try FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
+
+        let unitJSON = """
+        [{"id": "test.unit", "bundleID": "test.bundle", "runtimeType": "native", "installSource": "Artifacts/Test", "launchArguments": ["run"]}]
+        """.data(using: .utf8)!
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
+
+        let result = SpecLoader.load(from: tmpDir)
+        XCTAssertTrue(result.succeeded, "Issues: \(result.issues)")
+        let cap = try XCTUnwrap(result.registry?.capabilitiesByID["test.cap"])
+        XCTAssertEqual(cap.icon, "books.vertical")
+        XCTAssertEqual(cap.fullDescription, "A rich description.")
+        XCTAssertEqual(cap.notes, ["Python", "Web"])
+
+        let bundle = try XCTUnwrap(result.registry?.bundlesByID["test.bundle"])
+        XCTAssertEqual(bundle.instructions, "Step 1: Log in")
+    }
+
+    func testScreenshotPathResolution() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let serviceDir = tmpDir.appendingPathComponent("screenshot-service")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Create a real screenshot file
+        let screenshotPath = serviceDir.appendingPathComponent("preview.png")
+        FileManager.default.createFile(atPath: screenshotPath.path, contents: Data())
+
+        let capJSON = """
+        {
+            "id": "test.cap", "name": "Test", "version": "1.0.0",
+            "screenshots": ["preview.png", "missing.png"]
+        }
+        """.data(using: .utf8)!
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
+
+        let bundleJSON = """
+        {"id": "test.bundle", "name": "Test", "capability": "test.cap", "runtimeUnits": ["test.unit"]}
+        """.data(using: .utf8)!
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
+
+        let artifactDir = serviceDir.appendingPathComponent("Artifacts/Test")
+        try FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
+
+        let unitJSON = """
+        [{"id": "test.unit", "bundleID": "test.bundle", "runtimeType": "native", "installSource": "Artifacts/Test", "launchArguments": ["run"]}]
+        """.data(using: .utf8)!
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
+
+        let result = SpecLoader.load(from: tmpDir)
+        let cap = try XCTUnwrap(result.registry?.capabilitiesByID["test.cap"])
+
+        // Screenshots should be resolved to absolute paths
+        XCTAssertEqual(cap.screenshots.count, 2)
+        XCTAssertTrue(cap.screenshots[0].hasPrefix("/"), "Should be absolute path")
+        XCTAssertTrue(cap.screenshots[0].hasSuffix("preview.png"))
+
+        // Missing screenshot should produce a warning
+        let warnings = result.issues.filter { $0.kind == .validationFailure }
+        XCTAssertTrue(warnings.contains { $0.detail.contains("missing.png") })
+    }
 }

@@ -43,13 +43,15 @@ public enum SpecLoader {
             let folderName = folder.lastPathComponent
 
             // capability.json — single object
-            if let cap: Capability = decodeSingleSpec(
+            if var cap: Capability = decodeSingleSpec(
                 Capability.self,
                 file: folder.appendingPathComponent("capability.json"),
                 knownKeys: StrictJSONDecoder.capabilityKeys,
                 folderName: folderName,
                 issues: &issues
             ) {
+                // Resolve relative screenshot paths against the service folder.
+                cap = resolveScreenshots(cap, serviceFolder: folder, issues: &issues)
                 capabilities.append(cap)
             }
 
@@ -294,6 +296,59 @@ public enum SpecLoader {
                 ))
             }
         }
+    }
+
+    /// Resolve relative image paths (iconImage + screenshots) against the service folder.
+    ///
+    /// Absolute paths are kept as-is. Relative paths are resolved from
+    /// `serviceFolder`. Missing files produce a non-fatal warning.
+    private static func resolveScreenshots(
+        _ capability: Capability,
+        serviceFolder: URL,
+        issues: inout [SpecLoadIssue]
+    ) -> Capability {
+        let fm = FileManager.default
+        let hasImages = capability.iconImage != nil || !capability.screenshots.isEmpty
+        guard hasImages else { return capability }
+
+        // Resolve iconImage
+        var resolvedIcon: String? = nil
+        if let iconFile = capability.iconImage {
+            if iconFile.hasPrefix("/") {
+                resolvedIcon = iconFile
+            } else {
+                let path = serviceFolder.appendingPathComponent(iconFile).path
+                if !fm.fileExists(atPath: path) {
+                    issues.append(SpecLoadIssue(
+                        kind: .validationFailure,
+                        source: capability.id,
+                        detail: "Icon image file does not exist: '\(path)' (from '\(iconFile)').",
+                        severity: .warning
+                    ))
+                }
+                resolvedIcon = path
+            }
+        }
+
+        // Resolve screenshots
+        let resolvedScreenshots = capability.screenshots.map { filename -> String in
+            if filename.hasPrefix("/") { return filename }
+            let path = serviceFolder.appendingPathComponent(filename).path
+            if !fm.fileExists(atPath: path) {
+                issues.append(SpecLoadIssue(
+                    kind: .validationFailure,
+                    source: capability.id,
+                    detail: "Screenshot file does not exist: '\(path)' (from '\(filename)').",
+                    severity: .warning
+                ))
+            }
+            return path
+        }
+
+        return capability.withResolvedImages(
+            iconImage: resolvedIcon,
+            screenshots: resolvedScreenshots
+        )
     }
 
     /// Resolve relative `installSource` paths against the service folder.

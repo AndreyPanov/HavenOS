@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct DiscoveryDetailView: View {
@@ -9,10 +10,7 @@ struct DiscoveryDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 HStack(spacing: 16) {
-                    Image(systemName: plugin.icon)
-                        .font(.system(size: 36))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 56, height: 56)
+                    ServiceIconView(systemName: plugin.icon, imagePath: plugin.iconImagePath, size: 56)
                         .glassEffect(in: .rect(cornerRadius: 12))
 
                     Text(plugin.name)
@@ -35,20 +33,36 @@ struct DiscoveryDetailView: View {
                     }
                 }
 
-                // Screenshot placeholder
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.quinary)
-                    .frame(height: 180)
-                    .overlay {
-                        VStack(spacing: 8) {
-                            Image(systemName: plugin.icon)
-                                .font(.system(size: 48))
-                                .foregroundStyle(.tertiary)
-                            Text("Preview")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
+                // Screenshots
+                if !plugin.screenshotPaths.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 12) {
+                            ForEach(plugin.screenshotPaths, id: \.self) { path in
+                                if let nsImage = NSImage(contentsOfFile: path) {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(height: 180)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                }
+                            }
                         }
                     }
+                } else {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.quinary)
+                        .frame(height: 180)
+                        .overlay {
+                            VStack(spacing: 8) {
+                                Image(systemName: plugin.icon)
+                                    .font(.system(size: 48))
+                                    .foregroundStyle(.tertiary)
+                                Text("Preview")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                }
 
                 // About
                 GroupBox("About") {

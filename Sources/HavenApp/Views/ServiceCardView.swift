@@ -10,10 +10,7 @@ struct ServiceCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header: icon + name + status
             HStack(spacing: 10) {
-                Image(systemName: service.icon)
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
+                ServiceIconView(systemName: service.icon, imagePath: service.iconImagePath)
 
                 Text(service.name)
                     .font(.headline)
