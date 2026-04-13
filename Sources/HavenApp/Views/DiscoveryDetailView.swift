@@ -112,23 +112,37 @@ struct DiscoveryDetailView: View {
                 }
 
                 // Actions
-                HStack {
-                    if plugin.isInstalled {
-                        Button("Remove", role: .destructive) {
-                            Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
+                if serviceManager.activeCapabilityID == plugin.id {
+                    GroupBox {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(serviceManager.actionStatus ?? "Working…")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Spacer()
                         }
-                        .buttonStyle(.glass)
-                        .controlSize(.large)
-                        .disabled(serviceManager.isPerformingAction)
-                    } else {
-                        Button("Install", systemImage: "plus.circle") {
-                            Task { await serviceManager.installService(capabilityID: plugin.id) }
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
-                        .disabled(serviceManager.isPerformingAction)
+                        .padding(4)
                     }
-                    Spacer()
+                } else {
+                    HStack {
+                        if plugin.isInstalled {
+                            Button("Remove", role: .destructive) {
+                                Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.large)
+                            .disabled(serviceManager.isPerformingAction)
+                        } else {
+                            Button("Install", systemImage: "plus.circle") {
+                                Task { await serviceManager.installService(capabilityID: plugin.id) }
+                            }
+                            .buttonStyle(.glassProminent)
+                            .controlSize(.large)
+                            .disabled(serviceManager.isPerformingAction)
+                        }
+                        Spacer()
+                    }
                 }
             }
             .padding(24)

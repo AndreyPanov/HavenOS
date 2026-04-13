@@ -5,6 +5,7 @@ import HavenRuntimes
 import HavenLaunchd
 import HavenInstaller
 import SwiftUI
+import Synchronization
 import os
 
 private let log = Logger(subsystem: "com.haven", category: "ServiceManager")
@@ -51,6 +52,12 @@ final class ServiceManager {
 
     /// True while an install/uninstall/start/stop operation is in progress.
     private(set) var isPerformingAction = false
+
+    /// The capability ID of the service currently being acted on, or nil.
+    private(set) var activeCapabilityID: String?
+
+    /// Human-readable status of the current action (e.g. "Setting up Python environment…").
+    private(set) var actionStatus: String?
 
     /// Description of the last error, cleared on next action.
     var lastError: String?
@@ -117,9 +124,53 @@ final class ServiceManager {
             lastError = "No catalog loaded. Configure your catalog folder in Settings."
             return
         }
-        await performAction("Install", capabilityID: capabilityID) { executor in
-            _ = try executor.install(capabilityID: capabilityID, registry: registry)
+
+        log.info("Install service: \(capabilityID)")
+        isPerformingAction = true
+        activeCapabilityID = capabilityID
+        actionStatus = "Installing…"
+        lastError = nil
+
+        let executor = self.executor
+        let progressBox = Mutex<String?>(nil)
+        let resultBox = Mutex<Result<StoredServiceState, Error>?>(nil)
+
+        Task.detached {
+            do {
+                let state = try executor.install(
+                    capabilityID: capabilityID,
+                    registry: registry,
+                    progress: { message in
+                        progressBox.withLock { $0 = message }
+                    }
+                )
+                resultBox.withLock { $0 = .success(state) }
+            } catch {
+                resultBox.withLock { $0 = .failure(error) }
+            }
         }
+
+        // Poll for progress updates on MainActor
+        while resultBox.withLock({ $0 }) == nil {
+            if let message = progressBox.withLock({ $0 }) {
+                actionStatus = message
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        // Handle result
+        switch resultBox.withLock({ $0 })! {
+        case .success:
+            log.info("Install succeeded: \(capabilityID)")
+            refresh()
+        case .failure(let error):
+            log.error("Install failed: \(error.localizedDescription)")
+            lastError = error.localizedDescription
+        }
+
+        isPerformingAction = false
+        activeCapabilityID = nil
+        actionStatus = nil
 
         // Show post-install guidance if the bundle provides onboarding or instructions.
         if lastError == nil,
@@ -169,6 +220,8 @@ final class ServiceManager {
     ) async {
         log.info("\(label) service: \(capabilityID)")
         isPerformingAction = true
+        activeCapabilityID = capabilityID
+        actionStatus = "\(label)ing…"
         lastError = nil
 
         let executor = self.executor
@@ -185,6 +238,8 @@ final class ServiceManager {
         }
 
         isPerformingAction = false
+        activeCapabilityID = nil
+        actionStatus = nil
     }
 
     // MARK: - Catalog Folder Setup

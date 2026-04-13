@@ -70,7 +70,8 @@ public struct HavenExecutor: Sendable {
     public func install(
         capabilityID: String,
         registry: SpecRegistry,
-        settings: [String: String] = [:]
+        settings: [String: String] = [:],
+        progress: (@Sendable (String) -> Void)? = nil
     ) throws -> StoredServiceState {
         log.info("[install] Starting install for \(capabilityID)")
 
@@ -88,6 +89,7 @@ public struct HavenExecutor: Sendable {
         )
 
         // 3. Plan
+        progress?("Planning…")
         log.info("[install] Planning...")
         let plan: InstallPlan
         do {
@@ -139,6 +141,7 @@ public struct HavenExecutor: Sendable {
         // 4. Execute provisions (download sample data, etc.)
         if let downloader = provisionDownloader {
             for provision in service.resolvedProvisions {
+                progress?("Downloading \(provision.description)…")
                 log.info("[install] Provisioning: \(provision.description)")
                 do {
                     try downloader.execute(
@@ -186,6 +189,7 @@ public struct HavenExecutor: Sendable {
                     ))
                 }
 
+                progress?("Setting up Python environment…")
                 log.info("[install] Preparing Python environment for \(unit.id)")
                 let envResult: PythonEnvironmentResult
                 do {
@@ -263,6 +267,7 @@ public struct HavenExecutor: Sendable {
                         format: format
                     )
                 }
+                progress?("Downloading artifact…")
                 log.info("[install] Installing artifact: source=\(String(describing: descriptor.source)), format=\(String(describing: descriptor.format))")
 
                 let installResult: ArtifactInstallResult
@@ -358,6 +363,7 @@ public struct HavenExecutor: Sendable {
                 preparedRuntime: prepared,
                 serviceLayout: serviceLayout
             )
+            progress?("Registering service…")
             log.info("[install] Installing launchd job: label=\(job.label)")
 
             do {

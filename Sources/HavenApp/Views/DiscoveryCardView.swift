@@ -58,6 +58,15 @@ struct DiscoveryCardView: View {
                         .buttonStyle(.glass)
                         .controlSize(.small)
                         .disabled(true)
+                } else if serviceManager.activeCapabilityID == plugin.id {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Text(serviceManager.actionStatus ?? "Working…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 } else {
                     Button("Install") {
                         Task { await serviceManager.installService(capabilityID: plugin.id) }
