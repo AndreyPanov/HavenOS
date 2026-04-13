@@ -1,4 +1,5 @@
 import Foundation
+import HavenCore
 
 struct InstalledService: Identifiable, Hashable {
     let id: String
@@ -10,6 +11,7 @@ struct InstalledService: Identifiable, Hashable {
     let port: Int?
     let dataPath: String
     let instructions: String?
+    let onboarding: Onboarding?
 
     var localURL: String? {
         guard let port = port else { return nil }

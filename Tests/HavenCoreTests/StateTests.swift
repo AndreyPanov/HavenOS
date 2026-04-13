@@ -227,7 +227,7 @@ final class StoredServiceStateTests: XCTestCase {
                     unitID: "haven.unit.calibre-web",
                     package: "calibreweb",
                     version: "0.6.26",
-                    module: "cps",
+                    module: "calibreweb",
                     venvDirectory: "/tmp/haven/Installed/python/haven.unit.calibre-web/venv",
                     pythonPath: "/tmp/haven/Installed/python/haven.unit.calibre-web/venv/bin/python3"
                 )
@@ -240,7 +240,7 @@ final class StoredServiceStateTests: XCTestCase {
         XCTAssertEqual(decoded.pythonInfo.count, 1)
         XCTAssertEqual(decoded.pythonInfo[0].package, "calibreweb")
         XCTAssertEqual(decoded.pythonInfo[0].version, "0.6.26")
-        XCTAssertEqual(decoded.pythonInfo[0].module, "cps")
+        XCTAssertEqual(decoded.pythonInfo[0].module, "calibreweb")
     }
 
     func testBackwardCompatDecodingWithoutPythonInfo() throws {
@@ -658,5 +658,52 @@ final class FileStateStoreTests: XCTestCase {
         }
 
         group.wait()
+    }
+
+    // MARK: - Onboarding in StoredServiceState
+
+    func testStoredServiceStateWithOnboardingRoundTrip() throws {
+        let store = makeStore()
+        var svc = makeSampleService()
+        let onboarding = Onboarding(steps: [
+            OnboardingStep(type: .credentials, title: "Login", body: "Use defaults.",
+                           fields: [OnboardingField(label: "User", value: "admin")]),
+            OnboardingStep(type: .action, title: "Open", body: "Go to app.",
+                           url: "http://localhost:8080"),
+        ])
+        // Create a new state with onboarding
+        let paths = makePaths()
+        let layout = paths.serviceLayout(for: svc.capability)
+        let svcWithOnboarding = StoredServiceState(
+            capability: svc.capability,
+            bundleID: svc.bundleID,
+            installedAt: svc.installedAt,
+            updatedAt: svc.updatedAt,
+            status: svc.status,
+            resolvedSettings: svc.resolvedSettings,
+            portAssignments: svc.portAssignments,
+            runtimeUnits: Array(svc.runtimeUnits),
+            directoryLayout: layout,
+            onboarding: onboarding
+        )
+        try store.upsert(svcWithOnboarding)
+
+        let loaded = try store.load()
+        let restored = try XCTUnwrap(loaded.services[svc.capability])
+        XCTAssertNotNil(restored.onboarding)
+        XCTAssertEqual(restored.onboarding?.steps.count, 2)
+        XCTAssertEqual(restored.onboarding?.steps[0].type, .credentials)
+        XCTAssertEqual(restored.onboarding?.steps[0].fields[0].value, "admin")
+        XCTAssertEqual(restored.onboarding?.steps[1].url, "http://localhost:8080")
+    }
+
+    func testStoredServiceStateWithoutOnboardingBackwardCompat() throws {
+        let store = makeStore()
+        let svc = makeSampleService()
+        try store.upsert(svc)
+
+        let loaded = try store.load()
+        let restored = try XCTUnwrap(loaded.services[svc.capability])
+        XCTAssertNil(restored.onboarding)
     }
 }

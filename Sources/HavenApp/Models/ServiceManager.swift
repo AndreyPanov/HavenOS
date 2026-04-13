@@ -80,7 +80,8 @@ final class ServiceManager {
             stateStore: stateStore,
             launchdController: LaunchdController(),
             artifactInstaller: ArtifactInstaller(paths: paths),
-            pythonPreparer: PythonEnvironmentPreparer()
+            pythonPreparer: PythonEnvironmentPreparer(),
+            provisionDownloader: ProvisionDownloader()
         )
         log.info("Initialized with base path: \(basePath.path)")
     }
@@ -120,15 +121,22 @@ final class ServiceManager {
             _ = try executor.install(capabilityID: capabilityID, registry: registry)
         }
 
-        // Show post-install instructions if the bundle provides them.
+        // Show post-install guidance if the bundle provides onboarding or instructions.
         if lastError == nil,
-           let entry = catalog.first(where: { $0.capability.id == capabilityID }),
-           let instructions = entry.bundle.instructions, !instructions.isEmpty
+           let entry = catalog.first(where: { $0.capability.id == capabilityID })
         {
-            pendingInstructions = PendingInstructions(
-                serviceName: entry.capability.name,
-                instructions: instructions
-            )
+            let storedOnboarding = (try? stateStore.load().services[capabilityID])?.onboarding
+            let instructions = entry.bundle.instructions ?? ""
+            let hasOnboarding = storedOnboarding?.steps.isEmpty == false
+            let hasInstructions = !instructions.isEmpty
+
+            if hasOnboarding || hasInstructions {
+                pendingInstructions = PendingInstructions(
+                    serviceName: entry.capability.name,
+                    instructions: instructions,
+                    onboarding: storedOnboarding
+                )
+            }
         }
     }
 
@@ -305,7 +313,8 @@ final class ServiceManager {
                 status: mapStatus(stored.status),
                 port: port,
                 dataPath: stored.directoryLayout.data.path,
-                instructions: entry?.bundle.instructions
+                instructions: entry?.bundle.instructions,
+                onboarding: stored.onboarding
             )
         }
 
@@ -382,4 +391,11 @@ struct PendingInstructions: Identifiable {
     let id = UUID()
     let serviceName: String
     let instructions: String
+    let onboarding: Onboarding?
+
+    init(serviceName: String, instructions: String, onboarding: Onboarding? = nil) {
+        self.serviceName = serviceName
+        self.instructions = instructions
+        self.onboarding = onboarding
+    }
 }

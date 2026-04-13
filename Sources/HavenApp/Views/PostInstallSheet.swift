@@ -1,4 +1,5 @@
 import SwiftUI
+import HavenCore
 
 struct PostInstallSheet: View {
     let info: PendingInstructions
@@ -24,12 +25,16 @@ struct PostInstallSheet: View {
 
             Divider()
 
-            // Instructions
+            // Content: structured onboarding or legacy text
             ScrollView {
-                Text(info.instructions)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let onboarding = info.onboarding, !onboarding.steps.isEmpty {
+                    OnboardingStepsView(steps: onboarding.steps)
+                } else if !info.instructions.isEmpty {
+                    Text(info.instructions)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
 
             // Dismiss
@@ -43,14 +48,43 @@ struct PostInstallSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 480)
-        .frame(minHeight: 300)
+        .frame(width: 520)
+        .frame(minHeight: 360)
     }
 }
 
-#Preview {
+#Preview("Structured Onboarding") {
     PostInstallSheet(info: PendingInstructions(
         serviceName: "Calibre-Web",
-        instructions: "Log in with default credentials:\n  Username: admin\n  Password: admin123\n\nDatabase Setup: If you do not have a Calibre database, download a sample from:\nhttps://github.com/janeczku/calibre-web/raw/master/library/metadata.db"
+        instructions: "",
+        onboarding: Onboarding(steps: [
+            OnboardingStep(
+                type: .credentials,
+                title: "Default Credentials",
+                body: "Log in with the default admin account. Change the password after first login.",
+                fields: [
+                    OnboardingField(label: "Username", value: "admin"),
+                    OnboardingField(label: "Password", value: "admin123"),
+                ]
+            ),
+            OnboardingStep(
+                type: .action,
+                title: "Open Calibre-Web",
+                body: "Access your library in the browser.",
+                url: "http://localhost:8083"
+            ),
+            OnboardingStep(
+                type: .info,
+                title: "Configure Library Path",
+                body: "On first login, set the Calibre database location to: ~/.haven/Services/calibre-web/data"
+            ),
+        ])
+    ))
+}
+
+#Preview("Legacy Instructions") {
+    PostInstallSheet(info: PendingInstructions(
+        serviceName: "Hello Service",
+        instructions: "Your service is running at http://localhost:8080\n\nVisit the URL to verify it's working."
     ))
 }

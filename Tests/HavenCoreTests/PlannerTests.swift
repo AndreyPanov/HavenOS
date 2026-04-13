@@ -498,4 +498,142 @@ final class PlannerTests: XCTestCase {
         XCTAssertEqual(plan.service.units[1].port?.number, 9001)
         XCTAssertEqual(plan.service.units[1].port?.source, .autoAssigned)
     }
+
+    // MARK: - Onboarding + Provision resolution
+
+    func testOnboardingVariableResolution() throws {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .native,
+            installSource: "/bin/test", launchArguments: ["/bin/test"],
+            port: 8083
+        )
+        let bundle = Bundle(
+            id: "b.1", name: "B", capability: "cap.1",
+            runtimeUnits: ["u.1"],
+            onboarding: Onboarding(steps: [
+                OnboardingStep(
+                    type: .action,
+                    title: "Open App",
+                    body: "Access at http://localhost:${port}",
+                    url: "http://localhost:${port}"
+                ),
+                OnboardingStep(
+                    type: .info,
+                    title: "Data",
+                    body: "Your data is stored in ${data_dir}."
+                ),
+            ])
+        )
+        let cap = Capability(id: "cap.1", name: "Cap", version: "1.0.0")
+        let registry = SpecRegistry(
+            capabilitiesByID: ["cap.1": cap],
+            bundlesByID: ["b.1": bundle],
+            runtimeUnitsByID: ["u.1": unit]
+        )
+
+        let plan = try Planner.planInstall(
+            capabilityID: "cap.1",
+            registry: registry,
+            baseDirectory: baseDir
+        )
+
+        let onboarding = try XCTUnwrap(plan.service.resolvedOnboarding)
+        XCTAssertEqual(onboarding.steps.count, 2)
+        XCTAssertEqual(onboarding.steps[0].body, "Access at http://localhost:8083")
+        XCTAssertEqual(onboarding.steps[0].url, "http://localhost:8083")
+        XCTAssertTrue(onboarding.steps[1].body.contains("/data"))
+        XCTAssertFalse(onboarding.steps[1].body.contains("${data_dir}"))
+    }
+
+    func testOnboardingFieldsExpanded() throws {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .native,
+            installSource: "/bin/test", launchArguments: ["/bin/test"],
+            port: 9090
+        )
+        let bundle = Bundle(
+            id: "b.1", name: "B", capability: "cap.1",
+            runtimeUnits: ["u.1"],
+            onboarding: Onboarding(steps: [
+                OnboardingStep(
+                    type: .credentials,
+                    title: "Login",
+                    body: "Credentials for port ${port}",
+                    fields: [
+                        OnboardingField(label: "URL", value: "http://localhost:${port}"),
+                        OnboardingField(label: "Data Dir", value: "${data_dir}"),
+                    ]
+                ),
+            ])
+        )
+        let cap = Capability(id: "cap.1", name: "Cap", version: "1.0.0")
+        let registry = SpecRegistry(
+            capabilitiesByID: ["cap.1": cap],
+            bundlesByID: ["b.1": bundle],
+            runtimeUnitsByID: ["u.1": unit]
+        )
+
+        let plan = try Planner.planInstall(
+            capabilityID: "cap.1",
+            registry: registry,
+            baseDirectory: baseDir
+        )
+
+        let step = try XCTUnwrap(plan.service.resolvedOnboarding?.steps.first)
+        XCTAssertEqual(step.fields[0].value, "http://localhost:9090")
+        XCTAssertFalse(step.fields[1].value.contains("${data_dir}"))
+        XCTAssertTrue(step.body.contains("9090"))
+    }
+
+    func testOnboardingNilWhenBundleHasNone() throws {
+        let registry = makeStandardRegistry()
+        let plan = try Planner.planInstall(
+            capabilityID: "haven.capability.test-library",
+            registry: registry,
+            settings: ["data_path": "/srv/data"],
+            baseDirectory: baseDir
+        )
+        XCTAssertNil(plan.service.resolvedOnboarding)
+    }
+
+    func testProvisionConditionFiltering() throws {
+        let unit = RuntimeUnit(
+            id: "u.1", bundleID: "b.1", runtimeType: .native,
+            installSource: "/bin/test", launchArguments: ["/bin/test"]
+        )
+        let bundle = Bundle(
+            id: "b.1", name: "B", capability: "cap.1",
+            runtimeUnits: ["u.1"],
+            settings: [
+                SettingField(key: "include_db", label: "Include DB", fieldType: .boolean, defaultValue: "true"),
+                SettingField(key: "include_extra", label: "Include Extra", fieldType: .boolean, defaultValue: "false"),
+            ],
+            provisions: [
+                Provision(description: "Always", source: "https://x.com/a", destination: "${data_dir}/a"),
+                Provision(description: "Conditional true", source: "https://x.com/b", destination: "${data_dir}/b", condition: "include_db"),
+                Provision(description: "Conditional false", source: "https://x.com/c", destination: "${data_dir}/c", condition: "include_extra"),
+            ]
+        )
+        let cap = Capability(id: "cap.1", name: "Cap", version: "1.0.0")
+        let registry = SpecRegistry(
+            capabilitiesByID: ["cap.1": cap],
+            bundlesByID: ["b.1": bundle],
+            runtimeUnitsByID: ["u.1": unit]
+        )
+
+        let plan = try Planner.planInstall(
+            capabilityID: "cap.1",
+            registry: registry,
+            baseDirectory: baseDir
+        )
+
+        // "Always" (no condition) + "Conditional true" included; "Conditional false" excluded
+        XCTAssertEqual(plan.service.resolvedProvisions.count, 2)
+        XCTAssertEqual(plan.service.resolvedProvisions[0].description, "Always")
+        XCTAssertEqual(plan.service.resolvedProvisions[1].description, "Conditional true")
+
+        // Variables should be expanded
+        XCTAssertFalse(plan.service.resolvedProvisions[0].destination.contains("${data_dir}"))
+        XCTAssertTrue(plan.service.resolvedProvisions[0].destination.contains("/data/"))
+    }
 }

@@ -412,10 +412,8 @@ final class RuntimeUnitTests: XCTestCase {
         XCTAssertEqual(decoded.python?.package, "calibreweb")
         XCTAssertEqual(decoded.python?.version, "0.6.26")
         XCTAssertEqual(decoded.python?.entrypoint.module, "calibreweb")
-        XCTAssertEqual(decoded.python?.entrypoint.args, ["-p", "${data_dir}/app.db"])
+        XCTAssertEqual(decoded.python?.entrypoint.args, [])
         XCTAssertEqual(decoded.runtimeType, .python)
-        // python.entrypoint.args takes precedence → populates launchArguments on decode
-        XCTAssertEqual(decoded.launchArguments, ["-p", "${data_dir}/app.db"])
     }
 
     func testPythonEntrypointArgsTakePrecedence() throws {
@@ -526,5 +524,223 @@ final class ServiceRecordTests: XCTestCase {
             units: [.testDBExample]
         )
         XCTAssertThrowsError(try record.validate())
+    }
+}
+
+// MARK: - OnboardingStep Tests
+
+final class OnboardingStepTests: XCTestCase {
+
+    func testCodableRoundTripInfo() throws {
+        let step = OnboardingStep(
+            type: .info,
+            title: "Welcome",
+            body: "Your service is installed."
+        )
+        let data = try JSONEncoder().encode(step)
+        let decoded = try JSONDecoder().decode(OnboardingStep.self, from: data)
+        XCTAssertEqual(step, decoded)
+    }
+
+    func testCodableRoundTripCredentials() throws {
+        let step = OnboardingStep(
+            type: .credentials,
+            title: "Login",
+            body: "Default credentials below.",
+            fields: [
+                OnboardingField(label: "Username", value: "admin"),
+                OnboardingField(label: "Password", value: "secret123"),
+            ]
+        )
+        let data = try JSONEncoder().encode(step)
+        let decoded = try JSONDecoder().decode(OnboardingStep.self, from: data)
+        XCTAssertEqual(step, decoded)
+        XCTAssertEqual(decoded.fields.count, 2)
+        XCTAssertEqual(decoded.fields[0].label, "Username")
+        XCTAssertEqual(decoded.fields[1].value, "secret123")
+    }
+
+    func testCodableRoundTripAction() throws {
+        let step = OnboardingStep(
+            type: .action,
+            title: "Open App",
+            body: "Access the web UI.",
+            url: "http://localhost:8080"
+        )
+        let data = try JSONEncoder().encode(step)
+        let decoded = try JSONDecoder().decode(OnboardingStep.self, from: data)
+        XCTAssertEqual(step, decoded)
+        XCTAssertEqual(decoded.url, "http://localhost:8080")
+    }
+
+    func testDefaultsToEmptyFieldsAndNilURL() throws {
+        let json = """
+        {"type": "info", "title": "Hello", "body": "World"}
+        """.data(using: .utf8)!
+        let step = try JSONDecoder().decode(OnboardingStep.self, from: json)
+        XCTAssertEqual(step.fields, [])
+        XCTAssertNil(step.url)
+    }
+
+    func testValidationFailsOnEmptyTitle() {
+        let step = OnboardingStep(type: .info, title: "", body: "Some body")
+        XCTAssertThrowsError(try step.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("title") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyBody() {
+        let step = OnboardingStep(type: .info, title: "Title", body: "  ")
+        XCTAssertThrowsError(try step.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("body") == true)
+        }
+    }
+
+    func testValidationSucceeds() {
+        let step = OnboardingStep(type: .credentials, title: "Login", body: "Use defaults.")
+        XCTAssertNoThrow(try step.validate())
+    }
+}
+
+// MARK: - OnboardingField Tests
+
+final class OnboardingFieldTests: XCTestCase {
+
+    func testCodableRoundTrip() throws {
+        let field = OnboardingField(label: "Port", value: "8080")
+        let data = try JSONEncoder().encode(field)
+        let decoded = try JSONDecoder().decode(OnboardingField.self, from: data)
+        XCTAssertEqual(field, decoded)
+    }
+}
+
+// MARK: - Onboarding Tests
+
+final class OnboardingTests: XCTestCase {
+
+    func testCodableRoundTrip() throws {
+        let onboarding = Onboarding(steps: [
+            OnboardingStep(type: .info, title: "Welcome", body: "Hello"),
+            OnboardingStep(type: .action, title: "Open", body: "Go", url: "http://localhost"),
+        ])
+        let data = try JSONEncoder().encode(onboarding)
+        let decoded = try JSONDecoder().decode(Onboarding.self, from: data)
+        XCTAssertEqual(onboarding, decoded)
+    }
+
+    func testDefaultsToEmptySteps() throws {
+        let json = """
+        {}
+        """.data(using: .utf8)!
+        let onboarding = try JSONDecoder().decode(Onboarding.self, from: json)
+        XCTAssertEqual(onboarding.steps, [])
+    }
+
+    func testValidationCascadesToSteps() {
+        let onboarding = Onboarding(steps: [
+            OnboardingStep(type: .info, title: "", body: "Bad step")
+        ])
+        XCTAssertThrowsError(try onboarding.validate())
+    }
+}
+
+// MARK: - Provision Tests
+
+final class ProvisionTests: XCTestCase {
+
+    func testCodableRoundTrip() throws {
+        let provision = Provision(
+            description: "Sample database",
+            source: "https://example.com/metadata.db",
+            destination: "/srv/data/metadata.db",
+            condition: "include_sample_db"
+        )
+        let data = try JSONEncoder().encode(provision)
+        let decoded = try JSONDecoder().decode(Provision.self, from: data)
+        XCTAssertEqual(provision, decoded)
+    }
+
+    func testConditionDefaultsToNil() throws {
+        let json = """
+        {"description": "Test", "source": "https://x.com/f", "destination": "/tmp/f"}
+        """.data(using: .utf8)!
+        let provision = try JSONDecoder().decode(Provision.self, from: json)
+        XCTAssertNil(provision.condition)
+    }
+
+    func testValidationFailsOnEmptySource() {
+        let provision = Provision(description: "X", source: "  ", destination: "/tmp/f")
+        XCTAssertThrowsError(try provision.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("source") == true)
+        }
+    }
+
+    func testValidationFailsOnEmptyDestination() {
+        let provision = Provision(description: "X", source: "https://x.com/f", destination: "")
+        XCTAssertThrowsError(try provision.validate()) { error in
+            XCTAssertTrue((error as? ValidationError)?.message.contains("destination") == true)
+        }
+    }
+
+    func testValidationSucceeds() {
+        let provision = Provision(
+            description: "DB", source: "https://x.com/f", destination: "/tmp/f"
+        )
+        XCTAssertNoThrow(try provision.validate())
+    }
+}
+
+// MARK: - Bundle Onboarding Tests
+
+final class BundleOnboardingTests: XCTestCase {
+
+    func testBundleWithOnboardingRoundTrip() throws {
+        let bundle = Bundle(
+            id: "b.1", name: "B",
+            capability: "cap.1",
+            runtimeUnits: ["u.1"],
+            onboarding: Onboarding(steps: [
+                OnboardingStep(type: .credentials, title: "Login", body: "Use defaults.",
+                               fields: [OnboardingField(label: "User", value: "admin")])
+            ]),
+            provisions: [
+                Provision(description: "DB", source: "https://x.com/db",
+                          destination: "/data/db", condition: "include_db")
+            ]
+        )
+        let data = try JSONEncoder().encode(bundle)
+        let decoded = try JSONDecoder().decode(Bundle.self, from: data)
+        XCTAssertEqual(bundle, decoded)
+        XCTAssertEqual(decoded.onboarding?.steps.count, 1)
+        XCTAssertEqual(decoded.provisions.count, 1)
+    }
+
+    func testBundleWithoutOnboardingDefaultsToNil() throws {
+        let json = """
+        {"id": "b.1", "name": "B", "capability": "c.1", "runtimeUnits": ["u.1"]}
+        """.data(using: .utf8)!
+        let bundle = try JSONDecoder().decode(Bundle.self, from: json)
+        XCTAssertNil(bundle.onboarding)
+        XCTAssertEqual(bundle.provisions, [])
+    }
+
+    func testBundleValidationCascadesToOnboarding() {
+        let bundle = Bundle(
+            id: "b.1", name: "B", capability: "c.1",
+            onboarding: Onboarding(steps: [
+                OnboardingStep(type: .info, title: "", body: "Invalid")
+            ])
+        )
+        XCTAssertThrowsError(try bundle.validate())
+    }
+
+    func testBundleValidationCascadesToProvisions() {
+        let bundle = Bundle(
+            id: "b.1", name: "B", capability: "c.1",
+            provisions: [
+                Provision(description: "X", source: "", destination: "/tmp/f")
+            ]
+        )
+        XCTAssertThrowsError(try bundle.validate())
     }
 }

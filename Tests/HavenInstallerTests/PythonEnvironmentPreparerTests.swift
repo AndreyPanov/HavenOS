@@ -87,7 +87,7 @@ final class PythonEnvironmentPreparerTests: XCTestCase {
         let config = RuntimeUnit.PythonConfig(
             package: "calibreweb",
             version: "0.6.26",
-            entrypoint: .init(module: "cps")
+            entrypoint: .init(module: "calibreweb")
         )
 
         let result = try preparer.prepare(
@@ -107,7 +107,7 @@ final class PythonEnvironmentPreparerTests: XCTestCase {
         XCTAssertTrue(mockRunner.calls[1].arguments.contains("venv"))
         XCTAssertTrue(mockRunner.calls[2].arguments.contains("install"))
         XCTAssertTrue(mockRunner.calls[2].arguments.contains("calibreweb==0.6.26"))
-        XCTAssertTrue(mockRunner.calls[3].arguments.contains("import cps"))
+        XCTAssertTrue(mockRunner.calls[3].arguments.contains("import calibreweb"))
 
         // Venv directory should exist (actually the staging dir was promoted,
         // but since mock doesn't create real files, we check the result paths)

@@ -27,6 +27,7 @@ public struct HavenExecutor: Sendable {
     private let launchdController: LaunchdController
     private let artifactInstaller: ArtifactInstaller?
     private let pythonPreparer: PythonEnvironmentPreparer?
+    private let provisionDownloader: ProvisionDownloader?
     private nonisolated(unsafe) let fileManager: FileManager
 
     public init(
@@ -36,6 +37,7 @@ public struct HavenExecutor: Sendable {
         launchdController: LaunchdController,
         artifactInstaller: ArtifactInstaller? = nil,
         pythonPreparer: PythonEnvironmentPreparer? = nil,
+        provisionDownloader: ProvisionDownloader? = nil,
         fileManager: FileManager = .default
     ) {
         self.paths = paths
@@ -44,6 +46,7 @@ public struct HavenExecutor: Sendable {
         self.launchdController = launchdController
         self.artifactInstaller = artifactInstaller
         self.pythonPreparer = pythonPreparer
+        self.provisionDownloader = provisionDownloader
         self.fileManager = fileManager
     }
 
@@ -133,7 +136,30 @@ public struct HavenExecutor: Sendable {
             try? fileManager.removeItem(at: serviceLayout.serviceRoot)
         }
 
-        // 4. Install artifacts / Python envs, prepare runtimes, install launchd jobs
+        // 4. Execute provisions (download sample data, etc.)
+        if let downloader = provisionDownloader {
+            for provision in service.resolvedProvisions {
+                log.info("[install] Provisioning: \(provision.description)")
+                do {
+                    try downloader.execute(
+                        provision: provision,
+                        serviceRoot: serviceLayout.serviceRoot
+                    )
+                } catch {
+                    try rollback(ExecutorError.provisioningFailed(
+                        capabilityID: capabilityID,
+                        detail: error.localizedDescription
+                    ))
+                }
+                // Register rollback for the provisioned file
+                let destURL = URL(fileURLWithPath: provision.destination)
+                rollbackActions.append { [fileManager] in
+                    try? fileManager.removeItem(at: destURL)
+                }
+            }
+        }
+
+        // 5. Install artifacts / Python envs, prepare runtimes, install launchd jobs
         var collectedArtifactInfo: [StoredArtifactInfo] = []
         var collectedPythonInfo: [StoredPythonInfo] = []
 
@@ -374,7 +400,8 @@ public struct HavenExecutor: Sendable {
             runtimeUnits: service.units.map(\.spec.id),
             directoryLayout: serviceLayout,
             artifactInfo: collectedArtifactInfo,
-            pythonInfo: collectedPythonInfo
+            pythonInfo: collectedPythonInfo,
+            onboarding: service.resolvedOnboarding
         )
 
         do {

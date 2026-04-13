@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import HavenCore
 
 struct ServiceDetailView: View {
     @Environment(ServiceManager.self) private var serviceManager
@@ -48,6 +49,14 @@ struct ServiceDetailView: View {
                         ServiceDetailRow(label: "Data Path", value: service.dataPath)
                     }
                     .padding(4)
+                }
+
+                // Setup Guide (from resolved onboarding)
+                if let onboarding = service.onboarding, !onboarding.steps.isEmpty {
+                    GroupBox("Setup Guide") {
+                        OnboardingStepsView(steps: onboarding.steps)
+                            .padding(4)
+                    }
                 }
 
                 // Logs preview

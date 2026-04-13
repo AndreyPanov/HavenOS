@@ -309,7 +309,7 @@ final class PythonRuntimeAdapterTests: XCTestCase {
             environment: ["PORT": "8083"],
             python: RuntimeUnit.PythonConfig(
                 package: "calibreweb", version: "0.6.26",
-                entrypoint: .init(module: "cps")
+                entrypoint: .init(module: "calibreweb")
             )
         )
         let planned = makePlannedUnit(
@@ -332,8 +332,8 @@ final class PythonRuntimeAdapterTests: XCTestCase {
             .appendingPathComponent("python3")
         XCTAssertEqual(prepared.executableURL, expectedPython)
 
-        // Arguments: "-m cps" + resolved args from planned unit
-        XCTAssertEqual(prepared.arguments, ["-m", "cps", "--port", "8083"])
+        // Arguments: "-m calibreweb" + resolved args from planned unit
+        XCTAssertEqual(prepared.arguments, ["-m", "calibreweb", "--port", "8083"])
 
         // Environment
         XCTAssertEqual(prepared.environment["VIRTUAL_ENV"], expectedVenvRoot.path)

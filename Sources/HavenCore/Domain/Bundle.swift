@@ -30,6 +30,13 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     /// Post-install setup instructions shown to the user after installation.
     public let instructions: String?
 
+    /// Structured onboarding steps shown after installation.
+    /// Supersedes `instructions` when present — both are kept for backward compat.
+    public let onboarding: Onboarding?
+
+    /// Files to provision during installation (e.g., sample databases).
+    public let provisions: [Provision]
+
     public init(
         id: String,
         name: String,
@@ -37,7 +44,9 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         runtimeUnits: [String] = [],
         settings: [SettingField] = [],
         version: String? = nil,
-        instructions: String? = nil
+        instructions: String? = nil,
+        onboarding: Onboarding? = nil,
+        provisions: [Provision] = []
     ) {
         self.id = id
         self.name = name
@@ -46,6 +55,8 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         self.settings = settings
         self.version = version
         self.instructions = instructions
+        self.onboarding = onboarding
+        self.provisions = provisions
     }
 
     public init(from decoder: Decoder) throws {
@@ -57,13 +68,15 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         settings = try c.decodeIfPresent([SettingField].self, forKey: .settings) ?? []
         version = try c.decodeIfPresent(String.self, forKey: .version)
         instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
+        onboarding = try c.decodeIfPresent(Onboarding.self, forKey: .onboarding)
+        provisions = try c.decodeIfPresent([Provision].self, forKey: .provisions) ?? []
     }
 
     /// Validates that the bundle is well-formed.
     ///
     /// - id and name must be non-empty.
     /// - capability must be non-empty.
-    /// - All setting fields must individually validate.
+    /// - All setting fields, onboarding steps, and provisions must individually validate.
     public func validate() throws {
         if id.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("Bundle id must not be empty.")
@@ -76,6 +89,10 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         }
         for setting in settings {
             try setting.validate()
+        }
+        try onboarding?.validate()
+        for provision in provisions {
+            try provision.validate()
         }
     }
 }

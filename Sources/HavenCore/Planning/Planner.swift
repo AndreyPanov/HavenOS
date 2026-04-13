@@ -77,12 +77,35 @@ public enum Planner {
             plannedUnits.append(planned)
         }
 
+        // 8. Resolve onboarding and provisions using a service-level context
+        var serviceContextValues = resolvedSettings
+        serviceContextValues["data_dir"] = layout.data.path
+        serviceContextValues["config_dir"] = layout.config.path
+        serviceContextValues["logs_dir"] = layout.logs.path
+        serviceContextValues["run_dir"] = layout.run.path
+        serviceContextValues["service_root"] = layout.serviceRoot.path
+        if let firstPort = plannedUnits.compactMap({ $0.port?.number }).first {
+            serviceContextValues["port"] = String(firstPort)
+        }
+        let serviceContext = TemplateContext(values: serviceContextValues)
+
+        let resolvedOnboarding = bundle.onboarding.map { serviceContext.expand($0) }
+
+        let resolvedProvisions = bundle.provisions
+            .filter { provision in
+                guard let conditionKey = provision.condition else { return true }
+                return resolvedSettings[conditionKey]?.lowercased() == "true"
+            }
+            .map { serviceContext.expand($0) }
+
         let service = PlannedService(
             capability: capability,
             bundle: bundle,
             units: plannedUnits,
             resolvedSettings: resolvedSettings,
-            directoryLayout: layout
+            directoryLayout: layout,
+            resolvedOnboarding: resolvedOnboarding,
+            resolvedProvisions: resolvedProvisions
         )
 
         return InstallPlan(service: service)

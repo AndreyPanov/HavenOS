@@ -15,7 +15,7 @@ public struct StoredPythonInfo: Codable, Equatable, Sendable {
     /// The pinned version that was installed (e.g. `"0.6.26"`).
     public let version: String
 
-    /// The Python module entrypoint (e.g. `"cps"`).
+    /// The Python module entrypoint (e.g. `"calibreweb"`).
     public let module: String
 
     /// The filesystem path to the virtual environment directory.

@@ -42,12 +42,14 @@ struct CommonOptions: ParsableArguments {
         let launchdController = LaunchdController()
         let artifactInstaller = ArtifactInstaller(paths: paths)
         let pythonPreparer = PythonEnvironmentPreparer()
+        let provisionDownloader = ProvisionDownloader()
         return HavenExecutor(
             paths: paths,
             stateStore: stateStore,
             launchdController: launchdController,
             artifactInstaller: artifactInstaller,
-            pythonPreparer: pythonPreparer
+            pythonPreparer: pythonPreparer,
+            provisionDownloader: provisionDownloader
         )
     }
 
@@ -123,6 +125,27 @@ public struct InstallCommand: ParsableCommand {
             print("  Ports:  \(ports)")
         }
         print("  Status: \(state.status.rawValue)")
+
+        // Print onboarding guidance if available
+        if let onboarding = state.onboarding, !onboarding.steps.isEmpty {
+            print("")
+            print("  Getting Started:")
+            for (i, step) in onboarding.steps.enumerated() {
+                let tag: String = switch step.type {
+                case .info: "INFO"
+                case .credentials: "CREDENTIALS"
+                case .action: "ACTION"
+                }
+                print("  \(i + 1). [\(tag)] \(step.title)")
+                print("     \(step.body)")
+                for field in step.fields {
+                    print("     \(field.label): \(field.value)")
+                }
+                if let url = step.url {
+                    print("     URL: \(url)")
+                }
+            }
+        }
     }
 }
 

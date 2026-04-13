@@ -76,7 +76,7 @@ extension StrictJSONDecoder {
 
     static let bundleKeys: Set<String> = [
         "id", "name", "capability", "runtimeUnits", "settings",
-        "version", "instructions"
+        "version", "instructions", "onboarding", "provisions"
     ]
 
     static let runtimeUnitKeys: Set<String> = [
@@ -104,6 +104,22 @@ extension StrictJSONDecoder {
 
     static let artifactKeys: Set<String> = [
         "type", "repo", "version", "assets"
+    ]
+
+    static let onboardingKeys: Set<String> = [
+        "steps"
+    ]
+
+    static let onboardingStepKeys: Set<String> = [
+        "type", "title", "body", "fields", "url"
+    ]
+
+    static let onboardingFieldKeys: Set<String> = [
+        "label", "value"
+    ]
+
+    static let provisionKeys: Set<String> = [
+        "description", "source", "destination", "condition"
     ]
 
     /// Check a nested dictionary for unknown keys, appending issues.

@@ -41,6 +41,10 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
     /// Empty for services with no Python units.
     public let pythonInfo: [StoredPythonInfo]
 
+    /// Resolved onboarding steps from the install plan.
+    /// Nil for services installed before onboarding was added.
+    public let onboarding: Onboarding?
+
     public init(
         capability: String,
         bundleID: String,
@@ -52,7 +56,8 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         runtimeUnits: [String],
         directoryLayout: ServiceDirectoryLayout,
         artifactInfo: [StoredArtifactInfo] = [],
-        pythonInfo: [StoredPythonInfo] = []
+        pythonInfo: [StoredPythonInfo] = [],
+        onboarding: Onboarding? = nil
     ) {
         self.capability = capability
         self.bundleID = bundleID
@@ -65,6 +70,7 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         self.directoryLayout = directoryLayout
         self.artifactInfo = artifactInfo
         self.pythonInfo = pythonInfo
+        self.onboarding = onboarding
     }
 
     // MARK: - Backward-compatible decoding
@@ -72,7 +78,7 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case capability, bundleID, installedAt, updatedAt, status
         case resolvedSettings, portAssignments, runtimeUnits
-        case directoryLayout, artifactInfo, pythonInfo
+        case directoryLayout, artifactInfo, pythonInfo, onboarding
     }
 
     public init(from decoder: Decoder) throws {
@@ -88,5 +94,6 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         directoryLayout = try c.decode(ServiceDirectoryLayout.self, forKey: .directoryLayout)
         artifactInfo = try c.decodeIfPresent([StoredArtifactInfo].self, forKey: .artifactInfo) ?? []
         pythonInfo = try c.decodeIfPresent([StoredPythonInfo].self, forKey: .pythonInfo) ?? []
+        onboarding = try c.decodeIfPresent(Onboarding.self, forKey: .onboarding)
     }
 }

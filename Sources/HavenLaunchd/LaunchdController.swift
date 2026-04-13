@@ -219,14 +219,21 @@ public struct LaunchdController: Sendable {
             )
         }
 
-        guard result.succeeded else {
-            log.error("[stop] Stop failed: \(combinedOutput(result))")
-            throw LaunchdControllerError.stopFailed(
-                label: label,
-                detail: combinedOutput(result)
-            )
+        if !result.succeeded {
+            let output = combinedOutput(result)
+            // "No process to signal" means the job is already stopped — not an error.
+            if output.contains("No process to signal") || output.contains("No such process") {
+                log.info("[stop] Job already stopped: \(label)")
+            } else {
+                log.error("[stop] Stop failed: \(output)")
+                throw LaunchdControllerError.stopFailed(
+                    label: label,
+                    detail: output
+                )
+            }
+        } else {
+            log.info("[stop] Job stopped: \(label)")
         }
-        log.info("[stop] Job stopped: \(label)")
     }
 
     // MARK: - Status

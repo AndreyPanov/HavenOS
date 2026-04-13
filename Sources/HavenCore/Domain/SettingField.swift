@@ -44,6 +44,15 @@ public struct SettingField: Codable, Equatable, Sendable {
         self.required = required
     }
 
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        label = try c.decode(String.self, forKey: .label)
+        fieldType = try c.decode(FieldType.self, forKey: .fieldType)
+        defaultValue = try c.decodeIfPresent(String.self, forKey: .defaultValue)
+        required = try c.decodeIfPresent(Bool.self, forKey: .required) ?? false
+    }
+
     // MARK: - Validation
 
     /// Validates that the key is a valid identifier and the label is non-empty.

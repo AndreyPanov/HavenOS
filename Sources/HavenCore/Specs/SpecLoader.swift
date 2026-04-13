@@ -56,13 +56,15 @@ public enum SpecLoader {
             }
 
             // bundle.json — single object
+            let bundleFile = folder.appendingPathComponent("bundle.json")
             if let bun: Bundle = decodeSingleSpec(
                 Bundle.self,
-                file: folder.appendingPathComponent("bundle.json"),
+                file: bundleFile,
                 knownKeys: StrictJSONDecoder.bundleKeys,
                 folderName: folderName,
                 issues: &issues
             ) {
+                checkBundleNestedKeys(file: bundleFile, folderName: folderName, issues: &issues)
                 bundles.append(bun)
             }
 
@@ -234,6 +236,54 @@ public enum SpecLoader {
                 detail: error.localizedDescription
             ))
             return []
+        }
+    }
+
+    /// Check nested keys in bundle.json (onboarding + provisions blocks).
+    private static func checkBundleNestedKeys(
+        file: URL,
+        folderName: String,
+        issues: inout [SpecLoadIssue]
+    ) {
+        guard let data = try? Data(contentsOf: file),
+              let topLevel = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+
+        let source = "\(folderName)/\(file.lastPathComponent)"
+
+        // Nested: onboarding block
+        if let onboardingDict = topLevel["onboarding"] as? [String: Any] {
+            StrictJSONDecoder.checkNestedKeys(
+                in: onboardingDict, knownKeys: StrictJSONDecoder.onboardingKeys,
+                source: "\(source).onboarding", issues: &issues
+            )
+            if let steps = onboardingDict["steps"] as? [[String: Any]] {
+                for (index, stepDict) in steps.enumerated() {
+                    StrictJSONDecoder.checkNestedKeys(
+                        in: stepDict, knownKeys: StrictJSONDecoder.onboardingStepKeys,
+                        source: "\(source).onboarding.steps[\(index)]", issues: &issues
+                    )
+                    // Nested: fields within each step
+                    if let fields = stepDict["fields"] as? [[String: Any]] {
+                        for (fi, fieldDict) in fields.enumerated() {
+                            StrictJSONDecoder.checkNestedKeys(
+                                in: fieldDict, knownKeys: StrictJSONDecoder.onboardingFieldKeys,
+                                source: "\(source).onboarding.steps[\(index)].fields[\(fi)]", issues: &issues
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Nested: provisions array
+        if let provisions = topLevel["provisions"] as? [[String: Any]] {
+            for (index, provDict) in provisions.enumerated() {
+                StrictJSONDecoder.checkNestedKeys(
+                    in: provDict, knownKeys: StrictJSONDecoder.provisionKeys,
+                    source: "\(source).provisions[\(index)]", issues: &issues
+                )
+            }
         }
     }
 

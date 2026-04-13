@@ -10,6 +10,11 @@ struct HavenApp: App {
         // Ensure the app runs as a regular GUI application with dock icon and menu bar,
         // even when launched as a bare executable outside a .app bundle.
         NSApplication.shared.setActivationPolicy(.regular)
+
+        // SwiftPM executables don't embed Info.plist into Contents/Info.plist,
+        // so Bundle.main.bundleIdentifier is nil. Disable automatic window
+        // tabbing to avoid AppKit's "Cannot index window tabs" warning.
+        NSWindow.allowsAutomaticWindowTabbing = false
     }
 
     var body: some Scene {

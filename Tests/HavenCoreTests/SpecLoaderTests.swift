@@ -733,4 +733,141 @@ final class SpecLoaderTests: XCTestCase {
         let warnings = result.issues.filter { $0.kind == .validationFailure }
         XCTAssertTrue(warnings.contains { $0.detail.contains("missing.png") })
     }
+
+    // MARK: - Onboarding + Provisions in bundle.json
+
+    func testBundleWithOnboardingLoadsSuccessfully() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let serviceDir = tmpDir.appendingPathComponent("onboarding-service")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let capJSON = """
+        {"id": "test.cap", "name": "Test", "version": "1.0.0"}
+        """.data(using: .utf8)!
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
+
+        let bundleJSON = """
+        {
+            "id": "test.bundle", "name": "Test Bundle",
+            "capability": "test.cap", "runtimeUnits": ["test.unit"],
+            "onboarding": {
+                "steps": [
+                    {
+                        "type": "credentials",
+                        "title": "Login",
+                        "body": "Use the default admin account.",
+                        "fields": [
+                            {"label": "Username", "value": "admin"},
+                            {"label": "Password", "value": "admin123"}
+                        ]
+                    },
+                    {
+                        "type": "action",
+                        "title": "Open App",
+                        "body": "Access at http://localhost:8080",
+                        "url": "http://localhost:8080"
+                    }
+                ]
+            },
+            "provisions": [
+                {
+                    "description": "Sample database",
+                    "source": "https://example.com/metadata.db",
+                    "destination": "${data_dir}/metadata.db",
+                    "condition": "include_sample_db"
+                }
+            ]
+        }
+        """.data(using: .utf8)!
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
+
+        let artifactDir = serviceDir.appendingPathComponent("Artifacts/Test")
+        try FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
+
+        let unitJSON = """
+        [{"id": "test.unit", "bundleID": "test.bundle", "runtimeType": "native", "installSource": "Artifacts/Test", "launchArguments": ["run"]}]
+        """.data(using: .utf8)!
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
+
+        let result = SpecLoader.load(from: tmpDir)
+        XCTAssertTrue(result.succeeded, "Issues: \(result.issues)")
+
+        let bundle = try XCTUnwrap(result.registry?.bundlesByID["test.bundle"])
+        XCTAssertNotNil(bundle.onboarding)
+        XCTAssertEqual(bundle.onboarding?.steps.count, 2)
+        XCTAssertEqual(bundle.onboarding?.steps[0].type, .credentials)
+        XCTAssertEqual(bundle.onboarding?.steps[0].fields.count, 2)
+        XCTAssertEqual(bundle.onboarding?.steps[1].url, "http://localhost:8080")
+        XCTAssertEqual(bundle.provisions.count, 1)
+        XCTAssertEqual(bundle.provisions[0].condition, "include_sample_db")
+    }
+
+    func testOnboardingUnknownFieldRejected() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let serviceDir = tmpDir.appendingPathComponent("bad-onboarding")
+        try FileManager.default.createDirectory(at: serviceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let capJSON = """
+        {"id": "test.cap", "name": "Test", "version": "1.0.0"}
+        """.data(using: .utf8)!
+        try capJSON.write(to: serviceDir.appendingPathComponent("capability.json"))
+
+        let bundleJSON = """
+        {
+            "id": "test.bundle", "name": "Test",
+            "capability": "test.cap", "runtimeUnits": ["test.unit"],
+            "onboarding": {
+                "steps": [
+                    {
+                        "type": "info", "title": "Hello", "body": "World",
+                        "bogusStepField": true,
+                        "fields": [
+                            {"label": "X", "value": "Y", "bogusFieldProp": 42}
+                        ]
+                    }
+                ],
+                "bogusOnboardingField": "bad"
+            },
+            "provisions": [
+                {
+                    "description": "DB", "source": "https://x.com/f",
+                    "destination": "/tmp/f", "bogusProvisionField": true
+                }
+            ]
+        }
+        """.data(using: .utf8)!
+        try bundleJSON.write(to: serviceDir.appendingPathComponent("bundle.json"))
+
+        let artifactDir = serviceDir.appendingPathComponent("Artifacts/Test")
+        try FileManager.default.createDirectory(at: artifactDir, withIntermediateDirectories: true)
+
+        let unitJSON = """
+        [{"id": "test.unit", "bundleID": "test.bundle", "runtimeType": "native", "installSource": "Artifacts/Test", "launchArguments": ["run"]}]
+        """.data(using: .utf8)!
+        try unitJSON.write(to: serviceDir.appendingPathComponent("runtimes.json"))
+
+        let result = SpecLoader.load(from: tmpDir)
+        let unknowns = result.issues.filter { $0.kind == .unknownField }
+
+        XCTAssertTrue(
+            unknowns.contains { $0.detail.contains("bogusOnboardingField") },
+            "Expected warning for onboarding.bogusOnboardingField, got: \(unknowns)"
+        )
+        XCTAssertTrue(
+            unknowns.contains { $0.detail.contains("bogusStepField") },
+            "Expected warning for onboarding.steps[].bogusStepField, got: \(unknowns)"
+        )
+        XCTAssertTrue(
+            unknowns.contains { $0.detail.contains("bogusFieldProp") },
+            "Expected warning for onboarding.steps[].fields[].bogusFieldProp, got: \(unknowns)"
+        )
+        XCTAssertTrue(
+            unknowns.contains { $0.detail.contains("bogusProvisionField") },
+            "Expected warning for provisions[].bogusProvisionField, got: \(unknowns)"
+        )
+    }
 }

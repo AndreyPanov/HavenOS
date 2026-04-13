@@ -345,7 +345,7 @@ extension RuntimeUnit {
         bundleID: "haven.bundle.calibre-web-basic",
         runtimeType: .python,
         installSource: "",
-        launchArguments: [],
+        launchArguments: ["-p", "${config_dir}/app.db"],
         healthcheck: Healthcheck(
             type: .http,
             target: "http://localhost:8083/",
@@ -360,8 +360,7 @@ extension RuntimeUnit {
             package: "calibreweb",
             version: "0.6.26",
             entrypoint: .init(
-                module: "calibreweb",
-                args: ["-p", "${data_dir}/app.db"]
+                module: "calibreweb"
             )
         )
     )

@@ -36,4 +36,39 @@ public struct TemplateContext: Equatable, Sendable {
     public func expandAll(_ items: [String]) -> [String] {
         items.map { expand($0) }
     }
+
+    // MARK: - Onboarding expansion
+
+    /// Expand all placeholders in an ``OnboardingField``.
+    public func expand(_ field: OnboardingField) -> OnboardingField {
+        OnboardingField(label: field.label, value: expand(field.value))
+    }
+
+    /// Expand all placeholders in an ``OnboardingStep``.
+    public func expand(_ step: OnboardingStep) -> OnboardingStep {
+        OnboardingStep(
+            type: step.type,
+            title: expand(step.title),
+            body: expand(step.body),
+            fields: step.fields.map { expand($0) },
+            url: step.url.map { expand($0) }
+        )
+    }
+
+    /// Expand all placeholders in an ``Onboarding``.
+    public func expand(_ onboarding: Onboarding) -> Onboarding {
+        Onboarding(steps: onboarding.steps.map { expand($0) })
+    }
+
+    // MARK: - Provision expansion
+
+    /// Expand all placeholders in a ``Provision``.
+    public func expand(_ provision: Provision) -> Provision {
+        Provision(
+            description: provision.description,
+            source: expand(provision.source),
+            destination: expand(provision.destination),
+            condition: provision.condition
+        )
+    }
 }
