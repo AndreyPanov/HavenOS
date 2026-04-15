@@ -28,6 +28,7 @@ public struct HavenExecutor: Sendable {
     private let artifactInstaller: ArtifactInstaller?
     private let pythonPreparer: PythonEnvironmentPreparer?
     private let provisionDownloader: ProvisionDownloader?
+    private let installStepExecutor: InstallStepExecutor?
     private nonisolated(unsafe) let fileManager: FileManager
 
     public init(
@@ -38,6 +39,7 @@ public struct HavenExecutor: Sendable {
         artifactInstaller: ArtifactInstaller? = nil,
         pythonPreparer: PythonEnvironmentPreparer? = nil,
         provisionDownloader: ProvisionDownloader? = nil,
+        installStepExecutor: InstallStepExecutor? = nil,
         fileManager: FileManager = .default
     ) {
         self.paths = paths
@@ -47,6 +49,7 @@ public struct HavenExecutor: Sendable {
         self.artifactInstaller = artifactInstaller
         self.pythonPreparer = pythonPreparer
         self.provisionDownloader = provisionDownloader
+        self.installStepExecutor = installStepExecutor
         self.fileManager = fileManager
     }
 
@@ -337,6 +340,30 @@ public struct HavenExecutor: Sendable {
                 log.info("[install] Resolved unit path: \(installedPath)")
             } else {
                 resolvedUnit = unit
+            }
+
+            // Execute install steps (if any)
+            if let installBlock = plannedUnit.resolvedInstall,
+               !installBlock.steps.isEmpty,
+               let stepExecutor = installStepExecutor {
+                progress?("Running install steps…")
+                log.info("[install] Executing \(installBlock.steps.count) install steps for \(unit.id)")
+                do {
+                    let stepResult = try stepExecutor.execute(
+                        block: installBlock,
+                        serviceRoot: serviceLayout.serviceRoot,
+                        templateContext: plannedUnit.templateContext
+                    )
+                    if !stepResult.generatedSecrets.isEmpty {
+                        log.info("[install] Generated \(stepResult.generatedSecrets.count) secrets for \(unit.id)")
+                    }
+                } catch {
+                    try rollback(ExecutorError.installStepsFailed(
+                        capabilityID: capabilityID,
+                        unitID: unit.id,
+                        detail: error.localizedDescription
+                    ))
+                }
             }
 
             // Prepare runtime

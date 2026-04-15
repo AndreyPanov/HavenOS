@@ -37,6 +37,9 @@ public enum ExecutorError: Error, LocalizedError, Equatable, Sendable {
     /// Stopping a service unit failed.
     case stopFailed(capabilityID: String, unitID: String, detail: String)
 
+    /// Executing install steps for a unit failed.
+    case installStepsFailed(capabilityID: String, unitID: String, detail: String)
+
     /// Provisioning a file during installation failed.
     case provisioningFailed(capabilityID: String, detail: String)
 
@@ -65,6 +68,8 @@ public enum ExecutorError: Error, LocalizedError, Equatable, Sendable {
             "Start failed: \(detail)"
         case .stopFailed(_, _, let detail):
             "Stop failed: \(detail)"
+        case .installStepsFailed(_, _, let detail):
+            "Install steps failed: \(detail)"
         case .provisioningFailed(_, let detail):
             "Provisioning failed: \(detail)"
         case .statusQueryFailed(_, let detail):
