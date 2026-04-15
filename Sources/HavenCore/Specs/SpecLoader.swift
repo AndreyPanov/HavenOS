@@ -218,6 +218,32 @@ public enum SpecLoader {
                             source: "\(unitSource).healthcheck", issues: &issues
                         )
                     }
+
+                    // Nested: install block
+                    if let installDict = dict["install"] as? [String: Any] {
+                        StrictJSONDecoder.checkNestedKeys(
+                            in: installDict, knownKeys: StrictJSONDecoder.installBlockKeys,
+                            source: "\(unitSource).install", issues: &issues
+                        )
+                        if let steps = installDict["steps"] as? [[String: Any]] {
+                            for (si, stepDict) in steps.enumerated() {
+                                StrictJSONDecoder.checkNestedKeys(
+                                    in: stepDict, knownKeys: StrictJSONDecoder.installStepKeys,
+                                    source: "\(unitSource).install.steps[\(si)]", issues: &issues
+                                )
+                            }
+                        }
+                    }
+
+                    // Nested: dependencies array
+                    if let deps = dict["dependencies"] as? [[String: Any]] {
+                        for (di, depDict) in deps.enumerated() {
+                            StrictJSONDecoder.checkNestedKeys(
+                                in: depDict, knownKeys: StrictJSONDecoder.dependencyKeys,
+                                source: "\(unitSource).dependencies[\(di)]", issues: &issues
+                            )
+                        }
+                    }
                 }
             }
         } catch {
@@ -272,6 +298,18 @@ public enum SpecLoader {
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Nested: storage block
+        if let storageDict = topLevel["storage"] as? [String: Any] {
+            for (role, value) in storageDict {
+                if let policyDict = value as? [String: Any] {
+                    StrictJSONDecoder.checkNestedKeys(
+                        in: policyDict, knownKeys: StrictJSONDecoder.storagePolicyKeys,
+                        source: "\(source).storage.\(role)", issues: &issues
+                    )
                 }
             }
         }

@@ -26,6 +26,12 @@ public struct PlannedRuntimeUnit: Equatable, Sendable {
     /// The template context used for this unit's expansion.
     public let templateContext: TemplateContext
 
+    /// Resolved directory roles (role name → absolute path).
+    public let resolvedDirectories: [String: String]
+
+    /// Expanded install steps (placeholders resolved), if any.
+    public let resolvedInstall: InstallBlock?
+
     public init(
         spec: RuntimeUnit,
         resolvedLaunchArguments: [String],
@@ -33,7 +39,9 @@ public struct PlannedRuntimeUnit: Equatable, Sendable {
         port: PlannedPort?,
         resolvedHealthcheck: Healthcheck?,
         dependsOn: [String],
-        templateContext: TemplateContext
+        templateContext: TemplateContext,
+        resolvedDirectories: [String: String] = [:],
+        resolvedInstall: InstallBlock? = nil
     ) {
         self.spec = spec
         self.resolvedLaunchArguments = resolvedLaunchArguments
@@ -42,5 +50,7 @@ public struct PlannedRuntimeUnit: Equatable, Sendable {
         self.resolvedHealthcheck = resolvedHealthcheck
         self.dependsOn = dependsOn
         self.templateContext = templateContext
+        self.resolvedDirectories = resolvedDirectories
+        self.resolvedInstall = resolvedInstall
     }
 }

@@ -37,6 +37,10 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     /// Files to provision during installation (e.g., sample databases).
     public let provisions: [Provision]
 
+    /// Per-role storage policies. Keys match directory role names from
+    /// the runtime unit's `directories` block (e.g. `"config"`, `"data"`, `"content"`).
+    public let storage: [String: StoragePolicy]
+
     public init(
         id: String,
         name: String,
@@ -46,7 +50,8 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         version: String? = nil,
         instructions: String? = nil,
         onboarding: Onboarding? = nil,
-        provisions: [Provision] = []
+        provisions: [Provision] = [],
+        storage: [String: StoragePolicy] = [:]
     ) {
         self.id = id
         self.name = name
@@ -57,6 +62,7 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         self.instructions = instructions
         self.onboarding = onboarding
         self.provisions = provisions
+        self.storage = storage
     }
 
     public init(from decoder: Decoder) throws {
@@ -70,6 +76,7 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
         onboarding = try c.decodeIfPresent(Onboarding.self, forKey: .onboarding)
         provisions = try c.decodeIfPresent([Provision].self, forKey: .provisions) ?? []
+        storage = try c.decodeIfPresent([String: StoragePolicy].self, forKey: .storage) ?? [:]
     }
 
     /// Validates that the bundle is well-formed.

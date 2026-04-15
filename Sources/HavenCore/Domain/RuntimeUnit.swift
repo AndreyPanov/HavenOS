@@ -133,6 +133,18 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     /// must be `nil` for other runtime types.
     public let python: PythonConfig?
 
+    /// Named directory roles. Keys are role names (e.g. `"config"`, `"data"`),
+    /// values are paths relative to the service root. Each key becomes a
+    /// `${key_dir}` template variable. Values may themselves contain
+    /// `${setting_key}` placeholders (e.g. `"${music_folder}"`).
+    public let directories: [String: String]
+
+    /// Ordered installation steps executed after artifact resolution.
+    public let install: InstallBlock?
+
+    /// External helper dependencies this unit needs.
+    public let dependencies: [Dependency]
+
     public init(
         id: String,
         bundleID: String,
@@ -146,7 +158,10 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         version: String? = nil,
         entrypoint: Entrypoint? = nil,
         artifact: Artifact? = nil,
-        python: PythonConfig? = nil
+        python: PythonConfig? = nil,
+        directories: [String: String] = [:],
+        install: InstallBlock? = nil,
+        dependencies: [Dependency] = []
     ) {
         self.id = id
         self.bundleID = bundleID
@@ -161,6 +176,9 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         self.entrypoint = entrypoint
         self.artifact = artifact
         self.python = python
+        self.directories = directories
+        self.install = install
+        self.dependencies = dependencies
     }
 
     // MARK: - Codable (entrypoint + version support)
@@ -169,6 +187,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         case id, bundleID, runtimeType, installSource
         case launchArguments, healthcheck, dependsOn, port
         case environment, entrypoint, version, artifact, python
+        case directories, install, dependencies
     }
 
     public init(from decoder: Decoder) throws {
@@ -210,6 +229,9 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         dependsOn = try c.decodeIfPresent([String].self, forKey: .dependsOn) ?? []
         port = try c.decodeIfPresent(Int.self, forKey: .port)
         version = try c.decodeIfPresent(String.self, forKey: .version)
+        directories = try c.decodeIfPresent([String: String].self, forKey: .directories) ?? [:]
+        install = try c.decodeIfPresent(InstallBlock.self, forKey: .install)
+        dependencies = try c.decodeIfPresent([Dependency].self, forKey: .dependencies) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -227,6 +249,13 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         try c.encodeIfPresent(entrypoint, forKey: .entrypoint)
         try c.encodeIfPresent(artifact, forKey: .artifact)
         try c.encodeIfPresent(python, forKey: .python)
+        if !directories.isEmpty {
+            try c.encode(directories, forKey: .directories)
+        }
+        try c.encodeIfPresent(install, forKey: .install)
+        if !dependencies.isEmpty {
+            try c.encode(dependencies, forKey: .dependencies)
+        }
     }
 
     /// Returns a copy with a different `installSource`, keeping all other fields.
@@ -236,7 +265,9 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
             installSource: newSource, launchArguments: launchArguments,
             healthcheck: healthcheck, dependsOn: dependsOn,
             port: port, environment: environment, version: version,
-            entrypoint: entrypoint, artifact: artifact, python: python
+            entrypoint: entrypoint, artifact: artifact, python: python,
+            directories: directories, install: install,
+            dependencies: dependencies
         )
     }
 
@@ -295,6 +326,10 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         }
 
         try healthcheck?.validate()
+        try install?.validate()
+        for dep in dependencies {
+            try dep.validate()
+        }
     }
 }
 

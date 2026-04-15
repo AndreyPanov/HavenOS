@@ -76,13 +76,14 @@ extension StrictJSONDecoder {
 
     static let bundleKeys: Set<String> = [
         "id", "name", "capability", "runtimeUnits", "settings",
-        "version", "instructions", "onboarding", "provisions"
+        "version", "instructions", "onboarding", "provisions", "storage"
     ]
 
     static let runtimeUnitKeys: Set<String> = [
         "id", "bundleID", "runtimeType", "installSource",
         "launchArguments", "healthcheck", "dependsOn", "port",
-        "environment", "entrypoint", "version", "artifact", "python"
+        "environment", "entrypoint", "version", "artifact", "python",
+        "directories", "install", "dependencies"
     ]
 
 
@@ -120,6 +121,22 @@ extension StrictJSONDecoder {
 
     static let provisionKeys: Set<String> = [
         "description", "source", "destination", "condition"
+    ]
+
+    static let installBlockKeys: Set<String> = [
+        "steps"
+    ]
+
+    static let installStepKeys: Set<String> = [
+        "action", "path", "source", "mode", "content"
+    ]
+
+    static let dependencyKeys: Set<String> = [
+        "id", "kind", "required", "validateCommand", "description"
+    ]
+
+    static let storagePolicyKeys: Set<String> = [
+        "persistent", "userVisible"
     ]
 
     /// Check a nested dictionary for unknown keys, appending issues.

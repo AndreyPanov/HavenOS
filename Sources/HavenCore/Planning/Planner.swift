@@ -87,6 +87,12 @@ public enum Planner {
         if let firstPort = plannedUnits.compactMap({ $0.port?.number }).first {
             serviceContextValues["port"] = String(firstPort)
         }
+        // Merge directory variables from all units into the service context.
+        for unit in plannedUnits {
+            for (key, value) in unit.templateContext.values where key.hasSuffix("_dir") {
+                serviceContextValues[key] = value
+            }
+        }
         let serviceContext = TemplateContext(values: serviceContextValues)
 
         let resolvedOnboarding = bundle.onboarding.map { serviceContext.expand($0) }
@@ -233,6 +239,22 @@ public enum Planner {
         if let port {
             contextValues["port"] = String(port.number)
         }
+
+        // Expand spec-declared directories into template variables.
+        // First pass: expand setting references in directory values.
+        let settingsContext = TemplateContext(values: contextValues)
+        for (role, rawPath) in unit.directories {
+            let expandedPath = settingsContext.expand(rawPath)
+            let resolvedPath: String
+            if expandedPath.hasPrefix("/") || expandedPath.hasPrefix("~") {
+                resolvedPath = expandedPath
+            } else {
+                resolvedPath = layout.serviceRoot
+                    .appendingPathComponent(expandedPath).path
+            }
+            contextValues["\(role)_dir"] = resolvedPath
+        }
+
         let context = TemplateContext(values: contextValues)
 
         // Expand templates
@@ -252,6 +274,17 @@ public enum Planner {
             resolvedHealthcheck = nil
         }
 
+        // Build resolved directories map from context
+        var resolvedDirs: [String: String] = [:]
+        for role in unit.directories.keys {
+            if let path = contextValues["\(role)_dir"] {
+                resolvedDirs[role] = path
+            }
+        }
+
+        // Expand install steps
+        let resolvedInstall = unit.install.map { context.expand($0) }
+
         return PlannedRuntimeUnit(
             spec: unit,
             resolvedLaunchArguments: resolvedArgs,
@@ -259,7 +292,9 @@ public enum Planner {
             port: port,
             resolvedHealthcheck: resolvedHealthcheck,
             dependsOn: unit.dependsOn,
-            templateContext: context
+            templateContext: context,
+            resolvedDirectories: resolvedDirs,
+            resolvedInstall: resolvedInstall
         )
     }
 

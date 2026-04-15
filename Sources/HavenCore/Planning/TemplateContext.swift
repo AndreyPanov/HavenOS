@@ -71,4 +71,22 @@ public struct TemplateContext: Equatable, Sendable {
             condition: provision.condition
         )
     }
+
+    // MARK: - Install step expansion
+
+    /// Expand all placeholders in an ``InstallStep``.
+    public func expand(_ step: InstallStep) -> InstallStep {
+        InstallStep(
+            action: step.action,
+            path: expand(step.path),
+            source: step.source.map { expand($0) },
+            mode: step.mode,
+            content: step.content.map { expand($0) }
+        )
+    }
+
+    /// Expand all placeholders in an ``InstallBlock``.
+    public func expand(_ block: InstallBlock) -> InstallBlock {
+        InstallBlock(steps: block.steps.map { expand($0) })
+    }
 }
