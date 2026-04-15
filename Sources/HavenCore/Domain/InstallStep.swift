@@ -20,21 +20,31 @@ public struct InstallStep: Codable, Equatable, Sendable {
         case writeFile
         /// Create a symbolic link.
         case symlink
+        /// Generate a cryptographic random secret and inject it as a template variable.
+        /// `path` is the variable name (e.g. `"api_key"`), `mode` is the encoding
+        /// (`"hex"` or `"base64"`), `content` is the byte length as a string (e.g. `"32"`).
+        case generateSecret
+        /// Remove a file or empty directory created during install.
+        /// Used for post-install cleanup (e.g. removing downloaded archives).
+        case cleanup
     }
 
     /// Which operation to perform.
     public let action: Action
 
     /// Target path. Supports `${var}` template expansion.
+    /// For `generateSecret`, this is the template variable name to inject.
     public let path: String
 
     /// Source path for `copy`, `move`, and `symlink` actions.
     public let source: String?
 
     /// Unix permissions string for `chmod` (e.g. `"755"`).
+    /// For `generateSecret`, the encoding: `"hex"` (default) or `"base64"`.
     public let mode: String?
 
     /// File contents for `writeFile`. Supports `${var}` template expansion.
+    /// For `generateSecret`, the byte length as a string (e.g. `"32"`).
     public let content: String?
 
     public init(
@@ -69,7 +79,11 @@ public struct InstallStep: Codable, Equatable, Sendable {
             if content == nil {
                 throw ValidationError("InstallStep 'writeFile' requires content.")
             }
-        case .mkdir:
+        case .generateSecret:
+            if let length = content.flatMap({ Int($0) }), length <= 0 {
+                throw ValidationError("InstallStep 'generateSecret' requires a positive byte length.")
+            }
+        case .mkdir, .cleanup:
             break
         }
     }
