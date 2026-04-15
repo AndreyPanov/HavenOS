@@ -24,7 +24,9 @@ public struct ProcessArchiveExtractor: ArchiveExtractor, Sendable {
         case .zip:
             try extractZip(archiveURL: archiveURL, to: destinationDirectory)
         case .tarGz:
-            try extractTarGz(archiveURL: archiveURL, to: destinationDirectory)
+            try extractTar(archiveURL: archiveURL, to: destinationDirectory, flags: "-xzf")
+        case .tarXz:
+            try extractTar(archiveURL: archiveURL, to: destinationDirectory, flags: "-xf")
         case .executable:
             // Single executables are not archives — the installer handles them
             // directly by copying. This should not be called for executables.
@@ -61,13 +63,16 @@ public struct ProcessArchiveExtractor: ArchiveExtractor, Sendable {
         }
     }
 
-    // MARK: - tar.gz extraction
+    // MARK: - tar extraction
 
-    /// Extract a tar.gz archive using `/usr/bin/tar`.
-    private func extractTarGz(archiveURL: URL, to destination: URL) throws {
+    /// Extract a tar archive using `/usr/bin/tar`.
+    ///
+    /// macOS `tar` natively handles gzip (`-xzf`), xz (`-xf` with auto-detect),
+    /// and bzip2 (`-xjf`). The `flags` parameter controls decompression.
+    private func extractTar(archiveURL: URL, to destination: URL, flags: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        process.arguments = ["-xzf", archiveURL.path, "-C", destination.path]
+        process.arguments = [flags, archiveURL.path, "-C", destination.path]
 
         let stderrPipe = Pipe()
         process.standardError = stderrPipe

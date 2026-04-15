@@ -297,6 +297,7 @@ public struct HavenExecutor: Sendable {
                     let formatString: String = switch descriptor.format {
                     case .zip: "zip"
                     case .tarGz: "tar.gz"
+                    case .tarXz: "tar.xz"
                     case .executable: "executable"
                     }
                     collectedArtifactInfo.append(StoredArtifactInfo(

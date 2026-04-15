@@ -216,7 +216,7 @@ public struct ArtifactInstaller: Sendable {
     ) throws {
         let unitID = descriptor.unitID
         switch descriptor.format {
-        case .zip, .tarGz:
+        case .zip, .tarGz, .tarXz:
             log.info("[install] Extracting archive to \(directory.path)...")
             do {
                 try extractor.extract(

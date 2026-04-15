@@ -15,6 +15,9 @@ public enum ArtifactFormat: Equatable, Sendable {
     /// A gzip-compressed tar archive.
     case tarGz
 
+    /// An xz-compressed tar archive.
+    case tarXz
+
     /// Detect format from a filename or URL path.
     ///
     /// - Returns: The detected format, or `nil` if the extension is
@@ -23,6 +26,8 @@ public enum ArtifactFormat: Equatable, Sendable {
         let lowered = path.lowercased()
         if lowered.hasSuffix(".tar.gz") || lowered.hasSuffix(".tgz") {
             return .tarGz
+        } else if lowered.hasSuffix(".tar.xz") || lowered.hasSuffix(".txz") {
+            return .tarXz
         } else if lowered.hasSuffix(".zip") {
             return .zip
         }

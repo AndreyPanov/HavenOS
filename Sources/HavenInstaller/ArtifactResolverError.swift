@@ -10,8 +10,11 @@ public enum ArtifactResolverError: Error, LocalizedError, Equatable, Sendable {
     /// The repository string is not in the expected `"owner/repo"` format.
     case invalidRepository(unitID: String, repo: String)
 
-    /// The artifact type is not supported (only `github-release` for now).
+    /// The artifact type is not supported.
     case unsupportedArtifactType(unitID: String, type: String)
+
+    /// A `direct-url` asset is missing its `url` field.
+    case missingAssetURL(unitID: String)
 
     public var errorDescription: String? {
         switch self {
@@ -21,6 +24,8 @@ public enum ArtifactResolverError: Error, LocalizedError, Equatable, Sendable {
             "Invalid repository format: '\(repo)' (expected 'owner/repo')"
         case .unsupportedArtifactType(_, let type):
             "Unsupported artifact type: '\(type)'"
+        case .missingAssetURL(let unitID):
+            "Asset for unit '\(unitID)' is missing a download URL (required for direct-url artifacts)"
         }
     }
 }

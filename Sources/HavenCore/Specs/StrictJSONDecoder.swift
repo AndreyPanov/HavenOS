@@ -104,7 +104,11 @@ extension StrictJSONDecoder {
     ]
 
     static let artifactKeys: Set<String> = [
-        "type", "repo", "version", "assets"
+        "type", "repo", "version", "assets", "archive"
+    ]
+
+    static let artifactAssetKeys: Set<String> = [
+        "os", "arch", "file", "url", "sha256"
     ]
 
     static let onboardingKeys: Set<String> = [

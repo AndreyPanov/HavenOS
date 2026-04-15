@@ -25,15 +25,22 @@ public enum ArtifactResolver {
         unitID: String,
         platform: PlatformInfo = .current
     ) throws -> ArtifactDescriptor {
-        // 1. Validate artifact type
-        guard artifact.type == .githubRelease else {
-            throw ArtifactResolverError.unsupportedArtifactType(
-                unitID: unitID,
-                type: artifact.type.rawValue
-            )
+        switch artifact.type {
+        case .githubRelease:
+            return try resolveGitHubRelease(artifact: artifact, unitID: unitID, platform: platform)
+        case .directURL:
+            return try resolveDirectURL(artifact: artifact, unitID: unitID, platform: platform)
         }
+    }
 
-        // 2. Validate repo format
+    // MARK: - GitHub Release
+
+    private static func resolveGitHubRelease(
+        artifact: Artifact,
+        unitID: String,
+        platform: PlatformInfo
+    ) throws -> ArtifactDescriptor {
+        // Validate repo format
         let repoParts = artifact.repo.split(separator: "/")
         guard repoParts.count == 2,
               !repoParts[0].isEmpty,
@@ -44,7 +51,61 @@ public enum ArtifactResolver {
             )
         }
 
-        // 3. Find matching asset for current platform
+        let asset = try matchAsset(artifact: artifact, unitID: unitID, platform: platform)
+
+        // Construct GitHub Release download URL
+        let urlString = "https://github.com/\(artifact.repo)/releases/download/\(artifact.version)/\(asset.file)"
+        guard let url = URL(string: urlString) else {
+            throw ArtifactResolverError.invalidRepository(
+                unitID: unitID,
+                repo: artifact.repo
+            )
+        }
+
+        let format = resolveFormat(artifact: artifact, filename: asset.file)
+        let strip = artifact.archive?.stripFirstDirectory ?? false
+
+        return ArtifactDescriptor(
+            unitID: unitID,
+            source: .remote(url),
+            format: format,
+            stripFirstDirectory: strip
+        )
+    }
+
+    // MARK: - Direct URL
+
+    private static func resolveDirectURL(
+        artifact: Artifact,
+        unitID: String,
+        platform: PlatformInfo
+    ) throws -> ArtifactDescriptor {
+        let asset = try matchAsset(artifact: artifact, unitID: unitID, platform: platform)
+
+        guard let urlString = asset.url, let url = URL(string: urlString) else {
+            throw ArtifactResolverError.missingAssetURL(unitID: unitID)
+        }
+
+        // Use asset.file for format detection if present, otherwise use the URL path
+        let filename = asset.file.isEmpty ? url.lastPathComponent : asset.file
+        let format = resolveFormat(artifact: artifact, filename: filename)
+        let strip = artifact.archive?.stripFirstDirectory ?? false
+
+        return ArtifactDescriptor(
+            unitID: unitID,
+            source: .remote(url),
+            format: format,
+            stripFirstDirectory: strip
+        )
+    }
+
+    // MARK: - Helpers
+
+    private static func matchAsset(
+        artifact: Artifact,
+        unitID: String,
+        platform: PlatformInfo
+    ) throws -> ArtifactAsset {
         guard let asset = artifact.assets.first(where: {
             $0.os == platform.os && $0.arch == platform.arch
         }) else {
@@ -54,42 +115,22 @@ public enum ArtifactResolver {
                 arch: platform.arch
             )
         }
+        return asset
+    }
 
-        // 4. Construct GitHub Release download URL
-        let urlString = "https://github.com/\(artifact.repo)/releases/download/\(artifact.version)/\(asset.file)"
-        guard let url = URL(string: urlString) else {
-            throw ArtifactResolverError.invalidRepository(
-                unitID: unitID,
-                repo: artifact.repo
-            )
-        }
-
-        // 5. Determine archive format
-        let format: ArtifactFormat
+    private static func resolveFormat(artifact: Artifact, filename: String) -> ArtifactFormat {
         if let archiveFormat = artifact.archive?.format {
-            // Explicit format from spec
             switch archiveFormat.lowercased() {
             case "zip":
-                format = .zip
+                return .zip
             case "tar.gz", "tgz":
-                format = .tarGz
+                return .tarGz
+            case "tar.xz", "txz":
+                return .tarXz
             default:
-                // Fall back to filename detection
-                format = ArtifactFormat.detect(from: asset.file) ?? .executable
+                return ArtifactFormat.detect(from: filename) ?? .executable
             }
-        } else {
-            // Detect from filename
-            format = ArtifactFormat.detect(from: asset.file) ?? .executable
         }
-
-        // 6. Strip first directory flag
-        let strip = artifact.archive?.stripFirstDirectory ?? false
-
-        return ArtifactDescriptor(
-            unitID: unitID,
-            source: .remote(url),
-            format: format,
-            stripFirstDirectory: strip
-        )
+        return ArtifactFormat.detect(from: filename) ?? .executable
     }
 }
