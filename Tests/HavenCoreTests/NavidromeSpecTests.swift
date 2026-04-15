@@ -68,9 +68,13 @@ final class NavidromeSpecTests: XCTestCase {
 
         // Onboarding
         XCTAssertNotNil(bundle.onboarding)
-        XCTAssertEqual(bundle.onboarding?.steps.count, 2)
+        XCTAssertEqual(bundle.onboarding?.steps.count, 4)
         XCTAssertEqual(bundle.onboarding?.steps[0].type, .info)
-        XCTAssertEqual(bundle.onboarding?.steps[1].type, .action)
+        XCTAssertEqual(bundle.onboarding?.steps[1].type, .info)
+        XCTAssertEqual(bundle.onboarding?.steps[1].fields.count, 1)
+        XCTAssertEqual(bundle.onboarding?.steps[2].type, .action)
+        XCTAssertEqual(bundle.onboarding?.steps[3].type, .info)
+        XCTAssertEqual(bundle.onboarding?.steps[3].fields.count, 1)
     }
 
     func testRuntimeUnitLoaded() throws {
@@ -210,13 +214,21 @@ final class NavidromeSpecTests: XCTestCase {
         )
 
         let onboarding = try XCTUnwrap(plan.service.resolvedOnboarding)
-        XCTAssertEqual(onboarding.steps.count, 2)
+        XCTAssertEqual(onboarding.steps.count, 4)
 
-        // Info step should have expanded music path
-        XCTAssertTrue(onboarding.steps[0].body.contains("/Volumes/Music"))
+        // Step 1: ready confirmation (no templates)
+        XCTAssertEqual(onboarding.steps[0].title, "Your music server is ready")
 
-        // Action step should have expanded port
-        XCTAssertEqual(onboarding.steps[1].url, "http://localhost:4533")
+        // Step 2: music folder field expanded
+        XCTAssertEqual(onboarding.steps[1].fields.count, 1)
+        XCTAssertEqual(onboarding.steps[1].fields[0].label, "Music folder")
+        XCTAssertEqual(onboarding.steps[1].fields[0].value, "/Volumes/Music")
+
+        // Step 3: action with expanded port
+        XCTAssertEqual(onboarding.steps[2].url, "http://localhost:4533")
+
+        // Step 4: server address field expanded
+        XCTAssertEqual(onboarding.steps[3].fields[0].value, "http://your-mac.local:4533")
     }
 
     func testDefaultMusicPathUsedWhenNotOverridden() throws {

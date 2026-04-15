@@ -29,14 +29,30 @@
         "steps": [
             {
                 "type": "info",
-                "title": "Add Your Music",
-                "body": "Place music files in ${content_dir}. Navidrome scans automatically every 5 minutes."
+                "title": "Your music server is ready",
+                "body": "Navidrome is now running on your Mac. It will start automatically whenever your Mac is on."
+            },
+            {
+                "type": "info",
+                "title": "Point it to your music",
+                "body": "Navidrome is watching your Music folder. Any music files you add will appear automatically within a few minutes.",
+                "fields": [
+                    { "label": "Music folder", "value": "${content_dir}" }
+                ]
             },
             {
                 "type": "action",
-                "title": "Open Navidrome",
-                "body": "Create your admin account on first launch.",
+                "title": "Create your account",
+                "body": "Set up your admin username and password in your browser. You'll only need to do this once.",
                 "url": "http://localhost:${port}"
+            },
+            {
+                "type": "info",
+                "title": "Listen anywhere",
+                "body": "Use any Subsonic-compatible app to stream your music. Search for Substreamer, play:Sub, or Amperfy in your app store.",
+                "fields": [
+                    { "label": "Server address", "value": "http://your-mac.local:${port}" }
+                ]
             }
         ]
     }
