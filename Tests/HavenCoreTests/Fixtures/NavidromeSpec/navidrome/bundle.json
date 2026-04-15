@@ -1,0 +1,43 @@
+{
+    "id": "haven.bundle.navidrome-basic",
+    "name": "Navidrome",
+    "capability": "haven.capability.navidrome",
+    "runtimeUnits": ["haven.unit.navidrome"],
+    "settings": [
+        {
+            "key": "port",
+            "label": "HTTP port",
+            "fieldType": "integer",
+            "defaultValue": "4533"
+        },
+        {
+            "key": "music_path",
+            "label": "Music library folder",
+            "fieldType": "path",
+            "defaultValue": "~/Music",
+            "required": true
+        }
+    ],
+    "storage": {
+        "data":    { "persistent": true,  "userVisible": false },
+        "config":  { "persistent": true,  "userVisible": false },
+        "cache":   { "persistent": false, "userVisible": false },
+        "logs":    { "persistent": false, "userVisible": false },
+        "content": { "persistent": true,  "userVisible": true  }
+    },
+    "onboarding": {
+        "steps": [
+            {
+                "type": "info",
+                "title": "Add Your Music",
+                "body": "Place music files in ${content_dir}. Navidrome scans automatically every 5 minutes."
+            },
+            {
+                "type": "action",
+                "title": "Open Navidrome",
+                "body": "Create your admin account on first launch.",
+                "url": "http://localhost:${port}"
+            }
+        ]
+    }
+}

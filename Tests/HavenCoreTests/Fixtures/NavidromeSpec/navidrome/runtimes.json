@@ -1,0 +1,68 @@
+[
+    {
+        "id": "haven.unit.navidrome",
+        "bundleID": "haven.bundle.navidrome-basic",
+        "runtimeType": "native",
+        "installSource": "",
+        "port": 4533,
+        "artifact": {
+            "type": "github-release",
+            "repo": "navidrome/navidrome",
+            "version": "v0.53.3",
+            "archive": {
+                "format": "tar.gz"
+            },
+            "assets": [
+                { "os": "macos", "arch": "arm64",  "file": "navidrome_0.53.3_darwin_arm64.tar.gz" },
+                { "os": "macos", "arch": "x86_64", "file": "navidrome_0.53.3_darwin_amd64.tar.gz" },
+                { "os": "linux", "arch": "amd64",  "file": "navidrome_0.53.3_linux_amd64.tar.gz" }
+            ]
+        },
+        "entrypoint": {
+            "command": "navidrome"
+        },
+        "launchArguments": [
+            "--configfile", "${config_dir}/navidrome.toml"
+        ],
+        "environment": {
+            "ND_DATAFOLDER": "${data_dir}",
+            "ND_MUSICFOLDER": "${content_dir}",
+            "ND_PORT": "${port}"
+        },
+        "directories": {
+            "data":    "data",
+            "config":  "config",
+            "cache":   "cache",
+            "logs":    "logs",
+            "content": "${music_path}"
+        },
+        "install": {
+            "steps": [
+                { "action": "mkdir",          "path": "${data_dir}" },
+                { "action": "mkdir",          "path": "${config_dir}" },
+                { "action": "mkdir",          "path": "${logs_dir}" },
+                { "action": "mkdir",          "path": "${cache_dir}" },
+                { "action": "mkdir",          "path": "${content_dir}" },
+                { "action": "generateSecret", "path": "session_key", "content": "32" },
+                { "action": "writeFile",      "path": "${config_dir}/navidrome.toml",
+                  "content": "MusicFolder = \"${content_dir}\"\nDataFolder = \"${data_dir}\"\nCacheFolder = \"${cache_dir}\"\nLogFile = \"${logs_dir}/navidrome.log\"\nPort = ${port}\nSessionSecret = \"${session_key}\"\nScanSchedule = \"@every 5m\"\nTranscodingCacheSize = \"512MB\"\n" },
+                { "action": "chmod",          "path": "${config_dir}/navidrome.toml", "mode": "600" }
+            ]
+        },
+        "dependencies": [
+            {
+                "id": "ffmpeg",
+                "kind": "helperBinary",
+                "required": false,
+                "validateCommand": "ffmpeg -version",
+                "description": "Required for audio transcoding. Install via Homebrew: brew install ffmpeg"
+            }
+        ],
+        "healthcheck": {
+            "type": "http",
+            "target": "http://localhost:${port}/ping",
+            "intervalSeconds": 15,
+            "retries": 3
+        }
+    }
+]

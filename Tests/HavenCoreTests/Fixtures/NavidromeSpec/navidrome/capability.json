@@ -1,0 +1,8 @@
+{
+    "id": "haven.capability.navidrome",
+    "name": "Navidrome",
+    "version": "0.53.3",
+    "description": "Personal music server and streamer compatible with Subsonic/Airsonic.",
+    "icon": "music.note.house",
+    "notes": ["Music", "Streaming", "Subsonic"]
+}
