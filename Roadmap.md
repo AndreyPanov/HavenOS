@@ -166,19 +166,23 @@ Templates:
 
 🧩 Target Services
 
-1. File Browser (MVP baseline)
-	•	⬜ Spec not yet written
-	•	simplest case: single binary, directories + runtime
+1. File Browser (MVP baseline) ✅ SPEC COMPLETE
+	•	Full 3-file spec (capability, bundle, runtimes) — minimal baseline template
+	•	GitHub Release artifact, 2 install steps (mkdir only), 2 directory roles
+	•	No dependencies, no config files, no secrets — all config via CLI flags
+	•	HTTP healthcheck (/health), 3-step consumer onboarding
+	•	8 end-to-end tests (SpecLoader → Planner pipeline)
+	•	⬜ Live install test pending
 
 ⸻
 
 2. Navidrome (music) ✅ SPEC COMPLETE
 	•	Full 3-file spec (capability, bundle, runtimes) with all schema features
-	•	GitHub Release artifact, 8 install steps, 5 directory roles
+	•	GitHub Release artifact (v0.61.2), 8 install steps, 5 directory roles
 	•	Optional ffmpeg dependency, HTTP healthcheck
 	•	4-step consumer onboarding
 	•	8 end-to-end tests (SpecLoader → Planner pipeline)
-	•	⬜ Live install test pending
+	•	🔶 Live install tested — uncovered and fixed: tilde expansion, HTTP validation, external paths
 
 ⸻
 
@@ -280,9 +284,9 @@ A non-technical user installs a service and uses it in < 2 minutes.
 ⸻
 
 🧭 Immediate Next Steps (Concrete)
-	1.	File Browser pilot spec (simplest real service)
-	3.	Live install test: actually install Navidrome via CLI on a real machine
-	4.	Kavita pilot spec (library semantics)
+	1.	Live install test: File Browser via GUI (simplest end-to-end)
+	2.	Complete Navidrome live install (service reachable via HTTP)
+	3.	Kavita pilot spec (library semantics)
 	5.	Update Calibre-Web spec with schema v2 features
 
 ⸻
