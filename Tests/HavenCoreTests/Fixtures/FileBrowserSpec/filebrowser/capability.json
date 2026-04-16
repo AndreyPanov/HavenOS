@@ -1,0 +1,8 @@
+{
+    "id": "haven.capability.filebrowser",
+    "name": "File Browser",
+    "version": "2.63.2",
+    "description": "Access and manage your files from any browser on your network.",
+    "icon": "folder",
+    "notes": ["Files", "Storage", "Web UI"]
+}

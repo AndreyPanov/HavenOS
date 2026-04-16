@@ -47,16 +47,19 @@ public struct InstallStepExecutor: Sendable {
     ///   - block: The resolved install block (templates already expanded for
     ///     non-secret variables).
     ///   - serviceRoot: The service's root directory. All paths must resolve
-    ///     inside this directory.
+    ///     inside this directory unless listed in `allowedExternalPaths`.
     ///   - templateContext: The template context for expanding secret
     ///     variables into subsequent steps.
+    ///   - allowedExternalPaths: Absolute paths outside the service root that
+    ///     are permitted (e.g. user-configured content directories like ~/Music).
     /// - Returns: The execution result containing any generated secrets.
     /// - Throws: ``InstallStepError`` if any step fails. All prior steps
     ///   are rolled back before the error is thrown.
     public func execute(
         block: InstallBlock,
         serviceRoot: URL,
-        templateContext: TemplateContext? = nil
+        templateContext: TemplateContext? = nil,
+        allowedExternalPaths: Set<String> = []
     ) throws -> Result {
         let rootPath = serviceRoot.standardizedFileURL.path
         var rollbackActions: [() -> Void] = []
@@ -82,7 +85,7 @@ public struct InstallStepExecutor: Sendable {
             do {
                 switch step.action {
                 case .mkdir:
-                    let url = try validatedURL(path: step.path, root: rootPath)
+                    let url = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeMkdir(url: url, rollback: &rollbackActions)
 
                 case .copy:
@@ -91,7 +94,7 @@ public struct InstallStepExecutor: Sendable {
                             action: step.action.rawValue, path: step.path
                         )
                     }
-                    let destURL = try validatedURL(path: step.path, root: rootPath)
+                    let destURL = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeCopy(
                         source: source, destination: destURL,
                         rollback: &rollbackActions
@@ -103,21 +106,21 @@ public struct InstallStepExecutor: Sendable {
                             action: step.action.rawValue, path: step.path
                         )
                     }
-                    let destURL = try validatedURL(path: step.path, root: rootPath)
+                    let destURL = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeMove(
                         source: source, destination: destURL,
                         rollback: &rollbackActions
                     )
 
                 case .chmod:
-                    let url = try validatedURL(path: step.path, root: rootPath)
+                    let url = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeChmod(
                         url: url, mode: step.mode ?? "755",
                         rollback: &rollbackActions
                     )
 
                 case .writeFile:
-                    let url = try validatedURL(path: step.path, root: rootPath)
+                    let url = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeWriteFile(
                         url: url, content: step.content ?? "",
                         rollback: &rollbackActions
@@ -129,7 +132,7 @@ public struct InstallStepExecutor: Sendable {
                             action: step.action.rawValue, path: step.path
                         )
                     }
-                    let linkURL = try validatedURL(path: step.path, root: rootPath)
+                    let linkURL = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeSymlink(
                         source: source, link: linkURL,
                         rollback: &rollbackActions
@@ -144,7 +147,7 @@ public struct InstallStepExecutor: Sendable {
                     currentContext = TemplateContext(values: updatedValues)
 
                 case .cleanup:
-                    let url = try validatedURL(path: step.path, root: rootPath)
+                    let url = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeCleanup(url: url)
                     // No rollback for cleanup — it's a terminal action
                 }
@@ -165,7 +168,7 @@ public struct InstallStepExecutor: Sendable {
 
     // MARK: - Path Validation
 
-    private func validatedURL(path: String, root: String) throws -> URL {
+    private func validatedURL(path: String, root: String, allowedExternalPaths: Set<String>) throws -> URL {
         let url = URL(fileURLWithPath: path).standardizedFileURL
 
         // Reject path traversal
@@ -173,9 +176,15 @@ public struct InstallStepExecutor: Sendable {
             throw InstallStepError.pathEscapesRoot(path: path, root: root)
         }
 
-        // Must be inside service root
-        guard url.path.hasPrefix(root) else {
-            throw InstallStepError.pathEscapesRoot(path: path, root: root)
+        // Must be inside service root OR match an allowed external path
+        let normalized = url.path
+        if !normalized.hasPrefix(root) {
+            let isAllowed = allowedExternalPaths.contains { allowed in
+                normalized == allowed || normalized.hasPrefix(allowed + "/")
+            }
+            guard isAllowed else {
+                throw InstallStepError.pathEscapesRoot(path: path, root: root)
+            }
         }
 
         return url

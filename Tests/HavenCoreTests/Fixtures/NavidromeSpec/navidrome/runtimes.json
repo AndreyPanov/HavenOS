@@ -8,14 +8,14 @@
         "artifact": {
             "type": "github-release",
             "repo": "navidrome/navidrome",
-            "version": "v0.53.3",
+            "version": "v0.61.2",
             "archive": {
                 "format": "tar.gz"
             },
             "assets": [
-                { "os": "macos", "arch": "arm64",  "file": "navidrome_0.53.3_darwin_arm64.tar.gz" },
-                { "os": "macos", "arch": "x86_64", "file": "navidrome_0.53.3_darwin_amd64.tar.gz" },
-                { "os": "linux", "arch": "amd64",  "file": "navidrome_0.53.3_linux_amd64.tar.gz" }
+                { "os": "macos", "arch": "arm64",  "file": "navidrome_0.61.2_darwin_arm64.tar.gz" },
+                { "os": "macos", "arch": "x86_64", "file": "navidrome_0.61.2_darwin_amd64.tar.gz" },
+                { "os": "linux", "arch": "amd64",  "file": "navidrome_0.61.2_linux_amd64.tar.gz" }
             ]
         },
         "entrypoint": {

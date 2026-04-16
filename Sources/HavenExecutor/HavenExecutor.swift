@@ -375,11 +375,19 @@ public struct HavenExecutor: Sendable {
                let stepExecutor = installStepExecutor {
                 progress?("Running install steps…")
                 log.info("[install] Executing \(installBlock.steps.count) install steps for \(unit.id)")
+                // Collect directory paths from template context that are outside
+                // the service root (e.g. user-configured ~/Music for content_dir).
+                let rootPath = serviceLayout.serviceRoot.standardizedFileURL.path
+                let externalPaths = Set(
+                    (plannedUnit.templateContext.values).values
+                        .filter { $0.hasPrefix("/") && !$0.hasPrefix(rootPath) }
+                )
                 do {
                     let stepResult = try stepExecutor.execute(
                         block: installBlock,
                         serviceRoot: serviceLayout.serviceRoot,
-                        templateContext: plannedUnit.templateContext
+                        templateContext: plannedUnit.templateContext,
+                        allowedExternalPaths: externalPaths
                     )
                     if !stepResult.generatedSecrets.isEmpty {
                         log.info("[install] Generated \(stepResult.generatedSecrets.count) secrets for \(unit.id)")

@@ -37,7 +37,7 @@ final class NavidromeSpecTests: XCTestCase {
 
         let cap = try XCTUnwrap(registry.capabilitiesByID["haven.capability.navidrome"])
         XCTAssertEqual(cap.name, "Navidrome")
-        XCTAssertEqual(cap.version, "0.53.3")
+        XCTAssertEqual(cap.version, "0.61.2")
         XCTAssertEqual(cap.icon, "music.note.house")
         XCTAssertEqual(cap.notes, ["Music", "Streaming", "Subsonic"])
     }
@@ -89,7 +89,7 @@ final class NavidromeSpecTests: XCTestCase {
         XCTAssertNotNil(unit.artifact)
         XCTAssertEqual(unit.artifact?.type, .githubRelease)
         XCTAssertEqual(unit.artifact?.repo, "navidrome/navidrome")
-        XCTAssertEqual(unit.artifact?.version, "v0.53.3")
+        XCTAssertEqual(unit.artifact?.version, "v0.61.2")
         XCTAssertEqual(unit.artifact?.assets.count, 3)
         XCTAssertEqual(unit.artifact?.archive?.format, "tar.gz")
 
@@ -242,7 +242,8 @@ final class NavidromeSpecTests: XCTestCase {
         )
 
         let planned = plan.service.units[0]
-        XCTAssertEqual(planned.resolvedEnvironment["ND_MUSICFOLDER"], "~/Music")
-        XCTAssertEqual(planned.resolvedDirectories["content"], "~/Music")
+        let expandedMusic = NSString(string: "~/Music").expandingTildeInPath
+        XCTAssertEqual(planned.resolvedEnvironment["ND_MUSICFOLDER"], expandedMusic)
+        XCTAssertEqual(planned.resolvedDirectories["content"], expandedMusic)
     }
 }

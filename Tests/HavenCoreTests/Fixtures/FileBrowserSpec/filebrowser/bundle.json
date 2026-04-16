@@ -1,0 +1,48 @@
+{
+    "id": "haven.bundle.filebrowser-basic",
+    "name": "File Browser (Basic)",
+    "capability": "haven.capability.filebrowser",
+    "runtimeUnits": ["haven.unit.filebrowser"],
+    "settings": [
+        {
+            "key": "root_path",
+            "label": "Files folder",
+            "fieldType": "path",
+            "defaultValue": "~/Documents",
+            "required": true
+        },
+        {
+            "key": "port",
+            "label": "Port",
+            "fieldType": "integer",
+            "defaultValue": "8080"
+        }
+    ],
+    "storage": {
+        "data":    { "persistent": true,  "userVisible": false },
+        "content": { "persistent": true,  "userVisible": true }
+    },
+    "onboarding": {
+        "steps": [
+            {
+                "type": "info",
+                "title": "Your file server is ready",
+                "body": "File Browser lets you access your files from any device on your network — phone, tablet, or another computer."
+            },
+            {
+                "type": "action",
+                "title": "Create your account",
+                "body": "Open File Browser and create your first user account. The default login is admin / admin — change the password right away.",
+                "url": "http://localhost:${port}"
+            },
+            {
+                "type": "info",
+                "title": "Access from anywhere at home",
+                "body": "Open a browser on any device and go to your server's address.",
+                "fields": [
+                    { "label": "Address", "value": "http://your-mac:${port}" }
+                ]
+            }
+        ]
+    }
+}

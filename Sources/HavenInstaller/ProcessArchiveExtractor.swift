@@ -96,6 +96,14 @@ public struct ProcessArchiveExtractor: ArchiveExtractor, Sendable {
 /// Internal errors from process-based extraction.
 /// These are caught by `ArtifactInstaller` and wrapped into
 /// `ArtifactInstallerError.extractionFailed`.
-enum ProcessArchiveExtractorError: Error, Equatable {
+enum ProcessArchiveExtractorError: Error, LocalizedError, Equatable {
     case extractionFailed(exitCode: Int32, stderr: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .extractionFailed(let exitCode, let stderr):
+            let detail = stderr.isEmpty ? "no output" : stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            return "Archive extraction failed (exit code \(exitCode)): \(detail)"
+        }
+    }
 }

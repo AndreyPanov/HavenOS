@@ -1,0 +1,47 @@
+[
+    {
+        "id": "haven.unit.filebrowser",
+        "bundleID": "haven.bundle.filebrowser-basic",
+        "runtimeType": "native",
+        "installSource": "",
+        "port": 8080,
+        "artifact": {
+            "type": "github-release",
+            "repo": "filebrowser/filebrowser",
+            "version": "v2.63.2",
+            "archive": {
+                "format": "tar.gz"
+            },
+            "assets": [
+                { "os": "macos", "arch": "arm64",  "file": "darwin-arm64-filebrowser.tar.gz" },
+                { "os": "macos", "arch": "x86_64", "file": "darwin-amd64-filebrowser.tar.gz" },
+                { "os": "linux", "arch": "amd64",  "file": "linux-amd64-filebrowser.tar.gz" }
+            ]
+        },
+        "entrypoint": {
+            "command": "filebrowser"
+        },
+        "launchArguments": [
+            "--port", "${port}",
+            "--root", "${content_dir}",
+            "--database", "${data_dir}/filebrowser.db",
+            "--noauth"
+        ],
+        "directories": {
+            "data":    "data",
+            "content": "${root_path}"
+        },
+        "install": {
+            "steps": [
+                { "action": "mkdir", "path": "${data_dir}" },
+                { "action": "mkdir", "path": "${content_dir}" }
+            ]
+        },
+        "healthcheck": {
+            "type": "http",
+            "target": "http://localhost:${port}/health",
+            "intervalSeconds": 10,
+            "retries": 3
+        }
+    }
+]

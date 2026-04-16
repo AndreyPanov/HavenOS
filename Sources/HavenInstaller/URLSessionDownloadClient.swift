@@ -16,9 +16,15 @@ public struct URLSessionDownloadClient: DownloadClient, Sendable {
         var resultURL: URL?
         var resultError: Error?
 
-        let task = URLSession.shared.downloadTask(with: url) { localURL, _, error in
+        let task = URLSession.shared.downloadTask(with: url) { localURL, response, error in
             if let error = error {
                 resultError = error
+            } else if let httpResponse = response as? HTTPURLResponse,
+                      !(200...299).contains(httpResponse.statusCode) {
+                resultError = URLError(
+                    .badServerResponse,
+                    userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode) for \(url.lastPathComponent)"]
+                )
             } else if let localURL = localURL {
                 // URLSession deletes the temp file after the completion handler returns,
                 // so we need to move it to a stable location.

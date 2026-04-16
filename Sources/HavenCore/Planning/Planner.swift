@@ -127,10 +127,11 @@ public enum Planner {
         var resolved: [String: String] = [:]
 
         for field in bundle.settings {
+            var value: String?
             if let userValue = userSettings[field.key] {
-                resolved[field.key] = userValue
+                value = userValue
             } else if let defaultValue = field.defaultValue {
-                resolved[field.key] = defaultValue
+                value = defaultValue
             } else if field.required {
                 throw PlanningError.requiredSettingMissing(
                     key: field.key,
@@ -138,6 +139,15 @@ public enum Planner {
                 )
             }
             // Optional field with no default and no user value → omitted
+
+            // Expand tilde in path-type settings so downstream code sees absolute paths
+            if let v = value {
+                if field.fieldType == .path && v.hasPrefix("~") {
+                    resolved[field.key] = NSString(string: v).expandingTildeInPath
+                } else {
+                    resolved[field.key] = v
+                }
+            }
         }
 
         return resolved
@@ -246,7 +256,9 @@ public enum Planner {
         for (role, rawPath) in unit.directories {
             let expandedPath = settingsContext.expand(rawPath)
             let resolvedPath: String
-            if expandedPath.hasPrefix("/") || expandedPath.hasPrefix("~") {
+            if expandedPath.hasPrefix("~") {
+                resolvedPath = NSString(string: expandedPath).expandingTildeInPath
+            } else if expandedPath.hasPrefix("/") {
                 resolvedPath = expandedPath
             } else {
                 resolvedPath = layout.serviceRoot
