@@ -36,7 +36,7 @@ Install → Start → Open
 	•	Navidrome pilot spec validated through full pipeline
 
 ⚠️ Remaining Limitations
-	•	No runtime dependency validation (warn if ffmpeg missing)
+	•	~~No runtime dependency validation~~ ✅ Resolved (DependencyValidator)
 	•	No multi-service composition
 	•	Pilot services not yet tested with live installs (spec-only so far)
 
@@ -55,7 +55,7 @@ Convert chaotic open-source install instructions into deterministic JSON specs
 Phase	Focus	Outcome	Status
 1	Spec Foundation	Express real services in JSON	✅ DONE
 2	Install Engine	Execute real installs	✅ DONE
-3	Dependencies	Support helper tools	🔶 Schema done, resolver pending
+3	Dependencies	Support helper tools	✅ DONE
 4	Storage Model	Support content-based apps	✅ DONE
 5	Onboarding UX	Make services usable	✅ DONE
 6	Templates	Scale service creation	⬜ Not started
@@ -93,15 +93,20 @@ All deliverables implemented and tested:
 
 ⸻
 
-🔌 Phase 3 — Dependencies 🔶 SCHEMA DONE
+🔌 Phase 3 — Dependencies ✅ COMPLETE
 
-Dependency model implemented in schema:
+All deliverables implemented and tested:
 	•	Dependency type: id, kind (helperBinary/library), required, validateCommand, description
-	•	Navidrome spec declares optional ffmpeg dependency
-	•	StrictJSONDecoder validates dependency keys
+	•	DependencyValidator: deterministic absolute-path binary discovery (no $PATH)
+	•	Search paths: /opt/homebrew/bin → /usr/local/bin → /usr/bin
+	•	Injectable commandRunner for testing; validates via validateCommand when provided
+	•	Integrated into HavenExecutor.install() after planning, before side effects
+	•	Required missing deps block install; optional deps warn only
+	•	Consumer-facing errors never expose tooling details
+	•	10 unit tests covering discovery, dedup, libraries, mixed deps
+	•	Navidrome spec declares optional ffmpeg dependency with absolute-path validate
 
 ⬜ Remaining:
-	•	Dependency resolver: validate presence at install time, warn if missing
 	•	Calibre-Web spec: express ImageMagick dependency
 
 ⸻
@@ -275,8 +280,7 @@ A non-technical user installs a service and uses it in < 2 minutes.
 ⸻
 
 🧭 Immediate Next Steps (Concrete)
-	1.	Dependency resolver: validate helper binary presence, warn if missing
-	2.	File Browser pilot spec (simplest real service)
+	1.	File Browser pilot spec (simplest real service)
 	3.	Live install test: actually install Navidrome via CLI on a real machine
 	4.	Kavita pilot spec (library semantics)
 	5.	Update Calibre-Web spec with schema v2 features

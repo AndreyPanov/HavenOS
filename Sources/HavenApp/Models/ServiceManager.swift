@@ -88,7 +88,9 @@ final class ServiceManager {
             launchdController: LaunchdController(),
             artifactInstaller: ArtifactInstaller(paths: paths),
             pythonPreparer: PythonEnvironmentPreparer(),
-            provisionDownloader: ProvisionDownloader()
+            provisionDownloader: ProvisionDownloader(),
+            installStepExecutor: InstallStepExecutor(),
+            dependencyValidator: DependencyValidator()
         )
         log.info("Initialized with base path: \(basePath.path)")
     }

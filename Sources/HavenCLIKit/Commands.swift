@@ -43,13 +43,17 @@ struct CommonOptions: ParsableArguments {
         let artifactInstaller = ArtifactInstaller(paths: paths)
         let pythonPreparer = PythonEnvironmentPreparer()
         let provisionDownloader = ProvisionDownloader()
+        let installStepExecutor = InstallStepExecutor()
+        let dependencyValidator = DependencyValidator()
         return HavenExecutor(
             paths: paths,
             stateStore: stateStore,
             launchdController: launchdController,
             artifactInstaller: artifactInstaller,
             pythonPreparer: pythonPreparer,
-            provisionDownloader: provisionDownloader
+            provisionDownloader: provisionDownloader,
+            installStepExecutor: installStepExecutor,
+            dependencyValidator: dependencyValidator
         )
     }
 
