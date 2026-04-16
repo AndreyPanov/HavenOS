@@ -1,0 +1,8 @@
+{
+    "id": "haven.capability.kavita",
+    "name": "Kavita",
+    "version": "0.8.9.1",
+    "description": "Your personal library for books, comics, and manga.",
+    "icon": "books.vertical",
+    "notes": ["Books", "Comics", "Manga", "Library"]
+}

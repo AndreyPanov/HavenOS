@@ -1,0 +1,51 @@
+{
+    "id": "haven.bundle.kavita-basic",
+    "name": "Kavita (Basic)",
+    "capability": "haven.capability.kavita",
+    "runtimeUnits": ["haven.unit.kavita"],
+    "settings": [
+        {
+            "key": "library_path",
+            "label": "Library folder",
+            "fieldType": "path",
+            "defaultValue": "~/Books",
+            "required": true
+        },
+        {
+            "key": "port",
+            "label": "Port",
+            "fieldType": "integer",
+            "defaultValue": "5000"
+        }
+    ],
+    "storage": {
+        "config":  { "persistent": true,  "userVisible": false },
+        "content": { "persistent": true,  "userVisible": true }
+    },
+    "onboarding": {
+        "steps": [
+            {
+                "type": "info",
+                "title": "Your library is ready",
+                "body": "Kavita organizes your books, comics, and manga into a beautiful reading library you can access from any device.",
+                "fields": [
+                    { "label": "Library folder", "value": "${content_dir}" }
+                ]
+            },
+            {
+                "type": "action",
+                "title": "Set up your account",
+                "body": "Open Kavita to create your admin account and add your library folder. Kavita will scan your files and build your collection automatically.",
+                "url": "http://localhost:${port}"
+            },
+            {
+                "type": "info",
+                "title": "Read from anywhere",
+                "body": "Open a browser on any device to start reading. Kavita has a built-in reader for books, comics, and manga.",
+                "fields": [
+                    { "label": "Address", "value": "http://your-mac:${port}" }
+                ]
+            }
+        ]
+    }
+}

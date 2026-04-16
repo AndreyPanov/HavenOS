@@ -1,0 +1,46 @@
+[
+    {
+        "id": "haven.unit.kavita",
+        "bundleID": "haven.bundle.kavita-basic",
+        "runtimeType": "native",
+        "installSource": "",
+        "port": 5000,
+        "artifact": {
+            "type": "github-release",
+            "repo": "Kareadita/Kavita",
+            "version": "v0.8.9.1",
+            "archive": {
+                "format": "tar.gz",
+                "stripFirstDirectory": true
+            },
+            "assets": [
+                { "os": "macos", "arch": "arm64",  "file": "kavita-osx-arm64.tar.gz" },
+                { "os": "macos", "arch": "x86_64", "file": "kavita-osx-x64.tar.gz" },
+                { "os": "linux", "arch": "amd64",  "file": "kavita-linux-x64.tar.gz" }
+            ]
+        },
+        "entrypoint": {
+            "command": "Kavita"
+        },
+        "directories": {
+            "config":  "config",
+            "content": "${library_path}"
+        },
+        "install": {
+            "steps": [
+                { "action": "mkdir",          "path": "${config_dir}" },
+                { "action": "mkdir",          "path": "${content_dir}" },
+                { "action": "generateSecret", "path": "token_key", "content": "64" },
+                { "action": "writeFile",      "path": "${config_dir}/appsettings.json",
+                  "content": "{\n  \"TokenKey\": \"${token_key}\",\n  \"Port\": ${port},\n  \"IpAddresses\": \"\",\n  \"BaseUrl\": \"/\",\n  \"Cache\": 75\n}\n" },
+                { "action": "chmod",          "path": "${config_dir}/appsettings.json", "mode": "600" }
+            ]
+        },
+        "healthcheck": {
+            "type": "http",
+            "target": "http://localhost:${port}/api/health",
+            "intervalSeconds": 15,
+            "retries": 3
+        }
+    }
+]
