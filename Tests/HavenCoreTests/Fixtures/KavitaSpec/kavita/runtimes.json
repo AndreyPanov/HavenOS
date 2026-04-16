@@ -4,7 +4,7 @@
         "bundleID": "haven.bundle.kavita-basic",
         "runtimeType": "native",
         "installSource": "",
-        "port": 5000,
+        "port": 5001,
         "artifact": {
             "type": "github-release",
             "repo": "Kareadita/Kavita",

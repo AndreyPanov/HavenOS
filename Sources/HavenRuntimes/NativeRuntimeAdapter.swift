@@ -26,11 +26,6 @@ public struct NativeRuntimeAdapter: RuntimeAdapter {
             throw RuntimeAdapterError.missingInstallSource(unitID: unit.id)
         }
 
-        // Validate launch arguments are present
-        guard !plannedUnit.resolvedLaunchArguments.isEmpty else {
-            throw RuntimeAdapterError.missingLaunchArguments(unitID: unit.id)
-        }
-
         // Resolve the executable — if installSource is a directory, find
         // the actual executable inside it.
         let executableURL = try NativeRuntimeAdapter.resolveExecutable(
@@ -45,12 +40,17 @@ public struct NativeRuntimeAdapter: RuntimeAdapter {
             args.removeFirst()
         }
 
+        // Use the executable's parent directory as the working directory.
+        // Native apps (e.g. .NET) expect supporting files like wwwroot/
+        // relative to the working directory, not the service root.
+        let workingDir = executableURL.deletingLastPathComponent()
+
         return PreparedRuntime(
             unitID: unit.id,
             executableURL: executableURL,
             arguments: args,
             environment: plannedUnit.resolvedEnvironment,
-            workingDirectory: serviceLayout.serviceRoot,
+            workingDirectory: workingDir,
             managedDirectories: serviceLayout.allDirectories,
             runtimeType: .native,
             healthcheck: plannedUnit.resolvedHealthcheck,

@@ -15,7 +15,7 @@
             "key": "port",
             "label": "Port",
             "fieldType": "integer",
-            "defaultValue": "5000"
+            "defaultValue": "5001"
         }
     ],
     "storage": {

@@ -401,6 +401,39 @@ public struct HavenExecutor: Sendable {
                 }
             }
 
+            // Link declared directories into the install directory so that
+            // native binaries can find config/data relative to themselves
+            // (the working directory is the install dir for native runtimes).
+            // Only links roles that resolved to paths inside the service root
+            // (not external user paths like ~/Music).
+            if let artifactInfo = collectedArtifactInfo.last,
+               artifactInfo.unitID == unit.id {
+                let installDir = URL(fileURLWithPath: artifactInfo.installDirectory)
+                for (role, absolutePath) in plannedUnit.resolvedDirectories {
+                    let link = installDir.appendingPathComponent(role)
+                    guard absolutePath.hasPrefix(serviceLayout.serviceRoot.path) else { continue }
+
+                    // If the archive shipped a directory with this name,
+                    // remove it so the symlink to the service root takes over.
+                    var isDir: ObjCBool = false
+                    if fileManager.fileExists(atPath: link.path, isDirectory: &isDir) {
+                        // Skip if already a correct symlink
+                        if let dest = try? fileManager.destinationOfSymbolicLink(atPath: link.path),
+                           dest == absolutePath {
+                            continue
+                        }
+                        try? fileManager.removeItem(at: link)
+                    }
+
+                    do {
+                        try fileManager.createSymbolicLink(atPath: link.path, withDestinationPath: absolutePath)
+                        log.info("[install] Symlinked \(role): \(link.path) → \(absolutePath)")
+                    } catch {
+                        log.warning("[install] Failed to symlink \(role): \(error.localizedDescription)")
+                    }
+                }
+            }
+
             // Prepare runtime
             log.info("[install] Preparing runtime for unit \(unit.id)...")
             let prepared: PreparedRuntime

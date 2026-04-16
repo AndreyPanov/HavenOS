@@ -113,8 +113,8 @@ final class NativeRuntimeAdapterTests: XCTestCase {
         // Environment is the resolved one
         XCTAssertEqual(prepared.environment["DB_DATA"], "/srv/data")
 
-        // Working directory is the service root
-        XCTAssertEqual(prepared.workingDirectory, layout.serviceRoot)
+        // Working directory is the executable's parent directory
+        XCTAssertEqual(prepared.workingDirectory.path, "/opt/haven/bin")
 
         // Managed directories include the standard service layout
         XCTAssertTrue(prepared.managedDirectories.contains(layout.data))
@@ -172,23 +172,19 @@ final class NativeRuntimeAdapterTests: XCTestCase {
         }
     }
 
-    func testFailsOnEmptyLaunchArguments() {
+    func testSucceedsWithEmptyLaunchArguments() throws {
         let unit = RuntimeUnit(
-            id: "unit.bad", bundleID: "b", runtimeType: .native,
+            id: "unit.noargs", bundleID: "b", runtimeType: .native,
             installSource: "/bin/x", launchArguments: ["/bin/x"]
         )
         // Create a planned unit with empty resolved arguments
         let planned = makePlannedUnit(from: unit, resolvedArgs: [])
         let layout = makeLayout()
 
-        XCTAssertThrowsError(
-            try adapter.prepare(unit: unit, plannedUnit: planned, serviceLayout: layout)
-        ) { error in
-            XCTAssertEqual(
-                error as? RuntimeAdapterError,
-                .missingLaunchArguments(unitID: "unit.bad")
-            )
-        }
+        let prepared = try adapter.prepare(
+            unit: unit, plannedUnit: planned, serviceLayout: layout
+        )
+        XCTAssertTrue(prepared.arguments.isEmpty)
     }
 
     func testPathsAreDeterministicUnderServiceLayout() throws {
@@ -204,8 +200,8 @@ final class NativeRuntimeAdapterTests: XCTestCase {
             unit: unit, plannedUnit: planned, serviceLayout: layout
         )
 
-        // Working directory should be under the service layout
-        XCTAssertTrue(prepared.workingDirectory.path.contains("haven.capability.my-service"))
+        // Working directory is the executable's parent directory
+        XCTAssertEqual(prepared.workingDirectory.path, "/opt/haven/bin")
     }
 
     func testTeardownIsNoOp() throws {

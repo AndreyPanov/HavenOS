@@ -186,9 +186,20 @@ Templates:
 
 ⸻
 
-3. Kavita (books)
-	•	⬜ Spec not yet written
-	•	library semantics, metadata handling
+3. Kavita (books) ✅ SPEC COMPLETE + LIVE TESTED
+	•	Full 3-file spec (capability, bundle, runtimes) — library-server pattern
+	•	GitHub Release artifact (v0.8.9.1), 5 install steps (mkdir, generateSecret, writeFile, chmod)
+	•	Config generation: JWT token + appsettings.json with template expansion
+	•	Archive stripFirstDirectory with name collision handling
+	•	2 directory roles (config, content), HTTP healthcheck (/api/health)
+	•	3-step consumer onboarding, port 5001 (avoids macOS AirPlay on 5000)
+	•	8 end-to-end tests (SpecLoader → Planner pipeline)
+	•	Live install validated — uncovered and fixed:
+	  - Port 5000 conflict with macOS AirPlay Receiver
+	  - Working directory must be install dir for .NET apps (wwwroot/)
+	  - Directory symlinks: install dir roles → service root for config access
+	  - stripFirstDirectory name collision (Kavita/Kavita)
+	  - Native adapter must allow zero launch arguments
 
 ⸻
 
@@ -285,9 +296,8 @@ A non-technical user installs a service and uses it in < 2 minutes.
 
 🧭 Immediate Next Steps (Concrete)
 	1.	Live install test: File Browser via GUI (simplest end-to-end)
-	2.	Complete Navidrome live install (service reachable via HTTP)
-	3.	Kavita pilot spec (library semantics)
-	5.	Update Calibre-Web spec with schema v2 features
+	2.	Complete Navidrome live install (verify HTTP reachability after fixes)
+	3.	Update Calibre-Web spec with schema v2 features (install steps, dependencies, storage)
 
 ⸻
 

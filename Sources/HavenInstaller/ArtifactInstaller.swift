@@ -412,9 +412,14 @@ public struct ArtifactInstaller: Sendable {
             return
         }
 
-        // Move all contents of the single directory up one level
+        // Rename the directory to a temp name first to avoid conflicts
+        // when inner items share the same name (e.g. Kavita/Kavita).
+        let tempDir = directory.appendingPathComponent(".__haven_strip_temp__")
+        try fileManager.moveItem(at: singleDir, to: tempDir)
+
+        // Move all contents up one level
         let innerContents = try fileManager.contentsOfDirectory(
-            at: singleDir,
+            at: tempDir,
             includingPropertiesForKeys: nil
         )
 
@@ -423,8 +428,8 @@ public struct ArtifactInstaller: Sendable {
             try fileManager.moveItem(at: item, to: destination)
         }
 
-        // Remove the now-empty directory
-        try fileManager.removeItem(at: singleDir)
+        // Remove the now-empty temp directory
+        try fileManager.removeItem(at: tempDir)
     }
 
     // MARK: - Uninstall

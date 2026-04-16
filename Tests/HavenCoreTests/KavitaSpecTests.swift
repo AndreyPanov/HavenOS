@@ -72,7 +72,7 @@ final class KavitaSpecTests: XCTestCase {
 
         let unit = try XCTUnwrap(registry.runtimeUnitsByID["haven.unit.kavita"])
         XCTAssertEqual(unit.runtimeType, .native)
-        XCTAssertEqual(unit.port, 5000)
+        XCTAssertEqual(unit.port, 5001)
 
         // Artifact
         XCTAssertEqual(unit.artifact?.type, .githubRelease)
@@ -125,14 +125,14 @@ final class KavitaSpecTests: XCTestCase {
         let serviceRoot = "/tmp/haven-test/Services/haven.capability.kavita"
 
         // Port
-        XCTAssertEqual(planned.port?.number, 5000)
+        XCTAssertEqual(planned.port?.number, 5001)
 
         // Directories resolved
         XCTAssertEqual(planned.resolvedDirectories["config"], "\(serviceRoot)/config")
         XCTAssertEqual(planned.resolvedDirectories["content"], "/Volumes/Books")
 
         // Healthcheck expanded
-        XCTAssertEqual(planned.resolvedHealthcheck?.target, "http://localhost:5000/api/health")
+        XCTAssertEqual(planned.resolvedHealthcheck?.target, "http://localhost:5001/api/health")
     }
 
     func testInstallStepsExpanded() throws {
@@ -161,7 +161,7 @@ final class KavitaSpecTests: XCTestCase {
         XCTAssertEqual(install.steps[3].path, "\(serviceRoot)/config/appsettings.json")
         let content = try XCTUnwrap(install.steps[3].content)
         XCTAssertTrue(content.contains("\"TokenKey\": \"${token_key}\""))
-        XCTAssertTrue(content.contains("\"Port\": 5000"))
+        XCTAssertTrue(content.contains("\"Port\": 5001"))
 
         // chmod expanded
         XCTAssertEqual(install.steps[4].path, "\(serviceRoot)/config/appsettings.json")
@@ -200,9 +200,9 @@ final class KavitaSpecTests: XCTestCase {
         XCTAssertEqual(onboarding.steps[0].fields[0].value, "/Volumes/Books")
 
         // Step 2: action with expanded port
-        XCTAssertEqual(onboarding.steps[1].url, "http://localhost:5000")
+        XCTAssertEqual(onboarding.steps[1].url, "http://localhost:5001")
 
         // Step 3: server address
-        XCTAssertEqual(onboarding.steps[2].fields[0].value, "http://your-mac:5000")
+        XCTAssertEqual(onboarding.steps[2].fields[0].value, "http://your-mac:5001")
     }
 }
