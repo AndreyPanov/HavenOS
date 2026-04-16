@@ -54,8 +54,8 @@
                 "id": "ffmpeg",
                 "kind": "helperBinary",
                 "required": false,
-                "validateCommand": "ffmpeg -version",
-                "description": "Required for audio transcoding. Install via Homebrew: brew install ffmpeg"
+                "validateCommand": "/opt/homebrew/bin/ffmpeg -version",
+                "description": "Enables audio transcoding to different formats."
             }
         ],
         "healthcheck": {

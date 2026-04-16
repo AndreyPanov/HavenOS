@@ -37,6 +37,9 @@ public enum ExecutorError: Error, LocalizedError, Equatable, Sendable {
     /// Stopping a service unit failed.
     case stopFailed(capabilityID: String, unitID: String, detail: String)
 
+    /// Required dependencies are missing from the system.
+    case dependencyMissing(capabilityID: String, dependencies: [String])
+
     /// Executing install steps for a unit failed.
     case installStepsFailed(capabilityID: String, unitID: String, detail: String)
 
@@ -68,6 +71,8 @@ public enum ExecutorError: Error, LocalizedError, Equatable, Sendable {
             "Start failed: \(detail)"
         case .stopFailed(_, _, let detail):
             "Stop failed: \(detail)"
+        case .dependencyMissing(_, let deps):
+            "This service requires additional software that is not installed on your Mac: \(deps.joined(separator: ", "))."
         case .installStepsFailed(_, _, let detail):
             "Install steps failed: \(detail)"
         case .provisioningFailed(_, let detail):

@@ -29,6 +29,7 @@ public struct HavenExecutor: Sendable {
     private let pythonPreparer: PythonEnvironmentPreparer?
     private let provisionDownloader: ProvisionDownloader?
     private let installStepExecutor: InstallStepExecutor?
+    private let dependencyValidator: DependencyValidator?
     private nonisolated(unsafe) let fileManager: FileManager
 
     public init(
@@ -40,6 +41,7 @@ public struct HavenExecutor: Sendable {
         pythonPreparer: PythonEnvironmentPreparer? = nil,
         provisionDownloader: ProvisionDownloader? = nil,
         installStepExecutor: InstallStepExecutor? = nil,
+        dependencyValidator: DependencyValidator? = nil,
         fileManager: FileManager = .default
     ) {
         self.paths = paths
@@ -50,6 +52,7 @@ public struct HavenExecutor: Sendable {
         self.pythonPreparer = pythonPreparer
         self.provisionDownloader = provisionDownloader
         self.installStepExecutor = installStepExecutor
+        self.dependencyValidator = dependencyValidator
         self.fileManager = fileManager
     }
 
@@ -113,6 +116,30 @@ public struct HavenExecutor: Sendable {
         let service = plan.service
         let serviceLayout = paths.serviceLayout(for: capabilityID)
         log.info("[install] Plan OK: bundle=\(service.bundle.id), units=\(service.units.count), serviceRoot=\(serviceLayout.serviceRoot.path)")
+
+        // 3. Validate dependencies (fail fast before any side effects)
+        if let validator = dependencyValidator {
+            let allDeps = service.units.flatMap(\.spec.dependencies)
+            if !allDeps.isEmpty {
+                progress?("Checking dependencies…")
+                log.info("[install] Validating \(allDeps.count) dependencies...")
+                let results = validator.validate(dependencies: allDeps)
+
+                for result in results where result.isWarning {
+                    let desc = result.dependency.description ?? result.dependency.id
+                    log.warning("[install] Optional dependency missing: \(result.dependency.id) — \(desc)")
+                    progress?("Optional: \(desc) not found, some features may be limited")
+                }
+
+                let blockers = results.filter(\.isBlocker)
+                if !blockers.isEmpty {
+                    throw ExecutorError.dependencyMissing(
+                        capabilityID: capabilityID,
+                        dependencies: blockers.map(\.dependency.id)
+                    )
+                }
+            }
+        }
 
         // Rollback stack: closures executed in reverse on failure.
         // Each step that creates side effects registers a cleanup closure.
