@@ -39,7 +39,7 @@ Install → Start → Open
 
 ⚠️ Remaining Limitations
 	•	~~No runtime dependency validation~~ ✅ Resolved (DependencyValidator)
-	•	No multi-service composition
+	•	~~No multi-service composition~~ ✅ Resolved (readiness probes, shared env/dirs)
 	•	Pilot services not yet tested with live installs (spec-only so far)
 
 ✅ Recently Fixed
@@ -50,6 +50,11 @@ Install → Start → Open
 	•	Card button navigation conflict: header navigates via onTapGesture, action buttons independent
 	•	Working directory for .NET apps: install dir as working dir (wwwroot/ access)
 	•	URL-based icons/screenshots: AsyncImage in ServiceIconView and DiscoveryDetailView
+	•	Discovery detail page: full lifecycle controls (start/stop/restart/open/remove) after install
+	•	Remove button → "Stop & Remove" to clarify auto-stop behavior
+	•	Onboarding steps: "Open in Browser" instead of raw localhost URLs
+	•	Discovery header: live status via installedService instead of static plugin.isInstalled
+	•	ifNotExists guard on install steps: safe reinstalls without overwriting config/secrets
 
 ⸻
 
@@ -71,7 +76,7 @@ Phase	Focus	Outcome	Status
 5	Onboarding UX	Make services usable	✅ DONE
 6	Templates	Scale service creation	⬜ Not started
 7	Pilot Services	Validate system	🔶 Navidrome spec done, live test pending
-8	Multi-Service	Unlock complex apps	⬜ Not started
+8	Multi-Service	Unlock complex apps	✅ DONE
 
 
 ⸻
@@ -242,31 +247,26 @@ Templates:
 
 ⸻
 
-🔗 Phase 8 — Multi-Service Composition
+🔗 Phase 8 — Multi-Service Composition ✅ COMPLETE
 
-🎯 Goal
+All deliverables implemented and tested:
+	•	ReadinessProbe on RuntimeUnit: TCP/HTTP/exec with timeout + interval
+	  - Polled during startup to ensure dependencies accept connections before launching dependents
+	  - Timeout → rollback: already-started units stopped automatically
+	•	sharedDirectories on Bundle: dirs visible to all units as ${shared_<role>_dir}
+	•	sharedEnvironment on Bundle: env vars injected into every unit (unit-level wins on conflict)
+	•	ReadinessChecker: TCP connect, HTTP GET, or shell exec polling
+	•	start() is now async with rollback; startSync() preserved for CLI
+	•	Planner two-pass: plan all units, then expand sharedEnv using service-level context
+	•	Readiness probes persisted in StoredServiceState for restart
+	•	Topological sort (already existed) ensures correct startup/shutdown order
+	•	Gitea pilot spec (app + PostgreSQL): 12 end-to-end tests validate full pipeline
 
-Support complex apps (Nextcloud-class)
-
-⸻
-
-🔧 Deliverables
-	•	runtime dependency graph
-	•	startup ordering
-	•	shared storage
-	•	readiness checks
-
-⸻
-
-✅ Acceptance Criteria
-	•	Can run app + DB stack
-	•	Services start in correct order
-
-⸻
-
-⚠️ Risks
-	•	Complexity explosion
-	•	Turning Haven into Docker clone
+Complexity kept minimal:
+	•	3 new optional fields total (readinessProbe, sharedDirectories, sharedEnvironment)
+	•	Single-unit bundles see zero change — all fields default to empty/nil
+	•	No container isolation, no service mesh, no resource limits
+	•	Haven manages processes on a shared filesystem, not sandboxes
 
 ⸻
 
@@ -324,7 +324,8 @@ A non-technical user installs a service and uses it in < 2 minutes.
 	1.	Live install test: File Browser via GUI (simplest end-to-end)
 	2.	Complete Navidrome live install (verify HTTP reachability after fixes)
 	3.	Live install test: Calibre-Web (first Python runtime end-to-end)
-	4.	Address missing features: port injection, post-start hooks, Calibre.app dep discovery
+	4.	Live multi-unit test: Gitea + PostgreSQL (first multi-unit end-to-end)
+	5.	Address missing features: port injection, post-start hooks, Calibre.app dep discovery
 
 ⸻
 
