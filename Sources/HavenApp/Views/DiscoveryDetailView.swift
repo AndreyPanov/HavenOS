@@ -5,6 +5,11 @@ struct DiscoveryDetailView: View {
     @Environment(ServiceManager.self) private var serviceManager
     let plugin: DiscoverablePlugin
 
+    /// Live installed service data (nil if not installed).
+    private var installedService: InstalledService? {
+        serviceManager.installedServices.first { $0.id == plugin.id }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -13,16 +18,26 @@ struct DiscoveryDetailView: View {
                     ServiceIconView(systemName: plugin.icon, imagePath: plugin.iconImagePath, size: 56)
                         .glassEffect(in: .rect(cornerRadius: 12))
 
-                    Text(plugin.name)
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(plugin.name)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        if let service = installedService {
+                            StatusBadgeView(status: service.status)
+                        }
+                    }
 
                     Spacer()
 
                     if plugin.isInstalled {
-                        Label("Installed", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.green)
+                        if let service = installedService, service.status == .running,
+                           let url = service.localURL, let openURL = URL(string: url) {
+                            Button("Open in Browser", systemImage: "globe") {
+                                NSWorkspace.shared.open(openURL)
+                            }
+                            .buttonStyle(.glassProminent)
+                            .controlSize(.large)
+                        }
                     } else {
                         Button("Install") {
                             Task { await serviceManager.installService(capabilityID: plugin.id) }
@@ -71,9 +86,17 @@ struct DiscoveryDetailView: View {
                 GroupBox("Details") {
                     VStack(spacing: 0) {
                         PluginDetailRow(label: "Type", value: plugin.notes.first ?? "Service")
-                        if plugin.isInstalled {
+                        if let service = installedService {
                             Divider().padding(.vertical, 6)
-                            PluginDetailRow(label: "Status", value: "Installed")
+                            PluginDetailRow(label: "Status", value: service.status.rawValue)
+                            if let port = service.port {
+                                Divider().padding(.vertical, 6)
+                                PluginDetailRow(label: "Port", value: "\(port)")
+                            }
+                            if let url = service.localURL {
+                                Divider().padding(.vertical, 6)
+                                PluginDetailRow(label: "Address", value: url)
+                            }
                         }
                     }
                     .padding(4)
@@ -118,23 +141,53 @@ struct DiscoveryDetailView: View {
                         }
                         .padding(4)
                     }
-                } else {
-                    HStack {
-                        if plugin.isInstalled {
-                            Button("Remove", role: .destructive) {
-                                Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
+                } else if let service = installedService {
+                    // Installed: show full service controls
+                    HStack(spacing: 12) {
+                        if service.status == .running {
+                            Button("Stop", systemImage: "stop.circle") {
+                                Task { await serviceManager.stopService(capabilityID: plugin.id) }
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.large)
+                            .disabled(serviceManager.isPerformingAction)
+
+                            Button("Restart", systemImage: "arrow.clockwise") {
+                                Task {
+                                    await serviceManager.stopService(capabilityID: plugin.id)
+                                    await serviceManager.startService(capabilityID: plugin.id)
+                                }
                             }
                             .buttonStyle(.glass)
                             .controlSize(.large)
                             .disabled(serviceManager.isPerformingAction)
                         } else {
-                            Button("Install", systemImage: "plus.circle") {
-                                Task { await serviceManager.installService(capabilityID: plugin.id) }
+                            Button("Start", systemImage: "play.circle") {
+                                Task { await serviceManager.startService(capabilityID: plugin.id) }
                             }
                             .buttonStyle(.glassProminent)
                             .controlSize(.large)
                             .disabled(serviceManager.isPerformingAction)
                         }
+
+                        Spacer()
+
+                        Button("Remove", systemImage: "trash", role: .destructive) {
+                            Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
+                    }
+                } else {
+                    // Not installed
+                    HStack {
+                        Button("Install", systemImage: "plus.circle") {
+                            Task { await serviceManager.installService(capabilityID: plugin.id) }
+                        }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.large)
+                        .disabled(serviceManager.isPerformingAction)
                         Spacer()
                     }
                 }

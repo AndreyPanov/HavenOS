@@ -67,7 +67,7 @@ private struct OnboardingStepRow: View {
 
             // Action URL button
             if let urlString = step.url, let url = URL(string: urlString) {
-                Button("Open \(urlString)", systemImage: "globe") {
+                Button("Open in Browser", systemImage: "globe") {
                     NSWorkspace.shared.open(url)
                 }
                 .buttonStyle(.glass)
