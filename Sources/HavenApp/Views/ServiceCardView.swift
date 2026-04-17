@@ -79,7 +79,7 @@ struct ServiceCardView: View {
                         }
                     }
                     Divider()
-                    Button("Remove", systemImage: "trash", role: .destructive) {
+                    Button("Stop & Remove", systemImage: "trash", role: .destructive) {
                         Task { await serviceManager.uninstallService(capabilityID: service.id) }
                     }
                 } label: {

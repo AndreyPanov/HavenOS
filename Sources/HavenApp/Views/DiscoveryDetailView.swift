@@ -172,7 +172,7 @@ struct DiscoveryDetailView: View {
 
                         Spacer()
 
-                        Button("Remove", systemImage: "trash", role: .destructive) {
+                        Button("Stop & Remove", systemImage: "trash", role: .destructive) {
                             Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
                         }
                         .buttonStyle(.glass)
