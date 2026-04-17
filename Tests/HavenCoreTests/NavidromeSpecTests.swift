@@ -106,7 +106,9 @@ final class NavidromeSpecTests: XCTestCase {
         XCTAssertEqual(unit.install?.steps.count, 8)
         XCTAssertEqual(unit.install?.steps[5].action, .generateSecret)
         XCTAssertEqual(unit.install?.steps[5].path, "session_key")
+        XCTAssertTrue(unit.install?.steps[5].ifNotExists == true)
         XCTAssertEqual(unit.install?.steps[6].action, .writeFile)
+        XCTAssertTrue(unit.install?.steps[6].ifNotExists == true)
         XCTAssertEqual(unit.install?.steps[7].action, .chmod)
         XCTAssertEqual(unit.install?.steps[7].mode, "600")
 

@@ -3,7 +3,6 @@
         "id": "haven.unit.navidrome",
         "bundleID": "haven.bundle.navidrome-basic",
         "runtimeType": "native",
-        "installSource": "",
         "port": 4533,
         "artifact": {
             "type": "github-release",
@@ -43,8 +42,8 @@
                 { "action": "mkdir",          "path": "${logs_dir}" },
                 { "action": "mkdir",          "path": "${cache_dir}" },
                 { "action": "mkdir",          "path": "${content_dir}" },
-                { "action": "generateSecret", "path": "session_key", "content": "32" },
-                { "action": "writeFile",      "path": "${config_dir}/navidrome.toml",
+                { "action": "generateSecret", "path": "session_key", "content": "32", "ifNotExists": true },
+                { "action": "writeFile",      "path": "${config_dir}/navidrome.toml", "ifNotExists": true,
                   "content": "MusicFolder = \"${content_dir}\"\nDataFolder = \"${data_dir}\"\nCacheFolder = \"${cache_dir}\"\nLogFile = \"${logs_dir}/navidrome.log\"\nPort = ${port}\nSessionSecret = \"${session_key}\"\nScanSchedule = \"@every 5m\"\nTranscodingCacheSize = \"512MB\"\n" },
                 { "action": "chmod",          "path": "${config_dir}/navidrome.toml", "mode": "600" }
             ]

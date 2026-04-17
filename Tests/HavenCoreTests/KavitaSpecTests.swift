@@ -86,17 +86,21 @@ final class KavitaSpecTests: XCTestCase {
 
         // Directories
         XCTAssertEqual(unit.directories["config"], "config")
+        XCTAssertEqual(unit.directories["data"], "data")
         XCTAssertEqual(unit.directories["content"], "${library_path}")
 
-        // Install steps: mkdir×2 + generateSecret + writeFile + chmod
-        XCTAssertEqual(unit.install?.steps.count, 5)
+        // Install steps: mkdir×3 + generateSecret + writeFile + chmod
+        XCTAssertEqual(unit.install?.steps.count, 6)
         XCTAssertEqual(unit.install?.steps[0].action, .mkdir)
         XCTAssertEqual(unit.install?.steps[1].action, .mkdir)
-        XCTAssertEqual(unit.install?.steps[2].action, .generateSecret)
-        XCTAssertEqual(unit.install?.steps[2].path, "token_key")
-        XCTAssertEqual(unit.install?.steps[3].action, .writeFile)
-        XCTAssertEqual(unit.install?.steps[4].action, .chmod)
-        XCTAssertEqual(unit.install?.steps[4].mode, "600")
+        XCTAssertEqual(unit.install?.steps[2].action, .mkdir)
+        XCTAssertEqual(unit.install?.steps[3].action, .generateSecret)
+        XCTAssertEqual(unit.install?.steps[3].path, "token_key")
+        XCTAssertTrue(unit.install?.steps[3].ifNotExists == true)
+        XCTAssertEqual(unit.install?.steps[4].action, .writeFile)
+        XCTAssertTrue(unit.install?.steps[4].ifNotExists == true)
+        XCTAssertEqual(unit.install?.steps[5].action, .chmod)
+        XCTAssertEqual(unit.install?.steps[5].mode, "600")
 
         // No dependencies
         XCTAssertTrue(unit.dependencies.isEmpty)
@@ -150,22 +154,25 @@ final class KavitaSpecTests: XCTestCase {
 
         // mkdir steps expanded
         XCTAssertEqual(install.steps[0].path, "\(serviceRoot)/config")
-        XCTAssertEqual(install.steps[1].path, "/Volumes/Books")
+        XCTAssertEqual(install.steps[1].path, "\(serviceRoot)/data")
+        XCTAssertEqual(install.steps[2].path, "/Volumes/Books")
 
         // generateSecret keeps variable name
-        XCTAssertEqual(install.steps[2].action, .generateSecret)
-        XCTAssertEqual(install.steps[2].path, "token_key")
-        XCTAssertEqual(install.steps[2].content, "64")
+        XCTAssertEqual(install.steps[3].action, .generateSecret)
+        XCTAssertEqual(install.steps[3].path, "token_key")
+        XCTAssertEqual(install.steps[3].content, "64")
+        XCTAssertTrue(install.steps[3].ifNotExists)
 
         // writeFile has expanded path; content has ${token_key} (runtime) + expanded ${port}
-        XCTAssertEqual(install.steps[3].path, "\(serviceRoot)/config/appsettings.json")
-        let content = try XCTUnwrap(install.steps[3].content)
+        XCTAssertEqual(install.steps[4].path, "\(serviceRoot)/config/appsettings.json")
+        XCTAssertTrue(install.steps[4].ifNotExists)
+        let content = try XCTUnwrap(install.steps[4].content)
         XCTAssertTrue(content.contains("\"TokenKey\": \"${token_key}\""))
         XCTAssertTrue(content.contains("\"Port\": 5001"))
 
         // chmod expanded
-        XCTAssertEqual(install.steps[4].path, "\(serviceRoot)/config/appsettings.json")
-        XCTAssertEqual(install.steps[4].mode, "600")
+        XCTAssertEqual(install.steps[5].path, "\(serviceRoot)/config/appsettings.json")
+        XCTAssertEqual(install.steps[5].mode, "600")
     }
 
     func testDefaultLibraryPathExpandsTilde() throws {

@@ -20,6 +20,7 @@
     ],
     "storage": {
         "config":  { "persistent": true,  "userVisible": false },
+        "data":    { "persistent": true,  "userVisible": false },
         "content": { "persistent": true,  "userVisible": true }
     },
     "onboarding": {

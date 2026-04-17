@@ -4,7 +4,7 @@
     "version": "0.6.26",
     "description": "Web-based ebook management and reader powered by Calibre.",
     "icon": "books.vertical",
-    "iconImage": "icon.png",
+    "iconImage": "https://raw.githubusercontent.com/wiki/janeczku/calibre-web/images/calibre-web-logo.png",
     "fullDescription": "Calibre-Web is a web app providing a clean interface for browsing, reading, and downloading eBooks from your Calibre library.\n\nKey features:\n• Browse and search your ebook collection from any browser\n• Read EPUB books directly in the browser\n• Send books to Kindle with one click\n• User management with fine-grained permissions\n• OPDS feed for third-party reading apps\n• Edit metadata and manage book covers\n• Upload new books via the web interface\n• Optional format conversion with Calibre's ebook-convert",
     "notes": ["Python", "eBook management", "Web UI"],
     "screenshots": [

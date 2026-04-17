@@ -104,7 +104,7 @@ final class CalibreWebSpecTests: XCTestCase {
 
         // Dependencies (both optional)
         XCTAssertEqual(unit.dependencies.count, 2)
-        XCTAssertEqual(unit.dependencies[0].id, "convert")
+        XCTAssertEqual(unit.dependencies[0].id, "ebook-convert")
         XCTAssertFalse(unit.dependencies[0].required)
         XCTAssertEqual(unit.dependencies[1].id, "magick")
         XCTAssertFalse(unit.dependencies[1].required)

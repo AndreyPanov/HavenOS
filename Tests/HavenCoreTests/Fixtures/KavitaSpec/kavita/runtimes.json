@@ -3,7 +3,6 @@
         "id": "haven.unit.kavita",
         "bundleID": "haven.bundle.kavita-basic",
         "runtimeType": "native",
-        "installSource": "",
         "port": 5001,
         "artifact": {
             "type": "github-release",
@@ -24,14 +23,16 @@
         },
         "directories": {
             "config":  "config",
+            "data":    "data",
             "content": "${library_path}"
         },
         "install": {
             "steps": [
                 { "action": "mkdir",          "path": "${config_dir}" },
+                { "action": "mkdir",          "path": "${data_dir}" },
                 { "action": "mkdir",          "path": "${content_dir}" },
-                { "action": "generateSecret", "path": "token_key", "content": "64" },
-                { "action": "writeFile",      "path": "${config_dir}/appsettings.json",
+                { "action": "generateSecret", "path": "token_key", "content": "64", "ifNotExists": true },
+                { "action": "writeFile",      "path": "${config_dir}/appsettings.json", "ifNotExists": true,
                   "content": "{\n  \"TokenKey\": \"${token_key}\",\n  \"Port\": ${port},\n  \"IpAddresses\": \"\",\n  \"BaseUrl\": \"/\",\n  \"Cache\": 75\n}\n" },
                 { "action": "chmod",          "path": "${config_dir}/appsettings.json", "mode": "600" }
             ]

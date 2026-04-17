@@ -129,8 +129,7 @@ final class FileBrowserSpecTests: XCTestCase {
         XCTAssertEqual(planned.resolvedLaunchArguments, [
             "--port", "8080",
             "--root", "/Volumes/Files",
-            "--database", "\(serviceRoot)/data/filebrowser.db",
-            "--noauth"
+            "--database", "\(serviceRoot)/data/filebrowser.db"
         ])
 
         // Directories resolved

@@ -82,6 +82,23 @@ public struct InstallStepExecutor: Sendable {
 
             log.info("[install-steps] Step \(index + 1)/\(block.steps.count): \(step.action.rawValue) path=\(step.path)")
 
+            // ifNotExists guard: skip if the target already exists.
+            // For generateSecret, check if the variable is already in context.
+            if step.ifNotExists {
+                if step.action == .generateSecret {
+                    if currentContext.values[step.path] != nil {
+                        log.info("[install-steps] Skipping (ifNotExists): secret '\(step.path)' already in context")
+                        continue
+                    }
+                } else {
+                    let targetURL = URL(fileURLWithPath: step.path)
+                    if fileManager.fileExists(atPath: targetURL.path) {
+                        log.info("[install-steps] Skipping (ifNotExists): \(step.path) already exists")
+                        continue
+                    }
+                }
+            }
+
             do {
                 switch step.action {
                 case .mkdir:

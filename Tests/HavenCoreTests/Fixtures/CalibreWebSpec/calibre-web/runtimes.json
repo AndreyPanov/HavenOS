@@ -12,11 +12,8 @@
                 "args": ["-p", "${config_dir}/app.db"]
             }
         },
-        "entrypoint": {
-            "args": ["-p", "${config_dir}/app.db"],
-            "env": {
-                "CALIBRE_DBPATH": "${config_dir}"
-            }
+        "environment": {
+            "CALIBRE_DBPATH": "${config_dir}"
         },
         "directories": {
             "config": "config",
@@ -33,17 +30,17 @@
         },
         "dependencies": [
             {
-                "id": "convert",
+                "id": "ebook-convert",
                 "kind": "helperBinary",
                 "required": false,
-                "validateCommand": "ebook-convert --version",
-                "description": "Calibre's ebook-convert enables on-the-fly format conversion (e.g. EPUB → MOBI for Kindle)."
+                "validateCommand": "/Applications/calibre.app/Contents/MacOS/ebook-convert --version",
+                "description": "Calibre's ebook-convert enables on-the-fly format conversion (e.g. EPUB to MOBI for Kindle)."
             },
             {
                 "id": "magick",
                 "kind": "helperBinary",
                 "required": false,
-                "validateCommand": "magick --version",
+                "validateCommand": "/opt/homebrew/bin/magick --version",
                 "description": "ImageMagick enables cover image processing and thumbnail generation."
             }
         ],

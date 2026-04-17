@@ -47,18 +47,41 @@ public struct InstallStep: Codable, Equatable, Sendable {
     /// For `generateSecret`, the byte length as a string (e.g. `"32"`).
     public let content: String?
 
+    /// When `true`, skip this step if the target path already exists.
+    /// Useful for `writeFile` and `generateSecret` to preserve existing
+    /// config files and secrets across reinstalls/upgrades.
+    public let ifNotExists: Bool
+
     public init(
         action: Action,
         path: String,
         source: String? = nil,
         mode: String? = nil,
-        content: String? = nil
+        content: String? = nil,
+        ifNotExists: Bool = false
     ) {
         self.action = action
         self.path = path
         self.source = source
         self.mode = mode
         self.content = content
+        self.ifNotExists = ifNotExists
+    }
+
+    // MARK: - Codable
+
+    private enum CodingKeys: String, CodingKey {
+        case action, path, source, mode, content, ifNotExists
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        action = try c.decode(Action.self, forKey: .action)
+        path = try c.decode(String.self, forKey: .path)
+        source = try c.decodeIfPresent(String.self, forKey: .source)
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
+        ifNotExists = try c.decodeIfPresent(Bool.self, forKey: .ifNotExists) ?? false
     }
 
     /// Validates that required fields are present for the given action.

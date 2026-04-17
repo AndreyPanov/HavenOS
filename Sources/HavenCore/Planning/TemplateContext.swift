@@ -81,7 +81,8 @@ public struct TemplateContext: Equatable, Sendable {
             path: expand(step.path),
             source: step.source.map { expand($0) },
             mode: step.mode,
-            content: step.content.map { expand($0) }
+            content: step.content.map { expand($0) },
+            ifNotExists: step.ifNotExists
         )
     }
 

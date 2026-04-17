@@ -3,7 +3,6 @@
         "id": "haven.unit.filebrowser",
         "bundleID": "haven.bundle.filebrowser-basic",
         "runtimeType": "native",
-        "installSource": "",
         "port": 8080,
         "artifact": {
             "type": "github-release",
@@ -24,8 +23,7 @@
         "launchArguments": [
             "--port", "${port}",
             "--root", "${content_dir}",
-            "--database", "${data_dir}/filebrowser.db",
-            "--noauth"
+            "--database", "${data_dir}/filebrowser.db"
         ],
         "directories": {
             "data":    "data",
