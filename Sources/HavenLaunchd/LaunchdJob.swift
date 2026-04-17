@@ -134,6 +134,10 @@ public struct LaunchdJob: Equatable, Sendable {
             dict["KeepAlive"] = keepAlive.plistValue()
         }
 
+        // Disable launchd's default 10-second throttle between restarts.
+        // Without this, rapid stop→start cycles are delayed.
+        dict["ThrottleInterval"] = 1
+
         return dict
     }
 

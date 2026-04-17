@@ -169,10 +169,11 @@ public struct LaunchdController: Sendable {
 
     // MARK: - Start
 
-    /// Start a loaded (but not running) job.
+    /// Start a service by bootstrapping its plist into launchd.
     ///
-    /// The job must already be installed (bootstrapped). Use `install(job:)`
-    /// first if needed.
+    /// Uses `bootstrap` to load the plist from disk, which also starts the
+    /// job via `RunAtLoad`. If the job is already loaded (e.g. first start
+    /// after install), bootstrap returns "already loaded" — this is not an error.
     ///
     /// - Parameter label: The launchd job label to start.
     /// - Throws: `LaunchdControllerError.startFailed` if the command fails.
@@ -188,14 +189,54 @@ public struct LaunchdController: Sendable {
             )
         }
 
-        guard result.succeeded else {
-            log.error("[start] Start failed: \(combinedOutput(result))")
-            throw LaunchdControllerError.startFailed(
-                label: label,
-                detail: combinedOutput(result)
-            )
+        if !result.succeeded {
+            let output = combinedOutput(result)
+            // "already loaded" means the job is in launchd but stopped —
+            // use kickstart to start it without re-bootstrap.
+            if output.contains("already loaded") || output.contains("service already loaded") {
+                log.info("[start] Job already loaded, using kickstart")
+                let kickResult = try kickstart(label: label)
+                guard kickResult.succeeded else {
+                    log.error("[start] Kickstart failed: \(combinedOutput(kickResult))")
+                    throw LaunchdControllerError.startFailed(
+                        label: label,
+                        detail: combinedOutput(kickResult)
+                    )
+                }
+            } else {
+                log.error("[start] Start failed: \(output)")
+                throw LaunchdControllerError.startFailed(
+                    label: label,
+                    detail: output
+                )
+            }
         }
         log.info("[start] Job started: \(label)")
+    }
+
+    /// Kickstart a loaded job (fallback when bootstrap reports already loaded).
+    private func kickstart(label: String) throws -> LaunchctlResult {
+        let serviceTarget = "gui/\(getuid())/\(label)"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["kickstart", serviceTarget]
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+
+        return LaunchctlResult(
+            exitCode: process.terminationStatus,
+            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+            stderr: String(data: stderrData, encoding: .utf8) ?? ""
+        )
     }
 
     // MARK: - Stop
@@ -221,8 +262,9 @@ public struct LaunchdController: Sendable {
 
         if !result.succeeded {
             let output = combinedOutput(result)
-            // "No process to signal" means the job is already stopped — not an error.
-            if output.contains("No process to signal") || output.contains("No such process") {
+            // These mean the job is already stopped/unloaded — not an error.
+            if output.contains("No process to signal") || output.contains("No such process")
+                || output.contains("Could not find service") {
                 log.info("[stop] Job already stopped: \(label)")
             } else {
                 log.error("[stop] Stop failed: \(output)")
