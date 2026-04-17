@@ -77,7 +77,7 @@ public enum Planner {
             plannedUnits.append(planned)
         }
 
-        // 8. Resolve onboarding and provisions using a service-level context
+        // 8. Build service-level context from all units
         var serviceContextValues = resolvedSettings
         serviceContextValues["data_dir"] = layout.data.path
         serviceContextValues["config_dir"] = layout.config.path
@@ -93,7 +93,53 @@ public enum Planner {
                 serviceContextValues[key] = value
             }
         }
+        // Merge per-unit port variables (e.g. db_port from unit with port 5432
+        // mapped via the "db_port" setting key).
+        for unit in plannedUnits {
+            if let portNum = unit.port?.number {
+                serviceContextValues["\(unit.spec.id).port"] = String(portNum)
+            }
+        }
+
+        // 9. Expand shared directories from bundle
+        for (role, rawPath) in bundle.sharedDirectories {
+            let settingsCtx = TemplateContext(values: serviceContextValues)
+            let expandedPath = settingsCtx.expand(rawPath)
+            let resolvedPath: String
+            if expandedPath.hasPrefix("/") {
+                resolvedPath = expandedPath
+            } else {
+                resolvedPath = layout.serviceRoot
+                    .appendingPathComponent(expandedPath).path
+            }
+            serviceContextValues["shared_\(role)_dir"] = resolvedPath
+        }
+
         let serviceContext = TemplateContext(values: serviceContextValues)
+
+        // 10. Expand shared environment and merge into each unit
+        let expandedSharedEnv = serviceContext.expandValues(in: bundle.sharedEnvironment)
+        if !expandedSharedEnv.isEmpty {
+            plannedUnits = plannedUnits.map { unit in
+                // Unit-level env wins on conflict (override pattern)
+                var mergedEnv = expandedSharedEnv
+                for (key, value) in unit.resolvedEnvironment {
+                    mergedEnv[key] = value
+                }
+                return PlannedRuntimeUnit(
+                    spec: unit.spec,
+                    resolvedLaunchArguments: unit.resolvedLaunchArguments,
+                    resolvedEnvironment: mergedEnv,
+                    port: unit.port,
+                    resolvedHealthcheck: unit.resolvedHealthcheck,
+                    dependsOn: unit.dependsOn,
+                    templateContext: unit.templateContext,
+                    resolvedDirectories: unit.resolvedDirectories,
+                    resolvedInstall: unit.resolvedInstall,
+                    resolvedReadinessProbe: unit.resolvedReadinessProbe
+                )
+            }
+        }
 
         let resolvedOnboarding = bundle.onboarding.map { serviceContext.expand($0) }
 
@@ -297,6 +343,9 @@ public enum Planner {
         // Expand install steps
         let resolvedInstall = unit.install.map { context.expand($0) }
 
+        // Expand readiness probe
+        let resolvedReadinessProbe = unit.readinessProbe.map { context.expand($0) }
+
         return PlannedRuntimeUnit(
             spec: unit,
             resolvedLaunchArguments: resolvedArgs,
@@ -306,7 +355,8 @@ public enum Planner {
             dependsOn: unit.dependsOn,
             templateContext: context,
             resolvedDirectories: resolvedDirs,
-            resolvedInstall: resolvedInstall
+            resolvedInstall: resolvedInstall,
+            resolvedReadinessProbe: resolvedReadinessProbe
         )
     }
 

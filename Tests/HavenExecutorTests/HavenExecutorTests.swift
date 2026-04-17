@@ -525,7 +525,7 @@ final class HavenExecutorArtifactTests: XCTestCase {
         XCTAssertEqual(state.status, .installed)
 
         // Start
-        try executor.start(capabilityID: testCapabilityID)
+        try executor.startSync(capabilityID: testCapabilityID)
         let afterStart = try stateStore.service(for: testCapabilityID)
         XCTAssertEqual(afterStart?.status, .running)
 
@@ -1097,7 +1097,7 @@ final class HavenExecutorStartStopTests: XCTestCase {
 
     func testStartCallsLaunchdStartForEachUnit() throws {
         try installTestService()
-        try executor.start(capabilityID: testCapabilityID)
+        try executor.startSync(capabilityID: testCapabilityID)
 
         let startCalls = mock.calls.filter { $0.method == "start" }
         XCTAssertEqual(startCalls.count, 3)
@@ -1105,7 +1105,7 @@ final class HavenExecutorStartStopTests: XCTestCase {
 
     func testStartUpdatesStateToRunning() throws {
         try installTestService()
-        try executor.start(capabilityID: testCapabilityID)
+        try executor.startSync(capabilityID: testCapabilityID)
 
         let state = try stateStore.service(for: testCapabilityID)
         XCTAssertEqual(state?.status, .running)
@@ -1113,7 +1113,7 @@ final class HavenExecutorStartStopTests: XCTestCase {
 
     func testStartNotInstalledThrows() {
         XCTAssertThrowsError(
-            try executor.start(capabilityID: "nonexistent")
+            try executor.startSync(capabilityID: "nonexistent")
         ) { error in
             guard case .notInstalled = error as? ExecutorError else {
                 XCTFail("Expected notInstalled, got \(error)")
@@ -1279,7 +1279,7 @@ final class HavenExecutorEndToEndTests: XCTestCase {
         XCTAssertEqual(state.runtimeUnits.count, 3)
 
         // 2. Start
-        try executor.start(capabilityID: testCapabilityID)
+        try executor.startSync(capabilityID: testCapabilityID)
         let afterStart = try stateStore.service(for: testCapabilityID)
         XCTAssertEqual(afterStart?.status, .running)
 

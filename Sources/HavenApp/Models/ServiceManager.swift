@@ -90,7 +90,8 @@ final class ServiceManager {
             pythonPreparer: PythonEnvironmentPreparer(),
             provisionDownloader: ProvisionDownloader(),
             installStepExecutor: InstallStepExecutor(),
-            dependencyValidator: DependencyValidator()
+            dependencyValidator: DependencyValidator(),
+            readinessChecker: ReadinessChecker()
         )
         log.info("Initialized with base path: \(basePath.path)")
     }
@@ -202,8 +203,8 @@ final class ServiceManager {
 
     /// Start an installed service.
     func startService(capabilityID: String) async {
-        await performAction("Start", capabilityID: capabilityID) { executor in
-            try executor.start(capabilityID: capabilityID)
+        await performAsyncAction("Start", capabilityID: capabilityID) { executor in
+            try await executor.start(capabilityID: capabilityID)
         }
     }
 
@@ -231,6 +232,36 @@ final class ServiceManager {
         do {
             try await Task.detached {
                 try action(executor)
+            }.value
+            log.info("\(label) succeeded: \(capabilityID)")
+            refresh()
+        } catch {
+            log.error("\(label) failed: \(error.localizedDescription)")
+            lastError = error.localizedDescription
+        }
+
+        isPerformingAction = false
+        activeCapabilityID = nil
+        actionStatus = nil
+    }
+
+    /// Run an async lifecycle action with standard error handling.
+    private func performAsyncAction(
+        _ label: String,
+        capabilityID: String,
+        action: @Sendable @escaping (HavenExecutor) async throws -> Void
+    ) async {
+        log.info("\(label) service: \(capabilityID)")
+        isPerformingAction = true
+        activeCapabilityID = capabilityID
+        actionStatus = "\(label)ing…"
+        lastError = nil
+
+        let executor = self.executor
+
+        do {
+            try await Task.detached {
+                try await action(executor)
             }.value
             log.info("\(label) succeeded: \(capabilityID)")
             refresh()

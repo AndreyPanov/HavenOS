@@ -219,6 +219,14 @@ public enum SpecLoader {
                         )
                     }
 
+                    // Nested: readinessProbe block
+                    if let rpDict = dict["readinessProbe"] as? [String: Any] {
+                        StrictJSONDecoder.checkNestedKeys(
+                            in: rpDict, knownKeys: StrictJSONDecoder.readinessProbeKeys,
+                            source: "\(unitSource).readinessProbe", issues: &issues
+                        )
+                    }
+
                     // Nested: install block
                     if let installDict = dict["install"] as? [String: Any] {
                         StrictJSONDecoder.checkNestedKeys(

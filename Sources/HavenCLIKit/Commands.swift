@@ -53,7 +53,8 @@ struct CommonOptions: ParsableArguments {
             pythonPreparer: pythonPreparer,
             provisionDownloader: provisionDownloader,
             installStepExecutor: installStepExecutor,
-            dependencyValidator: dependencyValidator
+            dependencyValidator: dependencyValidator,
+            readinessChecker: ReadinessChecker()
         )
     }
 
@@ -192,7 +193,7 @@ public struct StartCommand: ParsableCommand {
 
     public func run() throws {
         let executor = common.makeExecutor()
-        try executor.start(capabilityID: capability)
+        try executor.startSync(capabilityID: capability)
         print("Started \(capability)")
     }
 }

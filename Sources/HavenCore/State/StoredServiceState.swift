@@ -45,6 +45,10 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
     /// Nil for services installed before onboarding was added.
     public let onboarding: Onboarding?
 
+    /// Resolved readiness probes per runtime unit (unit ID → probe).
+    /// Used during `start()` to wait for dependencies before launching dependents.
+    public let readinessProbes: [String: ReadinessProbe]
+
     public init(
         capability: String,
         bundleID: String,
@@ -57,7 +61,8 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         directoryLayout: ServiceDirectoryLayout,
         artifactInfo: [StoredArtifactInfo] = [],
         pythonInfo: [StoredPythonInfo] = [],
-        onboarding: Onboarding? = nil
+        onboarding: Onboarding? = nil,
+        readinessProbes: [String: ReadinessProbe] = [:]
     ) {
         self.capability = capability
         self.bundleID = bundleID
@@ -71,6 +76,7 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         self.artifactInfo = artifactInfo
         self.pythonInfo = pythonInfo
         self.onboarding = onboarding
+        self.readinessProbes = readinessProbes
     }
 
     // MARK: - Backward-compatible decoding
@@ -78,7 +84,7 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case capability, bundleID, installedAt, updatedAt, status
         case resolvedSettings, portAssignments, runtimeUnits
-        case directoryLayout, artifactInfo, pythonInfo, onboarding
+        case directoryLayout, artifactInfo, pythonInfo, onboarding, readinessProbes
     }
 
     public init(from decoder: Decoder) throws {
@@ -95,5 +101,6 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
         artifactInfo = try c.decodeIfPresent([StoredArtifactInfo].self, forKey: .artifactInfo) ?? []
         pythonInfo = try c.decodeIfPresent([StoredPythonInfo].self, forKey: .pythonInfo) ?? []
         onboarding = try c.decodeIfPresent(Onboarding.self, forKey: .onboarding)
+        readinessProbes = try c.decodeIfPresent([String: ReadinessProbe].self, forKey: .readinessProbes) ?? [:]
     }
 }

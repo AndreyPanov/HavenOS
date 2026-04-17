@@ -41,6 +41,18 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
     /// the runtime unit's `directories` block (e.g. `"config"`, `"data"`, `"content"`).
     public let storage: [String: StoragePolicy]
 
+    /// Directories shared across all runtime units in this bundle.
+    /// Keys are role names, values are paths relative to the service root.
+    /// Each key becomes a `${shared_<key>_dir}` template variable available
+    /// to all units and to `sharedEnvironment`.
+    public let sharedDirectories: [String: String]
+
+    /// Environment variables injected into every runtime unit in this bundle.
+    /// Values support `${placeholder}` expansion using the service-level
+    /// template context (resolved settings, directory roles, ports).
+    /// Unit-level environment takes precedence on key conflicts.
+    public let sharedEnvironment: [String: String]
+
     public init(
         id: String,
         name: String,
@@ -51,7 +63,9 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         instructions: String? = nil,
         onboarding: Onboarding? = nil,
         provisions: [Provision] = [],
-        storage: [String: StoragePolicy] = [:]
+        storage: [String: StoragePolicy] = [:],
+        sharedDirectories: [String: String] = [:],
+        sharedEnvironment: [String: String] = [:]
     ) {
         self.id = id
         self.name = name
@@ -63,6 +77,8 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         self.onboarding = onboarding
         self.provisions = provisions
         self.storage = storage
+        self.sharedDirectories = sharedDirectories
+        self.sharedEnvironment = sharedEnvironment
     }
 
     public init(from decoder: Decoder) throws {
@@ -77,6 +93,8 @@ public struct Bundle: Identifiable, Codable, Equatable, Sendable {
         onboarding = try c.decodeIfPresent(Onboarding.self, forKey: .onboarding)
         provisions = try c.decodeIfPresent([Provision].self, forKey: .provisions) ?? []
         storage = try c.decodeIfPresent([String: StoragePolicy].self, forKey: .storage) ?? [:]
+        sharedDirectories = try c.decodeIfPresent([String: String].self, forKey: .sharedDirectories) ?? [:]
+        sharedEnvironment = try c.decodeIfPresent([String: String].self, forKey: .sharedEnvironment) ?? [:]
     }
 
     /// Validates that the bundle is well-formed.

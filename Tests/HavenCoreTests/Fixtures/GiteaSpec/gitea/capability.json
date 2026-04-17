@@ -1,0 +1,8 @@
+{
+    "id": "haven.capability.gitea",
+    "name": "Gitea",
+    "version": "1.22.0",
+    "description": "Lightweight self-hosted Git service",
+    "icon": "arrow.triangle.branch",
+    "notes": ["Git", "Code", "CI/CD"]
+}

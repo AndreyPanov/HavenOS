@@ -76,19 +76,24 @@ extension StrictJSONDecoder {
 
     static let bundleKeys: Set<String> = [
         "id", "name", "capability", "runtimeUnits", "settings",
-        "version", "instructions", "onboarding", "provisions", "storage"
+        "version", "instructions", "onboarding", "provisions", "storage",
+        "sharedDirectories", "sharedEnvironment"
     ]
 
     static let runtimeUnitKeys: Set<String> = [
         "id", "bundleID", "runtimeType", "installSource",
         "launchArguments", "healthcheck", "dependsOn", "port",
         "environment", "entrypoint", "version", "artifact", "python",
-        "directories", "install", "dependencies"
+        "directories", "install", "dependencies", "readinessProbe"
     ]
 
 
     static let healthcheckKeys: Set<String> = [
         "type", "target", "intervalSeconds", "retries"
+    ]
+
+    static let readinessProbeKeys: Set<String> = [
+        "type", "target", "timeoutSeconds", "intervalSeconds"
     ]
 
     static let pythonConfigKeys: Set<String> = [

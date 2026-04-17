@@ -72,6 +72,18 @@ public struct TemplateContext: Equatable, Sendable {
         )
     }
 
+    // MARK: - Readiness probe expansion
+
+    /// Expand all placeholders in a ``ReadinessProbe``.
+    public func expand(_ probe: ReadinessProbe) -> ReadinessProbe {
+        ReadinessProbe(
+            type: probe.type,
+            target: expand(probe.target),
+            timeoutSeconds: probe.timeoutSeconds,
+            intervalSeconds: probe.intervalSeconds
+        )
+    }
+
     // MARK: - Install step expansion
 
     /// Expand all placeholders in an ``InstallStep``.

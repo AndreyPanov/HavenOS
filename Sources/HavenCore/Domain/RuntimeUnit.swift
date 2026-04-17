@@ -145,6 +145,11 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
     /// External helper dependencies this unit needs.
     public let dependencies: [Dependency]
 
+    /// Optional readiness probe used during startup sequencing.
+    /// When present, the executor polls until this probe succeeds
+    /// before starting units that depend on this one.
+    public let readinessProbe: ReadinessProbe?
+
     public init(
         id: String,
         bundleID: String,
@@ -161,7 +166,8 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         python: PythonConfig? = nil,
         directories: [String: String] = [:],
         install: InstallBlock? = nil,
-        dependencies: [Dependency] = []
+        dependencies: [Dependency] = [],
+        readinessProbe: ReadinessProbe? = nil
     ) {
         self.id = id
         self.bundleID = bundleID
@@ -179,6 +185,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         self.directories = directories
         self.install = install
         self.dependencies = dependencies
+        self.readinessProbe = readinessProbe
     }
 
     // MARK: - Codable (entrypoint + version support)
@@ -187,7 +194,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         case id, bundleID, runtimeType, installSource
         case launchArguments, healthcheck, dependsOn, port
         case environment, entrypoint, version, artifact, python
-        case directories, install, dependencies
+        case directories, install, dependencies, readinessProbe
     }
 
     public init(from decoder: Decoder) throws {
@@ -232,6 +239,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         directories = try c.decodeIfPresent([String: String].self, forKey: .directories) ?? [:]
         install = try c.decodeIfPresent(InstallBlock.self, forKey: .install)
         dependencies = try c.decodeIfPresent([Dependency].self, forKey: .dependencies) ?? []
+        readinessProbe = try c.decodeIfPresent(ReadinessProbe.self, forKey: .readinessProbe)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -256,6 +264,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         if !dependencies.isEmpty {
             try c.encode(dependencies, forKey: .dependencies)
         }
+        try c.encodeIfPresent(readinessProbe, forKey: .readinessProbe)
     }
 
     /// Returns a copy with a different `installSource`, keeping all other fields.
@@ -267,7 +276,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
             port: port, environment: environment, version: version,
             entrypoint: entrypoint, artifact: artifact, python: python,
             directories: directories, install: install,
-            dependencies: dependencies
+            dependencies: dependencies, readinessProbe: readinessProbe
         )
     }
 
@@ -326,6 +335,7 @@ public struct RuntimeUnit: Identifiable, Codable, Equatable, Sendable {
         }
 
         try healthcheck?.validate()
+        try readinessProbe?.validate()
         try install?.validate()
         for dep in dependencies {
             try dep.validate()

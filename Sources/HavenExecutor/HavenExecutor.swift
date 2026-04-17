@@ -30,6 +30,7 @@ public struct HavenExecutor: Sendable {
     private let provisionDownloader: ProvisionDownloader?
     private let installStepExecutor: InstallStepExecutor?
     private let dependencyValidator: DependencyValidator?
+    private let readinessChecker: ReadinessChecker?
     private nonisolated(unsafe) let fileManager: FileManager
 
     public init(
@@ -42,6 +43,7 @@ public struct HavenExecutor: Sendable {
         provisionDownloader: ProvisionDownloader? = nil,
         installStepExecutor: InstallStepExecutor? = nil,
         dependencyValidator: DependencyValidator? = nil,
+        readinessChecker: ReadinessChecker? = nil,
         fileManager: FileManager = .default
     ) {
         self.paths = paths
@@ -53,6 +55,7 @@ public struct HavenExecutor: Sendable {
         self.provisionDownloader = provisionDownloader
         self.installStepExecutor = installStepExecutor
         self.dependencyValidator = dependencyValidator
+        self.readinessChecker = readinessChecker
         self.fileManager = fileManager
     }
 
@@ -503,7 +506,12 @@ public struct HavenExecutor: Sendable {
             directoryLayout: serviceLayout,
             artifactInfo: collectedArtifactInfo,
             pythonInfo: collectedPythonInfo,
-            onboarding: service.resolvedOnboarding
+            onboarding: service.resolvedOnboarding,
+            readinessProbes: Dictionary(
+                uniqueKeysWithValues: service.units.compactMap { unit in
+                    unit.resolvedReadinessProbe.map { (unit.spec.id, $0) }
+                }
+            )
         )
 
         do {
@@ -574,8 +582,79 @@ public struct HavenExecutor: Sendable {
     // MARK: - Start
 
     /// Start all units for an installed service, in dependency order.
-    public func start(capabilityID: String) throws {
+    ///
+    /// For multi-unit services with readiness probes, waits for each unit
+    /// to become ready before starting units that depend on it.
+    public func start(
+        capabilityID: String,
+        progress: (@Sendable (String) -> Void)? = nil
+    ) async throws {
         log.info("[start] Starting service \(capabilityID)")
+        guard var service = try stateStore.service(for: capabilityID) else {
+            throw ExecutorError.notInstalled(capabilityID: capabilityID)
+        }
+
+        var startedUnits: [String] = []
+
+        for unitID in service.runtimeUnits {
+            let label = LaunchdLabel.label(
+                capabilityID: capabilityID,
+                unitID: unitID
+            )
+            log.info("[start] Starting launchd job: \(label)")
+            do {
+                try launchdController.start(label: label)
+                startedUnits.append(unitID)
+            } catch {
+                // Roll back: stop already-started units in reverse
+                for started in startedUnits.reversed() {
+                    let startedLabel = LaunchdLabel.label(
+                        capabilityID: capabilityID,
+                        unitID: started
+                    )
+                    try? launchdController.stop(label: startedLabel)
+                }
+                throw ExecutorError.startFailed(
+                    capabilityID: capabilityID,
+                    unitID: unitID,
+                    detail: error.localizedDescription
+                )
+            }
+
+            // Wait for readiness before starting next unit
+            if let probe = service.readinessProbes[unitID],
+               let checker = readinessChecker {
+                do {
+                    progress?("Waiting for \(unitID) to be ready…")
+                    try await checker.waitUntilReady(probe: probe, progress: progress)
+                } catch {
+                    // Roll back: stop already-started units in reverse
+                    for started in startedUnits.reversed() {
+                        let startedLabel = LaunchdLabel.label(
+                            capabilityID: capabilityID,
+                            unitID: started
+                        )
+                        try? launchdController.stop(label: startedLabel)
+                    }
+                    throw ExecutorError.startFailed(
+                        capabilityID: capabilityID,
+                        unitID: unitID,
+                        detail: "Readiness probe failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+
+        service.status = .running
+        service.updatedAt = Date()
+        try stateStore.upsert(service)
+        log.info("[start] Service started: \(capabilityID)")
+    }
+
+    /// Synchronous start for single-unit services without readiness probes.
+    /// Convenience wrapper that calls through to the async version.
+    public func startSync(capabilityID: String) throws {
+        log.info("[start] Starting service \(capabilityID) (sync)")
         guard var service = try stateStore.service(for: capabilityID) else {
             throw ExecutorError.notInstalled(capabilityID: capabilityID)
         }

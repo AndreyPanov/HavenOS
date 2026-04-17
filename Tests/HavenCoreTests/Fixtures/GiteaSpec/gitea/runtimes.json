@@ -1,0 +1,89 @@
+[
+    {
+        "id": "haven.unit.gitea-db",
+        "bundleID": "haven.bundle.gitea-postgres",
+        "runtimeType": "native",
+        "port": 5432,
+        "artifact": {
+            "type": "github-release",
+            "repo": "postgres/postgres",
+            "version": "v16.3",
+            "assets": [
+                { "os": "darwin", "arch": "arm64", "file": "postgres-16.3-darwin-arm64.tar.gz" },
+                { "os": "darwin", "arch": "amd64", "file": "postgres-16.3-darwin-amd64.tar.gz" }
+            ],
+            "archive": { "format": "tar.gz" }
+        },
+        "entrypoint": {
+            "command": "bin/postgres",
+            "args": ["-D", "${data_dir}", "-p", "${db_port}"],
+            "env": {
+                "PGDATA": "${data_dir}",
+                "PGPORT": "${db_port}"
+            }
+        },
+        "directories": {
+            "data": "pgdata"
+        },
+        "readinessProbe": {
+            "type": "tcp",
+            "target": "localhost:${db_port}",
+            "timeoutSeconds": 30,
+            "intervalSeconds": 2
+        },
+        "install": {
+            "steps": [
+                { "action": "mkdir", "path": "${data_dir}" }
+            ]
+        },
+        "healthcheck": {
+            "type": "tcp",
+            "target": "localhost:${db_port}",
+            "intervalSeconds": 30,
+            "retries": 3
+        }
+    },
+    {
+        "id": "haven.unit.gitea-app",
+        "bundleID": "haven.bundle.gitea-postgres",
+        "runtimeType": "native",
+        "port": 3000,
+        "dependsOn": ["haven.unit.gitea-db"],
+        "artifact": {
+            "type": "github-release",
+            "repo": "go-gitea/gitea",
+            "version": "v1.22.0",
+            "assets": [
+                { "os": "darwin", "arch": "arm64", "file": "gitea-1.22.0-darwin-arm64" },
+                { "os": "darwin", "arch": "amd64", "file": "gitea-1.22.0-darwin-amd64" }
+            ],
+            "archive": { "format": "tar.gz" }
+        },
+        "entrypoint": {
+            "command": "gitea",
+            "args": ["--config", "${config_dir}/app.ini", "--port", "${http_port}"],
+            "env": {
+                "GITEA_WORK_DIR": "${service_root}",
+                "GITEA_CUSTOM": "${config_dir}"
+            }
+        },
+        "directories": {
+            "config": "config",
+            "data": "data",
+            "repos": "${repo_path}"
+        },
+        "install": {
+            "steps": [
+                { "action": "mkdir", "path": "${config_dir}" },
+                { "action": "mkdir", "path": "${data_dir}" },
+                { "action": "writeFile", "path": "${config_dir}/app.ini", "content": "[database]\nDB_TYPE = postgres\nHOST = localhost:${db_port}\nNAME = gitea\n\n[server]\nHTTP_PORT = ${http_port}\nROOT_URL = http://localhost:${http_port}/\n\n[repository]\nROOT = ${repos_dir}\n", "ifNotExists": true }
+            ]
+        },
+        "healthcheck": {
+            "type": "http",
+            "target": "http://localhost:${http_port}/api/healthz",
+            "intervalSeconds": 15,
+            "retries": 3
+        }
+    }
+]

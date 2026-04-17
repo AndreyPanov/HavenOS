@@ -32,6 +32,9 @@ public struct PlannedRuntimeUnit: Equatable, Sendable {
     /// Expanded install steps (placeholders resolved), if any.
     public let resolvedInstall: InstallBlock?
 
+    /// Expanded readiness probe (placeholders resolved), if any.
+    public let resolvedReadinessProbe: ReadinessProbe?
+
     public init(
         spec: RuntimeUnit,
         resolvedLaunchArguments: [String],
@@ -41,7 +44,8 @@ public struct PlannedRuntimeUnit: Equatable, Sendable {
         dependsOn: [String],
         templateContext: TemplateContext,
         resolvedDirectories: [String: String] = [:],
-        resolvedInstall: InstallBlock? = nil
+        resolvedInstall: InstallBlock? = nil,
+        resolvedReadinessProbe: ReadinessProbe? = nil
     ) {
         self.spec = spec
         self.resolvedLaunchArguments = resolvedLaunchArguments
@@ -52,5 +56,6 @@ public struct PlannedRuntimeUnit: Equatable, Sendable {
         self.templateContext = templateContext
         self.resolvedDirectories = resolvedDirectories
         self.resolvedInstall = resolvedInstall
+        self.resolvedReadinessProbe = resolvedReadinessProbe
     }
 }

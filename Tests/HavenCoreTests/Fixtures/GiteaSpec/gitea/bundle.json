@@ -1,0 +1,66 @@
+{
+    "id": "haven.bundle.gitea-postgres",
+    "name": "Gitea with PostgreSQL",
+    "capability": "haven.capability.gitea",
+    "runtimeUnits": [
+        "haven.unit.gitea-db",
+        "haven.unit.gitea-app"
+    ],
+    "settings": [
+        {
+            "key": "http_port",
+            "label": "HTTP port",
+            "fieldType": "integer",
+            "defaultValue": "3000"
+        },
+        {
+            "key": "db_port",
+            "label": "Database port",
+            "fieldType": "integer",
+            "defaultValue": "5432"
+        },
+        {
+            "key": "repo_path",
+            "label": "Repository storage",
+            "fieldType": "path",
+            "defaultValue": "~/GitRepos",
+            "required": true
+        }
+    ],
+    "sharedDirectories": {
+        "socket": "run/pg"
+    },
+    "sharedEnvironment": {
+        "DATABASE_URL": "postgresql://gitea:gitea@localhost:${db_port}/gitea"
+    },
+    "storage": {
+        "db_data": { "persistent": true, "userVisible": false },
+        "repos": { "persistent": true, "userVisible": true }
+    },
+    "onboarding": {
+        "steps": [
+            {
+                "type": "info",
+                "title": "Your Git server is ready",
+                "body": "Gitea is running with a dedicated PostgreSQL database.",
+                "fields": [
+                    { "label": "Repository storage", "value": "${repo_path}" }
+                ]
+            },
+            {
+                "type": "action",
+                "title": "Create your account",
+                "body": "Open Gitea and register the first user (becomes admin).",
+                "url": "http://localhost:${http_port}"
+            },
+            {
+                "type": "info",
+                "title": "Access from other devices",
+                "body": "Use the server address below to clone and push from other machines.",
+                "fields": [
+                    { "label": "Server", "value": "http://your-mac:${http_port}" }
+                ]
+            }
+        ]
+    }
+}
