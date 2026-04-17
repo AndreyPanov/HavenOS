@@ -355,8 +355,8 @@ final class ServiceManager {
     private func rebuildViewModels() {
         let installedCapIDs = Set(havenState.services.keys)
 
-        // Build installed services from persisted state
-        installedServices = havenState.services.values.map { stored in
+        // Build installed services from persisted state (stable order by capability ID)
+        installedServices = havenState.services.values.sorted(by: { $0.capability < $1.capability }).map { stored in
             let entry = catalog.first { $0.capability.id == stored.capability }
             let meta = entry?.metadata ?? CatalogEntry.defaultMetadata
             let port = stored.portAssignments.first?.port

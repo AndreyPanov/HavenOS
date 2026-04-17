@@ -4,7 +4,12 @@ import HavenCore
 
 struct ServiceDetailView: View {
     @Environment(ServiceManager.self) private var serviceManager
-    let service: InstalledService
+    let serviceID: String
+
+    private var service: InstalledService {
+        serviceManager.installedServices.first { $0.id == serviceID }
+            ?? InstalledService(id: serviceID, name: serviceID, serviceDescription: "", icon: "shippingbox", iconImagePath: nil, status: .stopped, port: nil, dataPath: "", instructions: nil, onboarding: nil)
+    }
 
     var body: some View {
         ScrollView {
@@ -159,7 +164,7 @@ private struct LogLine: View {
 
 #Preview {
     NavigationStack {
-        ServiceDetailView(service: MockData.installedServices[0])
+        ServiceDetailView(serviceID: MockData.installedServices[0].id)
     }
     .environment(ServiceManager())
     .frame(width: 600, height: 700)

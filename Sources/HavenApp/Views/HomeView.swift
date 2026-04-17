@@ -47,7 +47,7 @@ struct HomeView: View {
                         spacing: 16
                     ) {
                         ForEach(filteredServices) { service in
-                            NavigationLink(value: service) {
+                            NavigationLink(value: service.id) {
                                 ServiceCardView(service: service)
                             }
                             .buttonStyle(.plain)
@@ -58,8 +58,8 @@ struct HomeView: View {
             }
             .navigationTitle("Haven")
             .searchable(text: $searchText, prompt: "Search services")
-            .navigationDestination(for: InstalledService.self) { service in
-                ServiceDetailView(service: service)
+            .navigationDestination(for: String.self) { serviceID in
+                ServiceDetailView(serviceID: serviceID)
             }
         }
     }
