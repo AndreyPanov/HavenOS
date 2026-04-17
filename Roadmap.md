@@ -21,7 +21,7 @@ Install → Start → Open
 	•	Spec-driven system (Capability → Bundle → RuntimeUnit)
 	•	Native runtime execution
 	•	Artifact copying (GitHub Release + direct-url, zip/tar.gz/tar.xz)
-	•	launchd lifecycle management
+	•	launchd lifecycle management (load/unload, ThrottleInterval patching)
 	•	Deterministic execution model
 	•	Python runtime support (venv, pip install, pinned versions)
 	•	Install DSL with 8 step actions + rollback (InstallStepExecutor)
@@ -33,12 +33,23 @@ Install → Start → Open
 	•	Onboarding system (info/credentials/action steps with fields + URL)
 	•	Provisions (download sample data at install)
 	•	Secret generation (generateSecret → template injection)
+	•	URL-based icons and screenshots (AsyncImage in GUI)
+	•	Rich service metadata (fullDescription, iconImage, screenshots)
 	•	Navidrome pilot spec validated through full pipeline
 
 ⚠️ Remaining Limitations
 	•	~~No runtime dependency validation~~ ✅ Resolved (DependencyValidator)
 	•	No multi-service composition
 	•	Pilot services not yet tested with live installs (spec-only so far)
+
+✅ Recently Fixed
+	•	launchd restart delay: switched to load/unload (legacy but reliable), auto-patches existing plists with ThrottleInterval=1
+	•	launchd bootstrap error 5: avoided by using legacy load instead of modern bootstrap after unload
+	•	Home tab service reordering: sorted by capability ID
+	•	Service detail view not updating on stop/start: uses live lookup by ID instead of snapshot
+	•	Card button navigation conflict: header navigates via onTapGesture, action buttons independent
+	•	Working directory for .NET apps: install dir as working dir (wwwroot/ access)
+	•	URL-based icons/screenshots: AsyncImage in ServiceIconView and DiscoveryDetailView
 
 ⸻
 
