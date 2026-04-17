@@ -39,19 +39,20 @@ public struct ProcessLaunchctlClient: LaunchctlClient, Sendable {
     }
 
     public func start(label: String) throws -> LaunchctlResult {
-        // Bootstrap re-loads the plist from disk and starts via RunAtLoad.
-        // This avoids launchd's 10-second throttle that applies to kickstart
-        // after a recent process exit.
+        // Use legacy `load` to re-load the plist from disk.
+        // Modern `bootstrap` gives error 5 after bootout on macOS.
+        // `load` re-reads the plist (including ThrottleInterval) and
+        // starts the job via RunAtLoad.
         let plistPath = LaunchdPaths().plistPath(for: label).path
-        return try run(arguments: ["bootstrap", "gui/\(uid)", plistPath])
+        return try run(arguments: ["load", plistPath])
     }
 
     public func stop(label: String) throws -> LaunchctlResult {
-        // Bootout fully unloads the job (stops process + removes from launchd).
-        // The plist remains on disk for re-bootstrap on next start.
-        // This is cleaner than kill SIGTERM which keeps the job loaded
-        // and subject to launchd's throttle on restart.
-        try run(arguments: ["bootout", serviceTarget(label: label)])
+        // Use legacy `unload` to fully unload the job.
+        // This stops the process and removes the job from launchd,
+        // so `load` on next start re-reads the plist fresh (no throttle).
+        let plistPath = LaunchdPaths().plistPath(for: label).path
+        return try run(arguments: ["unload", plistPath])
     }
 
     public func print(label: String) throws -> LaunchctlResult {

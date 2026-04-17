@@ -5,28 +5,33 @@ struct ServiceCardView: View {
     @Environment(ServiceManager.self) private var serviceManager
     @State private var showingInfo = false
     let service: InstalledService
+    var onNavigate: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header: icon + name + status
-            HStack(spacing: 10) {
-                ServiceIconView(systemName: service.icon, imagePath: service.iconImagePath)
+            // Header: icon + name + status (tappable for navigation)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    ServiceIconView(systemName: service.icon, imagePath: service.iconImagePath)
 
-                Text(service.name)
-                    .font(.headline)
-                    .lineLimit(1)
+                    Text(service.name)
+                        .font(.headline)
+                        .lineLimit(1)
 
-                Spacer()
+                    Spacer()
 
-                StatusBadgeView(status: service.status)
+                    StatusBadgeView(status: service.status)
+                }
+
+                // Description
+                Text(service.serviceDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
             }
-
-            // Description
-            Text(service.serviceDescription)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
+            .contentShape(Rectangle())
+            .onTapGesture { onNavigate?() }
 
             Divider()
 
@@ -139,7 +144,7 @@ private struct InfoRow: View {
 }
 
 #Preview {
-    ServiceCardView(service: MockData.installedServices[0])
+    ServiceCardView(service: MockData.installedServices[0], onNavigate: {})
         .environment(ServiceManager())
         .frame(width: 300)
         .padding()

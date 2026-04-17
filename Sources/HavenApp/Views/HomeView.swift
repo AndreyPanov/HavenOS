@@ -47,10 +47,9 @@ struct HomeView: View {
                         spacing: 16
                     ) {
                         ForEach(filteredServices) { service in
-                            NavigationLink(value: service.id) {
-                                ServiceCardView(service: service)
+                            ServiceCardView(service: service) {
+                                path.append(service.id)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }

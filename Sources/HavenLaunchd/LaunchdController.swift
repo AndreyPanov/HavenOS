@@ -169,16 +169,22 @@ public struct LaunchdController: Sendable {
 
     // MARK: - Start
 
-    /// Start a service by bootstrapping its plist into launchd.
+    /// Start a service by loading its plist into launchd.
     ///
-    /// Uses `bootstrap` to load the plist from disk, which also starts the
-    /// job via `RunAtLoad`. If the job is already loaded (e.g. first start
-    /// after install), bootstrap returns "already loaded" — this is not an error.
+    /// Uses `launchctl load` to load the plist from disk, which starts the
+    /// job via `RunAtLoad`. Re-reads the plist fresh so ThrottleInterval
+    /// changes take effect without reinstall.
     ///
     /// - Parameter label: The launchd job label to start.
     /// - Throws: `LaunchdControllerError.startFailed` if the command fails.
     public func start(label: String) throws {
         log.info("[start] Starting job: \(label)")
+
+        // Update the plist on disk to ensure ThrottleInterval=1 is present.
+        // This fixes the 10-second restart delay for services installed
+        // before ThrottleInterval was added to the plist template.
+        ensureThrottleInterval(label: label)
+
         let result: LaunchctlResult
         do {
             result = try client.start(label: label)
@@ -189,56 +195,22 @@ public struct LaunchdController: Sendable {
             )
         }
 
-        if !result.succeeded {
-            let output = combinedOutput(result)
-            log.info("[start] Bootstrap failed (\(output)), clearing stale state and retrying")
-            // Bootstrap can fail with error 5 (stale launchd state) or
-            // "already loaded". Clear stale state with bootout, then retry.
-            let _ = try? client.bootout(label: label)
-            let retryResult = try client.start(label: label)
-            if !retryResult.succeeded {
-                let retryOutput = combinedOutput(retryResult)
-                log.error("[start] Retry bootstrap also failed: \(retryOutput)")
-                throw LaunchdControllerError.startFailed(
-                    label: label,
-                    detail: "bootstrap: \(output); retry: \(retryOutput)"
-                )
-            }
+        guard result.succeeded else {
+            log.error("[start] Start failed: \(combinedOutput(result))")
+            throw LaunchdControllerError.startFailed(
+                label: label,
+                detail: combinedOutput(result)
+            )
         }
         log.info("[start] Job started: \(label)")
     }
 
-    /// Kickstart a loaded job (fallback when bootstrap reports already loaded).
-    private func kickstart(label: String) throws -> LaunchctlResult {
-        let serviceTarget = "gui/\(getuid())/\(label)"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["kickstart", "-k", serviceTarget]
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
-        return LaunchctlResult(
-            exitCode: process.terminationStatus,
-            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-            stderr: String(data: stderrData, encoding: .utf8) ?? ""
-        )
-    }
-
     // MARK: - Stop
 
-    /// Stop a running job.
+    /// Stop a running job by unloading it from launchd.
     ///
-    /// Sends SIGTERM to the job's process. The job remains loaded in launchd
-    /// and may be restarted depending on its keep-alive policy.
+    /// Uses `launchctl unload` to fully remove the job from launchd.
+    /// The plist remains on disk for `load` on next start.
     ///
     /// - Parameter label: The launchd job label to stop.
     /// - Throws: `LaunchdControllerError.stopFailed` if the command fails.
@@ -257,7 +229,8 @@ public struct LaunchdController: Sendable {
         if !result.succeeded {
             let output = combinedOutput(result)
             // These mean the job is already stopped/unloaded — not an error.
-            if output.contains("No process to signal") || output.contains("No such process")
+            if output.contains("Could not find specified service")
+                || output.contains("No such process")
                 || output.contains("Could not find service") {
                 log.info("[stop] Job already stopped: \(label)")
             } else {
@@ -366,6 +339,26 @@ public struct LaunchdController: Sendable {
     }
 
     // MARK: - Private helpers
+
+    /// Patch the plist on disk to include ThrottleInterval=1 if missing.
+    /// This migrates services installed before ThrottleInterval was added.
+    private func ensureThrottleInterval(label: String) {
+        let plistURL = paths.plistPath(for: label)
+        guard let data = try? Data(contentsOf: plistURL),
+              var dict = try? PropertyListSerialization.propertyList(
+                  from: data, format: nil) as? [String: Any]
+        else { return }
+
+        if dict["ThrottleInterval"] as? Int == 1 { return }
+
+        dict["ThrottleInterval"] = 1
+        guard let updatedData = try? PropertyListSerialization.data(
+            fromPropertyList: dict, format: .xml, options: 0)
+        else { return }
+
+        try? updatedData.write(to: plistURL, options: .atomic)
+        log.info("[start] Patched plist with ThrottleInterval=1: \(label)")
+    }
 
     /// Write plist data to a file atomically, creating parent directories.
     private func writePlistAtomically(data: Data, to url: URL) throws {
