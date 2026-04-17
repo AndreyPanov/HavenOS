@@ -191,23 +191,17 @@ public struct LaunchdController: Sendable {
 
         if !result.succeeded {
             let output = combinedOutput(result)
-            // "already loaded" means the job is in launchd but stopped —
-            // use kickstart to start it without re-bootstrap.
-            if output.contains("already loaded") || output.contains("service already loaded") {
-                log.info("[start] Job already loaded, using kickstart")
-                let kickResult = try kickstart(label: label)
-                guard kickResult.succeeded else {
-                    log.error("[start] Kickstart failed: \(combinedOutput(kickResult))")
-                    throw LaunchdControllerError.startFailed(
-                        label: label,
-                        detail: combinedOutput(kickResult)
-                    )
-                }
-            } else {
-                log.error("[start] Start failed: \(output)")
+            log.info("[start] Bootstrap failed (\(output)), clearing stale state and retrying")
+            // Bootstrap can fail with error 5 (stale launchd state) or
+            // "already loaded". Clear stale state with bootout, then retry.
+            let _ = try? client.bootout(label: label)
+            let retryResult = try client.start(label: label)
+            if !retryResult.succeeded {
+                let retryOutput = combinedOutput(retryResult)
+                log.error("[start] Retry bootstrap also failed: \(retryOutput)")
                 throw LaunchdControllerError.startFailed(
                     label: label,
-                    detail: output
+                    detail: "bootstrap: \(output); retry: \(retryOutput)"
                 )
             }
         }
@@ -219,7 +213,7 @@ public struct LaunchdController: Sendable {
         let serviceTarget = "gui/\(getuid())/\(label)"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["kickstart", serviceTarget]
+        process.arguments = ["kickstart", "-k", serviceTarget]
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
