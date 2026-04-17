@@ -4,5 +4,8 @@
     "version": "0.8.9.1",
     "description": "Your personal library for books, comics, and manga.",
     "icon": "books.vertical",
-    "notes": ["Books", "Comics", "Manga", "Library"]
+    "iconImage": "icon.png",
+    "notes": ["Books", "Comics", "Manga", "Library"],
+    "fullDescription": "Kavita is a fast, feature-rich, cross-platform reading server. It supports a wide range of file formats for books, comics, and manga — all accessible from a beautiful web interface.\n\nKey features:\n• Supports EPUB, PDF, CBZ, CBR, CB7, ZIP, RAR, and many more formats\n• Manga and comic reader with webtoon and continuous scroll modes\n• Book reader with customizable fonts, themes, and layout\n• Rich metadata support — automatic series grouping and cover detection\n• User management with per-library access controls\n• Reading progress synced across all your devices\n• OPDS support for third-party reading apps\n• Smart filters and collections to organize your library\n• Server-side search across your entire collection",
+    "screenshots": ["screenshot-library.png", "screenshot-reader.png", "screenshot-series.png"]
 }
