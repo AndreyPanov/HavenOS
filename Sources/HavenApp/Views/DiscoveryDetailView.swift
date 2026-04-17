@@ -29,8 +29,8 @@ struct DiscoveryDetailView: View {
 
                     Spacer()
 
-                    if plugin.isInstalled {
-                        if let service = installedService, service.status == .running,
+                    if let service = installedService {
+                        if service.status == .running,
                            let url = service.localURL, let openURL = URL(string: url) {
                             Button("Open in Browser", systemImage: "globe") {
                                 NSWorkspace.shared.open(openURL)
@@ -38,7 +38,7 @@ struct DiscoveryDetailView: View {
                             .buttonStyle(.glassProminent)
                             .controlSize(.large)
                         }
-                    } else {
+                    } else if serviceManager.activeCapabilityID != plugin.id {
                         Button("Install") {
                             Task { await serviceManager.installService(capabilityID: plugin.id) }
                         }
