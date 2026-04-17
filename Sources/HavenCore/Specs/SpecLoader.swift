@@ -402,7 +402,9 @@ public enum SpecLoader {
         // Resolve iconImage
         var resolvedIcon: String? = nil
         if let iconFile = capability.iconImage {
-            if iconFile.hasPrefix("/") {
+            if iconFile.hasPrefix("http://") || iconFile.hasPrefix("https://") {
+                resolvedIcon = iconFile
+            } else if iconFile.hasPrefix("/") {
                 resolvedIcon = iconFile
             } else {
                 let path = serviceFolder.appendingPathComponent(iconFile).path
@@ -420,6 +422,7 @@ public enum SpecLoader {
 
         // Resolve screenshots
         let resolvedScreenshots = capability.screenshots.map { filename -> String in
+            if filename.hasPrefix("http://") || filename.hasPrefix("https://") { return filename }
             if filename.hasPrefix("/") { return filename }
             let path = serviceFolder.appendingPathComponent(filename).path
             if !fm.fileExists(atPath: path) {

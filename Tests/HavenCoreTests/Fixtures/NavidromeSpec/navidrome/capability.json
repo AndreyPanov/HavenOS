@@ -4,8 +4,11 @@
     "version": "0.61.2",
     "description": "Personal music server and streamer compatible with Subsonic/Airsonic.",
     "icon": "music.note.house",
-    "iconImage": "icon.png",
+    "iconImage": "https://raw.githubusercontent.com/navidrome/navidrome/master/resources/logo-192x192.png",
     "notes": ["Music", "Streaming", "Subsonic"],
     "fullDescription": "Navidrome is a self-hosted, open-source music server and streamer. It gives you freedom to listen to your music collection from any browser or mobile device.\n\nFully compatible with the Subsonic API, Navidrome works with popular apps like DSub, Symfonium, Amperfy, play:Sub, and many more.\n\nKey features:\n• Stream your entire music library from anywhere\n• Handles very large collections with ease\n• Multi-user support — each person gets their own playlists and favorites\n• Scrobble to Last.fm, ListenBrainz, and Maloja\n• Smart playlists and album/artist browsing\n• Transcoding on the fly — adapts to your connection speed\n• Low resource usage — runs great on a Mac mini",
-    "screenshots": ["screenshot-albums.png", "screenshot-player.png", "screenshot-playlists.png"]
+    "screenshots": [
+        "https://raw.githubusercontent.com/navidrome/navidrome/master/resources/screenshot-1.png",
+        "https://raw.githubusercontent.com/navidrome/navidrome/master/resources/screenshot-2.png"
+    ]
 }

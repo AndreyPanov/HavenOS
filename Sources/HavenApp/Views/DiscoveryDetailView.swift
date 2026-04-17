@@ -38,13 +38,7 @@ struct DiscoveryDetailView: View {
                     ScrollView(.horizontal) {
                         HStack(spacing: 12) {
                             ForEach(plugin.screenshotPaths, id: \.self) { path in
-                                if let nsImage = NSImage(contentsOfFile: path) {
-                                    Image(nsImage: nsImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(height: 180)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                }
+                                ScreenshotImage(path: path)
                             }
                         }
                     }
@@ -150,6 +144,38 @@ struct DiscoveryDetailView: View {
         .navigationTitle(plugin.name)
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+private struct ScreenshotImage: View {
+    let path: String
+
+    var body: some View {
+        if let url = URL(string: path), url.scheme == "https" || url.scheme == "http" {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                case .failure:
+                    Color.clear.frame(width: 0, height: 0)
+                default:
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.quinary)
+                        .frame(width: 280, height: 180)
+                        .overlay { ProgressView() }
+                }
+            }
+        } else if let nsImage = NSImage(contentsOfFile: path) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 180)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
     }
 }
 

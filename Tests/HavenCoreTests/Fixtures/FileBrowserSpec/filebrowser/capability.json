@@ -4,8 +4,10 @@
     "version": "2.63.2",
     "description": "Access and manage your files from any browser on your network.",
     "icon": "folder",
-    "iconImage": "icon.png",
+    "iconImage": "https://raw.githubusercontent.com/filebrowser/filebrowser/master/frontend/public/img/icons/icon-512x512.png",
     "notes": ["Files", "Storage", "Web UI"],
     "fullDescription": "File Browser provides a clean web interface for managing files on your Mac. Browse, upload, download, and organize files from any device on your network — no Finder sharing or SMB setup required.\n\nKey features:\n• Browse and manage files from any web browser\n• Upload and download files and folders\n• Create, rename, and delete files with a simple UI\n• Share files with direct download links\n• Built-in text editor and media preview\n• Lightweight single binary — minimal resource usage\n• No authentication required on your local network",
-    "screenshots": ["screenshot-files.png", "screenshot-editor.png"]
+    "screenshots": [
+        "https://raw.githubusercontent.com/filebrowser/filebrowser/master/frontend/public/img/icons/icon-512x512.png"
+    ]
 }
