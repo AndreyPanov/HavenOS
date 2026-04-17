@@ -1,0 +1,57 @@
+[
+    {
+        "id": "haven.unit.calibre-web",
+        "bundleID": "haven.bundle.calibre-web-basic",
+        "runtimeType": "python",
+        "port": 8083,
+        "python": {
+            "package": "calibreweb",
+            "version": "0.6.26",
+            "entrypoint": {
+                "module": "calibreweb",
+                "args": ["-p", "${config_dir}/app.db"]
+            }
+        },
+        "entrypoint": {
+            "args": ["-p", "${config_dir}/app.db"],
+            "env": {
+                "CALIBRE_DBPATH": "${config_dir}"
+            }
+        },
+        "directories": {
+            "config": "config",
+            "data": "data",
+            "logs": "logs",
+            "content": "${library_path}"
+        },
+        "install": {
+            "steps": [
+                { "action": "mkdir", "path": "${config_dir}" },
+                { "action": "mkdir", "path": "${data_dir}" },
+                { "action": "mkdir", "path": "${logs_dir}" }
+            ]
+        },
+        "dependencies": [
+            {
+                "id": "convert",
+                "kind": "helperBinary",
+                "required": false,
+                "validateCommand": "ebook-convert --version",
+                "description": "Calibre's ebook-convert enables on-the-fly format conversion (e.g. EPUB → MOBI for Kindle)."
+            },
+            {
+                "id": "magick",
+                "kind": "helperBinary",
+                "required": false,
+                "validateCommand": "magick --version",
+                "description": "ImageMagick enables cover image processing and thumbnail generation."
+            }
+        ],
+        "healthcheck": {
+            "type": "http",
+            "target": "http://localhost:${port}/",
+            "intervalSeconds": 15,
+            "retries": 5
+        }
+    }
+]

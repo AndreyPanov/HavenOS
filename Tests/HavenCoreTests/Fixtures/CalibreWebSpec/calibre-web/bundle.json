@@ -1,0 +1,51 @@
+{
+    "id": "haven.bundle.calibre-web-basic",
+    "name": "Calibre-Web (Basic)",
+    "capability": "haven.capability.calibre-web",
+    "runtimeUnits": ["haven.unit.calibre-web"],
+    "settings": [
+        {
+            "key": "library_path",
+            "label": "Calibre Library Folder",
+            "fieldType": "path",
+            "defaultValue": "~/CalibreLibrary",
+            "required": true
+        },
+        {
+            "key": "port",
+            "label": "Port",
+            "fieldType": "integer",
+            "defaultValue": "8083",
+            "required": true
+        }
+    ],
+    "storage": {
+        "config": { "persistent": true, "userVisible": false },
+        "data": { "persistent": true, "userVisible": false },
+        "content": { "persistent": true, "userVisible": true }
+    },
+    "onboarding": {
+        "steps": [
+            {
+                "type": "info",
+                "title": "Your ebook library is ready",
+                "body": "Calibre-Web is installed and ready to serve your ebook collection. Point it to your Calibre library folder to get started."
+            },
+            {
+                "type": "credentials",
+                "title": "Default login",
+                "body": "Log in with the default admin account. Change the password immediately after first login.",
+                "fields": [
+                    { "label": "Username", "value": "admin" },
+                    { "label": "Password", "value": "admin123" }
+                ]
+            },
+            {
+                "type": "action",
+                "title": "Set up your library",
+                "body": "Open Calibre-Web, log in, then go to Admin → Basic Configuration → Calibre Library Location and set it to:\n${content_dir}",
+                "url": "http://localhost:${port}"
+            }
+        ]
+    }
+}

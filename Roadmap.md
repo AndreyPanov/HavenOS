@@ -203,9 +203,24 @@ Templates:
 
 ⸻
 
-4. Calibre-Web (advanced)
-	•	🔶 Python runtime specs exist (from earlier work)
-	•	⬜ Needs schema v2 update (install steps, dependencies, storage)
+4. Calibre-Web (advanced) ✅ SPEC COMPLETE
+	•	Full 3-file spec (capability, bundle, runtimes) — first Python runtime pilot
+	•	Python runtime: calibreweb==0.6.26, entrypoint module, venv-managed
+	•	4 directory roles (config, data, logs, content maps to ${library_path})
+	•	3 install steps (mkdir × 3), 2 optional dependencies (ebook-convert, ImageMagick)
+	•	Storage policies: config + data persistent, content user-visible
+	•	3-step onboarding: info → credentials → action (open + set library path)
+	•	8 end-to-end tests (SpecLoader → Planner pipeline)
+	•	⬜ Live install test pending
+
+	Missing Haven features exposed:
+	•	No port flag injection for Python apps (calibreweb doesn't accept --port;
+	  port is set in app.db after first launch — requires post-start configuration)
+	•	No conditional provisions in schema v2 (old spec had use_sample_library gate,
+	  but Provision.condition is not validated in current Planner)
+	•	No post-start hooks (setting library path requires opening the admin UI manually)
+	•	Dependency discovery doesn't handle ebook-convert (lives in Calibre.app bundle,
+	  not in standard /opt/homebrew/bin paths)
 
 ⸻
 
@@ -297,7 +312,8 @@ A non-technical user installs a service and uses it in < 2 minutes.
 🧭 Immediate Next Steps (Concrete)
 	1.	Live install test: File Browser via GUI (simplest end-to-end)
 	2.	Complete Navidrome live install (verify HTTP reachability after fixes)
-	3.	Update Calibre-Web spec with schema v2 features (install steps, dependencies, storage)
+	3.	Live install test: Calibre-Web (first Python runtime end-to-end)
+	4.	Address missing features: port injection, post-start hooks, Calibre.app dep discovery
 
 ⸻
 
