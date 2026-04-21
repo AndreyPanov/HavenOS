@@ -40,4 +40,7 @@ extension CapabilityAction {
     public static let remove = CapabilityAction(
         id: "remove", label: "Stop & Remove", systemImage: "trash", role: .destructive
     )
+    public static let rescan = CapabilityAction(
+        id: "rescan", label: "Rescan Library", systemImage: "arrow.triangle.2.circlepath", role: .secondary
+    )
 }

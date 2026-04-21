@@ -8,7 +8,7 @@ import HavenFacade
 /// "Open in Kavita" is a secondary action, not the primary experience.
 struct BooksHomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
-    let facade: KavitaBooksFacade
+    let facade: any BooksFacade
     @State private var showingConnectSheet = false
 
     var body: some View {
@@ -156,7 +156,7 @@ struct BooksHomeView: View {
                             value: facade.seriesCount.map { "\($0)" } ?? "—"
                         )
                     }
-                    if let username = facade.savedUsername {
+                    if let username = facade.connectedUsername {
                         Divider().padding(.vertical, 6)
                         DetailRow(label: "Connected as", value: username)
                     }
@@ -166,7 +166,7 @@ struct BooksHomeView: View {
 
             // Connection management
             HStack {
-                if let username = facade.savedUsername {
+                if let username = facade.connectedUsername {
                     Label("Connected as \(username)", systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.green)

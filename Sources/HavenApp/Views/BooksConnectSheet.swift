@@ -4,7 +4,7 @@ import HavenFacade
 /// Credential entry sheet for connecting Haven to Kavita.
 struct BooksConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let facade: KavitaBooksFacade
+    let facade: any BooksFacade
 
     @State private var username = ""
     @State private var password = ""

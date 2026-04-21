@@ -25,17 +25,13 @@ final class KavitaBooksFacade: BooksFacade {
 
     private(set) var library: BooksLibrary?
 
-    // MARK: - Connection State
+    // MARK: - BooksFacade (connection)
 
-    enum ConnectionState: Equatable {
-        case disconnected
-        case connecting
-        case connected
-        case failed(String)
-    }
-
-    private(set) var connectionState: ConnectionState = .disconnected
+    private(set) var connectionState: LibraryConnectionState = .disconnected
     private(set) var seriesCount: Int?
+    var connectedUsername: String? {
+        UserDefaults.standard.string(forKey: usernameKey)
+    }
 
     // MARK: - Internal
 
@@ -63,7 +59,7 @@ final class KavitaBooksFacade: BooksFacade {
                 actions.append(.rescan)
             }
             if advancedURL != nil {
-                actions.append(.openInKavita)
+                actions.append(.openInBrowser)
             }
             actions.append(contentsOf: [.stop, .restart, .remove])
             return actions
@@ -249,18 +245,4 @@ final class KavitaBooksFacade: BooksFacade {
         UserDefaults.standard.removeObject(forKey: usernameKey)
     }
 
-    var savedUsername: String? {
-        UserDefaults.standard.string(forKey: usernameKey)
-    }
-}
-
-// MARK: - Custom Actions
-
-extension CapabilityAction {
-    static let rescan = CapabilityAction(
-        id: "rescan", label: "Rescan Library", systemImage: "arrow.triangle.2.circlepath", role: .secondary
-    )
-    static let openInKavita = CapabilityAction(
-        id: "openInBrowser", label: "Open in Kavita", systemImage: "globe", role: .secondary
-    )
 }

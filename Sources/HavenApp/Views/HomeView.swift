@@ -59,7 +59,7 @@ struct HomeView: View {
             .navigationTitle("Haven")
             .searchable(text: $searchText, prompt: "Search services")
             .navigationDestination(for: String.self) { serviceID in
-                if let facade = serviceManager.facade(for: serviceID) as? KavitaBooksFacade {
+                if let facade = serviceManager.facade(for: serviceID) as? any BooksFacade {
                     BooksHomeView(facade: facade)
                 } else {
                     ServiceDetailView(serviceID: serviceID)

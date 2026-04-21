@@ -337,63 +337,73 @@ final class ServiceManager {
         let fm = FileManager.default
         let path = catalogURL.path
 
-        guard fm.fileExists(atPath: path) else {
+        // Start with built-in specs (always available)
+        let builtIn = BuiltInCatalog.makeRegistry()
+        var caps = builtIn.capabilitiesByID
+        var bundles = builtIn.bundlesByID
+        var units = builtIn.runtimeUnitsByID
+        var diskWarnings: [SpecLoadIssue] = []
+
+        // Merge disk-loaded specs on top (disk specs can add more services)
+        if fm.fileExists(atPath: path) {
+            log.info("Loading catalog via SpecLoader from: \(path)")
+            let result = SpecLoader.load(from: catalogURL)
+
+            if let loadedRegistry = result.registry {
+                caps.merge(loadedRegistry.capabilitiesByID) { _, disk in disk }
+                bundles.merge(loadedRegistry.bundlesByID) { _, disk in disk }
+                units.merge(loadedRegistry.runtimeUnitsByID) { _, disk in disk }
+            }
+            diskWarnings = result.issues.filter { !$0.isError }
+            let diskErrors = result.issues.filter { $0.isError }
+            for err in diskErrors {
+                log.error("  \(err.description)")
+            }
+        } else if path != NSString(string: HavenSettingsModel.defaultCatalogFolder).expandingTildeInPath {
+            // Only warn if user explicitly configured a non-default folder that's missing
             log.warning("Catalog folder not found: \(path)")
-            catalogState = .folderNotFound(path: path)
-            catalog = []
-            registry = nil
-            return
         }
 
-        log.info("Loading catalog via SpecLoader from: \(path)")
-        let result = SpecLoader.load(from: catalogURL)
+        let merged = SpecRegistry(
+            capabilitiesByID: caps,
+            bundlesByID: bundles,
+            runtimeUnitsByID: units
+        )
+        self.registry = merged
 
-        if let loadedRegistry = result.registry {
-            self.registry = loadedRegistry
-
-            // Build catalog entries from the registry for UI display
-            let bundlesByCap = Dictionary(
-                grouping: loadedRegistry.bundlesByID.values, by: \.capability
-            )
-            catalog = loadedRegistry.capabilitiesByID.values.compactMap { cap in
-                guard let bundle = bundlesByCap[cap.id]?.first else {
-                    log.warning("No bundle for capability \(cap.id), skipping")
-                    return nil
-                }
-                let meta = CatalogMetadata(
-                    icon: cap.icon ?? "shippingbox",
-                    iconImagePath: cap.iconImage,
-                    notes: cap.notes,
-                    fullDescription: cap.fullDescription ?? cap.description ?? ""
-                )
-                return CatalogEntry(capability: cap, bundle: bundle, metadata: meta)
+        // Build catalog entries from the merged registry for UI display
+        let bundlesByCap = Dictionary(
+            grouping: merged.bundlesByID.values, by: \.capability
+        )
+        catalog = merged.capabilitiesByID.values.compactMap { cap in
+            guard let bundle = bundlesByCap[cap.id]?.first else {
+                log.warning("No bundle for capability \(cap.id), skipping")
+                return nil
             }
-
-            let counts = CatalogCounts(
-                capabilities: loadedRegistry.capabilitiesByID.count,
-                bundles: loadedRegistry.bundlesByID.count,
-                runtimeUnits: loadedRegistry.runtimeUnitsByID.count
+            let meta = CatalogMetadata(
+                icon: cap.icon ?? "shippingbox",
+                iconImagePath: cap.iconImage,
+                notes: cap.notes,
+                fullDescription: cap.fullDescription ?? cap.description ?? ""
             )
+            return CatalogEntry(capability: cap, bundle: bundle, metadata: meta)
+        }
 
-            let warnings = result.issues.filter { !$0.isError }
-            if warnings.isEmpty {
-                catalogState = .loaded(counts: counts)
-            } else {
-                for warning in warnings {
-                    log.warning("  \(warning.description)")
-                }
-                catalogState = .loadedWithWarnings(counts: counts, warnings: warnings)
-            }
-            log.info("Catalog loaded: \(counts.capabilities) capabilities, \(counts.bundles) bundles, \(counts.runtimeUnits) runtime units")
+        let counts = CatalogCounts(
+            capabilities: merged.capabilitiesByID.count,
+            bundles: merged.bundlesByID.count,
+            runtimeUnits: merged.runtimeUnitsByID.count
+        )
+
+        if diskWarnings.isEmpty {
+            catalogState = .loaded(counts: counts)
         } else {
-            log.error("Catalog loading failed with \(result.issues.count) issues")
-            for issue in result.issues {
-                log.error("  \(issue.description)")
+            for warning in diskWarnings {
+                log.warning("  \(warning.description)")
             }
-            catalogState = .issues(result.issues)
-            catalog = []
-            registry = nil
+            catalogState = .loadedWithWarnings(counts: counts, warnings: diskWarnings)
         }
+        log.info("Catalog loaded: \(counts.capabilities) capabilities, \(counts.bundles) bundles, \(counts.runtimeUnits) runtime units")
     }
 
     // MARK: - State Loading
