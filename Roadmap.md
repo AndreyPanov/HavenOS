@@ -320,6 +320,21 @@ A non-technical user installs a service and uses it in < 2 minutes.
 
 ⸻
 
+🔄 Future: Service Version Update Mechanism
+
+Built-in service specs currently hardcode artifact versions (e.g. Kavita v0.8.9.1).
+This must not stay hardcoded. A future phase should implement:
+
+	•	Version discovery: query upstream (GitHub Releases API) for the latest stable version
+	•	Update check: compare installed version against latest available
+	•	Update flow: download new artifact, re-run install steps, restart service
+	•	Data safety: preserve config/data directories across updates (storage policies already support this)
+	•	UI: surface available updates in the Home and Detail views
+
+This unblocks Haven from being a one-shot installer and makes it a proper service manager.
+
+⸻
+
 🧭 Immediate Next Steps (Concrete)
 	1.	Live install test: File Browser via GUI (simplest end-to-end)
 	2.	Complete Navidrome live install (verify HTTP reachability after fixes)
