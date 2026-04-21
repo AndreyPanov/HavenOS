@@ -11,7 +11,7 @@ Haven abstracts:
 
 Into:
 
-Install → Start → Open
+Add → Start → Use (inside Haven)
 
 ⸻
 
@@ -349,7 +349,7 @@ This unblocks Haven from being a one-shot installer and makes it a proper servic
 	5.	Address missing features: port injection, post-start hooks, Calibre.app dep discovery
 
 ⸻
-UPDATED 21.04.26
+UPDATED 21.04.26 (UI redesign, navigation overhaul)
 
 🧭 HavenOS — Extended Roadmap (Facade + Native Capabilities)
 
@@ -429,6 +429,25 @@ All deliverables implemented:
 	  - Mock backend runs with alternative adapter (API key auth)
 	  - Zero protocol-level UI changes needed — only backend-specific sheets differ
 	  - Migration path: swap AdapterRegistry registration, same capability ID
+
+⸻
+
+🎨 UI Redesign — App Navigation ✅ COMPLETE
+
+All deliverables implemented:
+	•	Sidebar restructured: Home + dynamic capability tabs + Settings
+	  - Discovery removed as separate tab; Home now serves as capability catalog
+	  - Installed capabilities with native UI get their own sidebar tab (e.g. "Books")
+	  - Tabs animate in on install, auto-navigate to the new capability
+	•	Home tab: overview of all capabilities (added and available)
+	  - Live status indicators: green "Online", gray "Offline", red "Error"
+	  - "Add" button for uninstalled capabilities (renamed from "Install")
+	  - Cards link to detail view for capability info before adding
+	•	Capability tabs: dedicated management screens
+	  - Books tab: "Books Library" title, "powered by Kavita" subtitle
+	  - Setup, connect, manage — all inside Haven, not in browser
+	•	Naming: "Install" → "Add" across all UI surfaces
+	•	DiscoveryCardView renamed to CapabilityCardView
 
 ⸻
 

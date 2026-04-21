@@ -71,12 +71,6 @@ struct ContentView: View {
                 Text(error)
             }
         }
-        .sheet(item: Binding(
-            get: { serviceManager.pendingInstructions },
-            set: { serviceManager.pendingInstructions = $0 }
-        )) { info in
-            PostInstallSheet(info: info)
-        }
         .onChange(of: serviceManager.installedServices.map(\.id)) { old, new in
             // Auto-navigate to newly installed capability tab
             let added = Set(new).subtracting(old)

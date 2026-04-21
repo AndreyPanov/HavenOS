@@ -63,9 +63,6 @@ final class ServiceManager {
     /// Description of the last error, cleared on next action.
     var lastError: String?
 
-    /// Set after a successful install to trigger the post-install instructions sheet.
-    var pendingInstructions: PendingInstructions?
-
     /// Current catalog loading state for the UI.
     private(set) var catalogState: CatalogState = .notLoaded
 
@@ -215,22 +212,6 @@ final class ServiceManager {
         actionStatus = nil
 
         // Show post-install guidance if the bundle provides onboarding or instructions.
-        if lastError == nil,
-           let entry = catalog.first(where: { $0.capability.id == capabilityID })
-        {
-            let storedOnboarding = (try? stateStore.load().services[capabilityID])?.onboarding
-            let instructions = entry.bundle.instructions ?? ""
-            let hasOnboarding = storedOnboarding?.steps.isEmpty == false
-            let hasInstructions = !instructions.isEmpty
-
-            if hasOnboarding || hasInstructions {
-                pendingInstructions = PendingInstructions(
-                    serviceName: entry.capability.name,
-                    instructions: instructions,
-                    onboarding: storedOnboarding
-                )
-            }
-        }
     }
 
     /// Uninstall a service by capability ID.
@@ -530,18 +511,3 @@ extension CatalogEntry {
     )
 }
 
-// MARK: - Post-Install Instructions
-
-/// Transient state that triggers the post-install instructions sheet.
-struct PendingInstructions: Identifiable {
-    let id = UUID()
-    let serviceName: String
-    let instructions: String
-    let onboarding: Onboarding?
-
-    init(serviceName: String, instructions: String, onboarding: Onboarding? = nil) {
-        self.serviceName = serviceName
-        self.instructions = instructions
-        self.onboarding = onboarding
-    }
-}
