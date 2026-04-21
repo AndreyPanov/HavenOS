@@ -105,6 +105,11 @@ final class ServiceManager {
         adapterRegistry.hasCustomAdapter(for: capabilityID)
     }
 
+    /// Access persisted service state (settings, ports, layout) for facades.
+    func storedState(for capabilityID: String) -> StoredServiceState? {
+        havenState.services[capabilityID]
+    }
+
     // MARK: - Init
 
     init(basePath: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".haven")) {
@@ -121,6 +126,12 @@ final class ServiceManager {
             dependencyValidator: DependencyValidator(),
             readinessChecker: ReadinessChecker()
         )
+
+        // Register capability-specific adapters
+        adapterRegistry.register(capabilityID: "haven.capability.kavita") { capID, sm in
+            KavitaBooksFacade(capabilityID: capID, serviceManager: sm)
+        }
+
         log.info("Initialized with base path: \(basePath.path)")
     }
 

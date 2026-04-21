@@ -1,4 +1,5 @@
 import SwiftUI
+import HavenFacade
 
 struct HomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
@@ -58,7 +59,11 @@ struct HomeView: View {
             .navigationTitle("Haven")
             .searchable(text: $searchText, prompt: "Search services")
             .navigationDestination(for: String.self) { serviceID in
-                ServiceDetailView(serviceID: serviceID)
+                if let facade = serviceManager.facade(for: serviceID) as? KavitaBooksFacade {
+                    BooksHomeView(facade: facade)
+                } else {
+                    ServiceDetailView(serviceID: serviceID)
+                }
             }
         }
     }
