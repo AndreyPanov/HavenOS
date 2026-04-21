@@ -65,8 +65,6 @@ struct BooksHomeView: View {
         .sheet(isPresented: $showingConnectSheet) {
             if let kavita = facade as? KavitaBooksFacade {
                 BooksConnectSheet(facade: kavita)
-            } else if let mock = facade as? MockBooksFacade {
-                MockBooksSetupSheet(facade: mock)
             }
         }
     }
@@ -186,19 +184,6 @@ struct BooksHomeView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
-            } else if let mock = facade as? MockBooksFacade, mock.isConnected {
-                HStack {
-                    Label("Connected via API key", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                    Spacer()
-                    Button("Disconnect", systemImage: "link.badge.plus") {
-                        mock.disconnect()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
             }
 
             // Setup guide (from onboarding)
@@ -233,8 +218,6 @@ struct BooksHomeView: View {
                     Button("Dismiss") {
                         if let kavita = facade as? KavitaBooksFacade {
                             kavita.disconnect()
-                        } else if let mock = facade as? MockBooksFacade {
-                            mock.disconnect()
                         }
                     }
                     .buttonStyle(.glass)

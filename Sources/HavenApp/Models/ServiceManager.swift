@@ -131,10 +131,6 @@ final class ServiceManager {
         adapterRegistry.register(capabilityID: "haven.capability.kavita") { capID, sm in
             KavitaBooksFacade(capabilityID: capID, serviceManager: sm)
         }
-        // Swap the line above to test backend replaceability:
-        // adapterRegistry.register(capabilityID: "haven.capability.kavita") { capID, sm in
-        //     MockBooksFacade(capabilityID: capID, serviceManager: sm)
-        // }
 
         log.info("Initialized with base path: \(basePath.path)")
     }
