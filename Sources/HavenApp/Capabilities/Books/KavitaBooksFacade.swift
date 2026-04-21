@@ -111,6 +111,27 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Kavita Auth
 
+    /// Create the initial admin account on a fresh Kavita install, then connect.
+    func createAccount(username: String, password: String) async throws {
+        guard let client = apiClient else {
+            throw FacadeError.adapterError("Service is not running")
+        }
+
+        connectionState = .connecting
+        do {
+            let response = try await client.register(username: username, password: password)
+            authToken = response.token
+            connectionState = .connected
+            saveToken(response.token, username: username)
+            log.info("Created Kavita admin account: \(username)")
+            await fetchLibraryData()
+        } catch {
+            connectionState = .failed(error.localizedDescription)
+            authToken = nil
+            throw error
+        }
+    }
+
     func connect(username: String, password: String) async throws {
         guard let client = apiClient else {
             throw FacadeError.adapterError("Service is not running")

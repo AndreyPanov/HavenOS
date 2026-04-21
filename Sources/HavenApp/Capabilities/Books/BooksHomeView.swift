@@ -4,187 +4,243 @@ import HavenFacade
 
 /// Native Books capability screen.
 ///
-/// Uses ``BooksFacade`` (protocol) for all state. The only concrete
-/// type reference is the optional downcast to ``KavitaBooksFacade``
-/// for the connect sheet — a future backend that doesn't need auth
-/// would skip that entirely via `setupState == .ready`.
+/// State-driven UI that adapts entirely based on capability state.
+/// Feels like Apple Books / Photos — no service management visible.
+/// Advanced actions (restart, remove, open in browser) are in the toolbar menu.
 struct BooksHomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
     let facade: any BooksFacade
-    @State private var showingConnectSheet = false
+    @State private var showingSetupSheet = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                // Header
-                HStack(spacing: 16) {
-                    ServiceIconView(
-                        systemName: service?.icon ?? "books.vertical",
-                        imagePath: service?.iconImagePath,
-                        size: 56
-                    )
-                    .glassEffect(in: .rect(cornerRadius: 12))
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Books Library")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        HStack(spacing: 8) {
-                            StatusBadgeView(status: serviceStatus)
-                            if let name = service?.name {
-                                Text("powered by \(name)")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-
-                    Spacer()
-                }
-
-                // Main content based on state
-                switch facade.state {
-                case .idle, .error:
-                    stoppedView
-                case .starting:
-                    startingView
-                case .ready, .degraded:
-                    switch facade.setupState {
-                    case .needsSetup:
-                        setupPromptView
-                    case .settingUp:
-                        settingUpView
-                    case .ready:
-                        readyView
-                    case .failed(let message):
-                        setupFailedView(message: message)
-                    }
-                }
-
-                // Action bar
-                FacadeActionBar(facade: facade, isPerformingAction: serviceManager.isPerformingAction)
+                header
+                mainContent
             }
             .padding(24)
         }
         .navigationTitle("Books Library")
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, alignment: .center)
-        .sheet(isPresented: $showingConnectSheet) {
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                advancedMenu
+            }
+        }
+        .sheet(isPresented: $showingSetupSheet) {
             if let kavita = facade as? KavitaBooksFacade {
                 BooksConnectSheet(facade: kavita)
             }
         }
     }
 
-    // MARK: - State Views
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 16) {
+            ServiceIconView(
+                systemName: service?.icon ?? "books.vertical",
+                imagePath: service?.iconImagePath,
+                size: 56
+            )
+            .glassEffect(in: .rect(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Books Library")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                HStack(spacing: 6) {
+                    statusDot
+                    Text(statusLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var statusDot: some View {
+        switch resolvedState {
+        case .starting:
+            ProgressView()
+                .controlSize(.mini)
+        case .needsSetup, .settingUp:
+            Circle().fill(.orange).frame(width: 8, height: 8)
+        case .empty, .ready, .scanning:
+            Circle().fill(.green).frame(width: 8, height: 8)
+        case .error:
+            Circle().fill(.red).frame(width: 8, height: 8)
+        case .stopped:
+            Circle().fill(.secondary.opacity(0.5)).frame(width: 8, height: 8)
+        }
+    }
+
+    private var statusLabel: String {
+        switch resolvedState {
+        case .starting:    "Starting up..."
+        case .needsSetup:  "Needs setup"
+        case .settingUp:   "Setting up..."
+        case .empty:       "Running"
+        case .ready:       "Running"
+        case .scanning:    "Scanning..."
+        case .error:       "Error"
+        case .stopped:     "Offline"
+        }
+    }
+
+    // MARK: - Main Content (State-Driven)
+
+    @ViewBuilder
+    private var mainContent: some View {
+        switch resolvedState {
+        case .stopped:
+            stoppedView
+        case .starting:
+            startingView
+        case .needsSetup:
+            needsSetupView
+        case .settingUp:
+            settingUpView
+        case .empty:
+            emptyView
+        case .ready:
+            readyView
+        case .scanning:
+            scanningView
+        case .error(let message):
+            errorView(message: message)
+        }
+    }
+
+    // MARK: - State: Stopped
 
     private var stoppedView: some View {
-        GroupBox {
-            VStack(spacing: 16) {
+        centeredCard {
+            Image(systemName: "books.vertical")
+                .font(.system(size: 48))
+                .foregroundStyle(.tertiary)
+            Text("Your library is offline")
+                .font(.headline)
+            Text("Start your library to browse and manage your books.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button("Start Library") {
+                Task { try? await facade.perform(.start) }
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .disabled(serviceManager.isPerformingAction)
+        }
+    }
+
+    // MARK: - State: Starting
+
+    private var startingView: some View {
+        centeredCard {
+            ProgressView()
+                .controlSize(.regular)
+            Text("Starting your library...")
+                .font(.headline)
+            Text("This usually takes a few seconds.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - State: Needs Setup
+
+    private var needsSetupView: some View {
+        centeredCard {
+            Image(systemName: "folder.badge.gearshape")
+                .font(.system(size: 48))
+                .foregroundStyle(.tertiary)
+            Text("Set up your library")
+                .font(.headline)
+            Text("Choose where your books are stored so Haven can organize them for you.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button("Set Up Library") {
+                showingSetupSheet = true
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+        }
+    }
+
+    // MARK: - State: Setting Up
+
+    private var settingUpView: some View {
+        centeredCard {
+            ProgressView()
+                .controlSize(.regular)
+            Text("Setting up your library...")
+                .font(.headline)
+            Text("Connecting to your book collection.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - State: Empty
+
+    private var emptyView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            libraryInfoSection
+
+            centeredCard {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 48))
                     .foregroundStyle(.tertiary)
-                Text("Your library is stopped")
+                Text("Your library is empty")
                     .font(.headline)
-                Text("Start the service to access your book library.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Button("Start Library", systemImage: "play.circle") {
-                    Task { try? await facade.perform(.start) }
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
-                .disabled(serviceManager.isPerformingAction)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(24)
-        }
-    }
-
-    private var startingView: some View {
-        GroupBox {
-            HStack(spacing: 12) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Starting your library…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(8)
-        }
-    }
-
-    private var setupPromptView: some View {
-        GroupBox {
-            VStack(spacing: 16) {
-                Image(systemName: "link.badge.plus")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.tertiary)
-                Text("Connect to your library")
-                    .font(.headline)
-                Text("Sign in so Haven can show your library here.")
+                Text("Add books to your library folder and they'll appear here.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
-                Button("Connect", systemImage: "link") {
-                    showingConnectSheet = true
+                HStack(spacing: 12) {
+                    Button("Open Library Folder") {
+                        if let lib = facade.library {
+                            let path = (lib.libraryPath as NSString).expandingTildeInPath
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                        }
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+
+                    Button("Rescan") {
+                        Task { try? await facade.rescan() }
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.large)
                 }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
             }
-            .frame(maxWidth: .infinity)
-            .padding(24)
         }
     }
 
-    private var settingUpView: some View {
-        GroupBox {
-            HStack(spacing: 12) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Connecting…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(8)
-        }
-    }
+    // MARK: - State: Ready
 
     private var readyView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Library info card
-            GroupBox("Library") {
-                VStack(spacing: 0) {
-                    if let lib = facade.library {
-                        DetailRow(label: "Location", value: lib.libraryPath)
-                        if let count = lib.itemCount {
-                            Divider().padding(.vertical, 6)
-                            DetailRow(label: "Items", value: "\(count)")
-                        }
-                    }
-                    // Kavita-specific: show connected user
-                    if let kavita = facade as? KavitaBooksFacade,
-                       let username = kavita.connectedUsername {
-                        Divider().padding(.vertical, 6)
-                        DetailRow(label: "Connected as", value: username)
-                    }
-                }
-                .padding(4)
-            }
+            libraryInfoSection
 
-            // Backend-specific: disconnect
+            // Kavita-specific: connected user
             if let kavita = facade as? KavitaBooksFacade,
                let username = kavita.connectedUsername {
                 HStack {
-                    Label("Connected as \(username)", systemImage: "checkmark.circle.fill")
+                    Label("Signed in as \(username)", systemImage: "person.crop.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Disconnect", systemImage: "link.badge.plus") {
+                    Button("Sign Out") {
                         kavita.disconnect()
                     }
                     .buttonStyle(.borderless)
@@ -195,7 +251,7 @@ struct BooksHomeView: View {
 
             // Setup guide (from onboarding)
             if let onboarding = service?.onboarding, !onboarding.steps.isEmpty {
-                GroupBox("Setup Guide") {
+                GroupBox("Getting Started") {
                     OnboardingStepsView(steps: onboarding.steps)
                         .padding(4)
                 }
@@ -203,36 +259,166 @@ struct BooksHomeView: View {
         }
     }
 
-    private func setupFailedView(message: String) -> some View {
+    // MARK: - State: Scanning
+
+    private var scanningView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Scanning banner
+            HStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.small)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Scanning your library...")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("New books will appear when the scan is complete.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(12)
+            .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+
+            libraryInfoSection
+        }
+    }
+
+    // MARK: - State: Error
+
+    private func errorView(message: String) -> some View {
+        centeredCard {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+            Text("We couldn't load your library")
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            HStack(spacing: 12) {
+                Button("Retry") {
+                    showingSetupSheet = true
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+            }
+        }
+    }
+
+    // MARK: - Shared Components
+
+    private var libraryInfoSection: some View {
+        GroupBox("Library") {
+            VStack(spacing: 0) {
+                if let lib = facade.library {
+                    DetailRow(label: "Location", value: lib.libraryPath)
+                    if let count = lib.itemCount {
+                        Divider().padding(.vertical, 6)
+                        DetailRow(label: "Items", value: "\(count)")
+                    }
+                }
+            }
+            .padding(4)
+        }
+    }
+
+    /// Reusable centered card for state screens.
+    private func centeredCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         GroupBox {
             VStack(spacing: 16) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.orange)
-                Text("Connection failed")
-                    .font(.headline)
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 12) {
-                    Button("Try Again", systemImage: "arrow.clockwise") {
-                        showingConnectSheet = true
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.large)
-
-                    Button("Dismiss") {
-                        if let kavita = facade as? KavitaBooksFacade {
-                            kavita.disconnect()
-                        }
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.large)
-                }
+                content()
             }
             .frame(maxWidth: .infinity)
             .padding(24)
+        }
+    }
+
+    // MARK: - Advanced Menu (Toolbar)
+
+    private var advancedMenu: some View {
+        Menu {
+            if facade.library != nil, facade.setupState == .ready {
+                Button("Rescan Library", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { try? await facade.rescan() }
+                }
+            }
+
+            if let url = facade.advancedURL {
+                Button("Open in Browser", systemImage: "globe") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+
+            if facade.library != nil, let lib = facade.library {
+                Button("Open Library Folder", systemImage: "folder") {
+                    let path = (lib.libraryPath as NSString).expandingTildeInPath
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                }
+            }
+
+            Divider()
+
+            if case .ready = facade.state {
+                Button("Stop Library", systemImage: "stop.circle") {
+                    Task { try? await facade.perform(.stop) }
+                }
+
+                Button("Restart", systemImage: "arrow.clockwise") {
+                    Task { try? await facade.perform(.restart) }
+                }
+            }
+
+            Divider()
+
+            Button("Remove Library", systemImage: "trash", role: .destructive) {
+                Task { try? await facade.perform(.remove) }
+            }
+
+            if let name = service?.name {
+                Divider()
+                Text("Powered by \(name)")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+    }
+
+    // MARK: - State Resolution
+
+    /// Maps facade state + setup state + library data into a single UI state.
+    private var resolvedState: BooksUIState {
+        switch facade.state {
+        case .idle:
+            return .stopped
+        case .starting:
+            return .starting
+        case .error(let msg):
+            return .error(msg)
+        case .degraded:
+            return .error("Library is running with issues")
+        case .ready:
+            switch facade.setupState {
+            case .needsSetup:
+                return .needsSetup
+            case .settingUp:
+                return .settingUp
+            case .failed(let msg):
+                return .error(msg)
+            case .ready:
+                if let lib = facade.library {
+                    if lib.scanStatus == .scanning {
+                        return .scanning
+                    }
+                    if let count = lib.itemCount, count > 0 {
+                        return .ready
+                    }
+                    return .empty
+                }
+                return .empty
+            }
         }
     }
 
@@ -241,11 +427,22 @@ struct BooksHomeView: View {
     private var service: InstalledService? {
         serviceManager.installedServices.first { $0.id == facade.capabilityID }
     }
-
-    private var serviceStatus: ServiceStatus {
-        service?.status ?? .stopped
-    }
 }
+
+// MARK: - UI State Enum
+
+private enum BooksUIState {
+    case stopped
+    case starting
+    case needsSetup
+    case settingUp
+    case empty
+    case ready
+    case scanning
+    case error(String)
+}
+
+// MARK: - Detail Row
 
 private struct DetailRow: View {
     let label: String

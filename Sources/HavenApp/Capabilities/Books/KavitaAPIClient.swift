@@ -19,6 +19,22 @@ struct KavitaAPIClient: Sendable {
         let apiKey: String?
     }
 
+    /// Register the first admin account (only works on fresh Kavita installs).
+    func register(username: String, password: String) async throws -> LoginResponse {
+        var request = URLRequest(url: baseURL.appending(path: "/api/Account/register"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode([
+            "username": username,
+            "password": password,
+            "email": ""
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data)
+        return try JSONDecoder().decode(LoginResponse.self, from: data)
+    }
+
     func login(username: String, password: String) async throws -> LoginResponse {
         var request = URLRequest(url: baseURL.appending(path: "/api/Account/login"))
         request.httpMethod = "POST"
@@ -145,9 +161,55 @@ enum KavitaAPIError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .httpError(let code, _):
+        case .httpError(let code, let body):
             if code == 401 { return "Invalid credentials" }
+            if let message = Self.extractMessage(from: body) { return message }
+            if !body.isEmpty { return body }
             return "Server error (\(code))"
         }
+    }
+
+    /// Extract a human-readable message from Kavita's various JSON error formats.
+    private static func extractMessage(from body: String) -> String? {
+        guard !body.isEmpty, let data = body.data(using: .utf8) else { return nil }
+
+        // Plain JSON string: "Some error message"
+        if let message = try? JSONDecoder().decode(String.self, from: data) {
+            return message
+        }
+
+        // ASP.NET validation: { "errors": { "field": ["msg", ...], ... } }
+        // or Kavita object: { "message": "...", "title": "...", "detail": "..." }
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // ASP.NET validation errors first (more specific than title):
+            // { "errors": { "Password": ["Too short", ...] } }
+            if let errors = dict["errors"] as? [String: Any] {
+                var messages: [String] = []
+                for (_, value) in errors {
+                    if let arr = value as? [String] {
+                        messages.append(contentsOf: arr)
+                    } else if let str = value as? String {
+                        messages.append(str)
+                    }
+                }
+                if !messages.isEmpty {
+                    return messages.joined(separator: ". ")
+                }
+            }
+
+            // Fallback: { "message": "..." } or { "detail": "..." } or { "title": "..." }
+            for key in ["message", "detail", "title"] {
+                if let msg = dict[key] as? String, !msg.isEmpty {
+                    return msg
+                }
+            }
+        }
+
+        // Array of strings: ["error1", "error2"]
+        if let messages = try? JSONDecoder().decode([String].self, from: data), !messages.isEmpty {
+            return messages.joined(separator: ". ")
+        }
+
+        return nil
     }
 }

@@ -1,44 +1,159 @@
 import SwiftUI
 import HavenFacade
 
-/// Credential entry sheet for connecting Haven to Kavita.
-/// This is Kavita-specific — takes the concrete type, not the protocol.
+/// Library setup sheet for Kavita-backed books.
+/// User chooses: create a new account (first run) or sign in (returning).
 struct BooksConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
     let facade: KavitaBooksFacade
 
+    @State private var mode: Mode = .choose
     @State private var username = ""
     @State private var password = ""
-    @State private var isConnecting = false
+    @State private var isWorking = false
     @State private var errorMessage: String?
+
+    private enum Mode: Equatable {
+        case choose
+        case createAccount
+        case signIn
+    }
 
     var body: some View {
         VStack(spacing: 24) {
-            // Header
+            switch mode {
+            case .choose:
+                chooseView
+            case .createAccount:
+                accountFormView(
+                    icon: "person.crop.circle.badge.plus",
+                    title: "Create your account",
+                    subtitle: "Choose a username and password for your book library.",
+                    actionLabel: "Create Account",
+                    action: createAccount
+                )
+            case .signIn:
+                accountFormView(
+                    icon: "person.crop.circle",
+                    title: "Sign in to your library",
+                    subtitle: "Enter your existing account credentials.",
+                    actionLabel: "Sign In",
+                    action: signIn
+                )
+            }
+        }
+        .padding(32)
+        .frame(width: 380)
+        .animation(.default, value: mode)
+    }
+
+    // MARK: - Choose Mode
+
+    private var chooseView: some View {
+        VStack(spacing: 24) {
             VStack(spacing: 8) {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 40))
                     .foregroundStyle(.secondary)
-                Text("Connect to your library")
+                Text("Set up your library")
                     .font(.title3)
                     .fontWeight(.semibold)
-                Text("Enter the account you created in Kavita.")
+                Text("Is this your first time using this library?")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            // Form
+            VStack(spacing: 12) {
+                Button {
+                    mode = .createAccount
+                } label: {
+                    HStack {
+                        Image(systemName: "person.crop.circle.badge.plus")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Create Account")
+                                .fontWeight(.medium)
+                            Text("I'm setting this up for the first time")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.large)
+
+                Button {
+                    mode = .signIn
+                } label: {
+                    HStack {
+                        Image(systemName: "person.crop.circle")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sign In")
+                                .fontWeight(.medium)
+                            Text("I already have an account")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.large)
+            }
+
+            Button("Cancel") { dismiss() }
+                .buttonStyle(.plain)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Account Form (Shared)
+
+    private func accountFormView(
+        icon: String,
+        title: String,
+        subtitle: String,
+        actionLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
             VStack(spacing: 12) {
                 TextField("Username", text: $username)
                     .textFieldStyle(.roundedBorder)
                     .textContentType(.username)
-                    .disabled(isConnecting)
+                    .disabled(isWorking)
 
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
-                    .textContentType(.password)
-                    .disabled(isConnecting)
-                    .onSubmit { connect() }
+                    .textContentType(mode == .createAccount ? .newPassword : .password)
+                    .disabled(isWorking)
+                    .onSubmit { action() }
+
+                if mode == .createAccount {
+                    Text("Password must be 6+ characters with uppercase, lowercase, number, and special character.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if let error = errorMessage {
@@ -47,34 +162,47 @@ struct BooksConnectSheet: View {
                     .foregroundStyle(.red)
             }
 
-            // Actions
             HStack(spacing: 12) {
-                Button("Cancel") {
-                    dismiss()
+                Button("Back") {
+                    errorMessage = nil
+                    mode = .choose
                 }
                 .buttonStyle(.glass)
                 .controlSize(.large)
 
-                Button("Connect") {
-                    connect()
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
-                .disabled(username.isEmpty || password.isEmpty || isConnecting)
+                Button(actionLabel) { action() }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+                    .disabled(username.isEmpty || password.isEmpty || isWorking)
             }
 
-            if isConnecting {
-                ProgressView()
-                    .controlSize(.small)
+            if isWorking {
+                ProgressView().controlSize(.small)
             }
         }
-        .padding(32)
-        .frame(width: 360)
     }
 
-    private func connect() {
+    // MARK: - Actions
+
+    private func createAccount() {
         guard !username.isEmpty, !password.isEmpty else { return }
-        isConnecting = true
+        isWorking = true
+        errorMessage = nil
+
+        Task {
+            do {
+                try await facade.createAccount(username: username, password: password)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isWorking = false
+        }
+    }
+
+    private func signIn() {
+        guard !username.isEmpty, !password.isEmpty else { return }
+        isWorking = true
         errorMessage = nil
 
         Task {
@@ -84,7 +212,7 @@ struct BooksConnectSheet: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
-            isConnecting = false
+            isWorking = false
         }
     }
 }
