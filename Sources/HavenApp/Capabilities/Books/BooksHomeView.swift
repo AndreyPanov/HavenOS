@@ -26,10 +26,17 @@ struct BooksHomeView: View {
                     .glassEffect(in: .rect(cornerRadius: 12))
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Books")
+                        Text("Books Library")
                             .font(.title2)
                             .fontWeight(.semibold)
-                        StatusBadgeView(status: serviceStatus)
+                        HStack(spacing: 8) {
+                            StatusBadgeView(status: serviceStatus)
+                            if let name = service?.name {
+                                Text("powered by \(name)")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
                     }
 
                     Spacer()
@@ -59,7 +66,7 @@ struct BooksHomeView: View {
             }
             .padding(24)
         }
-        .navigationTitle("Books")
+        .navigationTitle("Books Library")
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, alignment: .center)
         .sheet(isPresented: $showingConnectSheet) {

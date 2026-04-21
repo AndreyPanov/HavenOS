@@ -51,7 +51,7 @@ struct DiscoveryView: View {
                 ) {
                     ForEach(filteredPlugins) { plugin in
                         NavigationLink(value: plugin) {
-                            DiscoveryCardView(plugin: plugin)
+                            CapabilityCardView(plugin: plugin)
                         }
                         .buttonStyle(.plain)
                     }

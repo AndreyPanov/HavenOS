@@ -40,7 +40,7 @@ struct DiscoveryDetailView: View {
                             .controlSize(.large)
                         }
                     } else if serviceManager.activeCapabilityID != plugin.id {
-                        Button("Install") {
+                        Button("Add") {
                             Task { await serviceManager.installService(capabilityID: plugin.id) }
                         }
                         .buttonStyle(.glassProminent)
@@ -147,7 +147,7 @@ struct DiscoveryDetailView: View {
                 } else {
                     // Not installed
                     HStack {
-                        Button("Install", systemImage: "plus.circle") {
+                        Button("Add", systemImage: "plus.circle") {
                             Task { await serviceManager.installService(capabilityID: plugin.id) }
                         }
                         .buttonStyle(.glassProminent)

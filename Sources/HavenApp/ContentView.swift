@@ -1,8 +1,9 @@
 import SwiftUI
+import HavenFacade
 
-enum SidebarItem: String, Hashable {
+enum SidebarItem: Hashable {
     case home
-    case discovery
+    case capability(String) // capability ID
     case settings
 }
 
@@ -10,20 +11,36 @@ struct ContentView: View {
     @Environment(ServiceManager.self) private var serviceManager
     @State private var selectedSidebar: SidebarItem? = .home
 
+    /// Installed capabilities that have native UI (sidebar tabs).
+    private var capabilityTabs: [InstalledService] {
+        serviceManager.installedServices.filter {
+            serviceManager.hasNativeUI(for: $0.id)
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedSidebar) {
-                Section("Services") {
+                Section("Haven") {
                     Label("Home", systemImage: "house")
                         .tag(SidebarItem.home)
-                    Label("Discovery", systemImage: "square.grid.2x2")
-                        .tag(SidebarItem.discovery)
                 }
+
+                if !capabilityTabs.isEmpty {
+                    Section("Capabilities") {
+                        ForEach(capabilityTabs) { service in
+                            Label(capabilityLabel(for: service), systemImage: service.icon)
+                                .tag(SidebarItem.capability(service.id))
+                        }
+                    }
+                }
+
                 Section("Preferences") {
                     Label("Settings", systemImage: "gearshape")
                         .tag(SidebarItem.settings)
                 }
             }
+            .animation(.default, value: capabilityTabs.map(\.id))
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
             .navigationTitle("Haven")
         } detail: {
@@ -31,8 +48,8 @@ struct ContentView: View {
                 switch selectedSidebar {
                 case .home:
                     HomeView()
-                case .discovery:
-                    DiscoveryView()
+                case .capability(let id):
+                    capabilityView(for: id)
                 case .settings:
                     SettingsView()
                 case nil:
@@ -59,6 +76,38 @@ struct ContentView: View {
             set: { serviceManager.pendingInstructions = $0 }
         )) { info in
             PostInstallSheet(info: info)
+        }
+        .onChange(of: serviceManager.installedServices.map(\.id)) { old, new in
+            // Auto-navigate to newly installed capability tab
+            let added = Set(new).subtracting(old)
+            if let newID = added.first, serviceManager.hasNativeUI(for: newID) {
+                withAnimation {
+                    selectedSidebar = .capability(newID)
+                }
+            }
+        }
+    }
+
+    /// User-facing tab label — capability type, not backend name.
+    private func capabilityLabel(for service: InstalledService) -> String {
+        if serviceManager.hasNativeUI(for: service.id),
+           let facade = serviceManager.facade(for: service.id) as? any BooksFacade {
+            return "Books"
+        }
+        return service.name
+    }
+
+    @ViewBuilder
+    private func capabilityView(for id: String) -> some View {
+        if let facade = serviceManager.facade(for: id) as? any BooksFacade {
+            BooksHomeView(facade: facade)
+        } else if let facade = serviceManager.facade(for: id) {
+            ServiceDetailView(serviceID: id)
+        } else {
+            Text("Service not found")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
