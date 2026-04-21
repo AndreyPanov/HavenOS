@@ -23,7 +23,8 @@
         "launchArguments": [
             "--port", "${port}",
             "--root", "${content_dir}",
-            "--database", "${data_dir}/filebrowser.db"
+            "--database", "${data_dir}/filebrowser.db",
+            "--noauth"
         ],
         "directories": {
             "data":    "data",

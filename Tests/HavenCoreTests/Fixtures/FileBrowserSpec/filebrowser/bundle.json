@@ -31,8 +31,8 @@
             },
             {
                 "type": "action",
-                "title": "Create your account",
-                "body": "Open File Browser and create your first user account. The default login is admin / admin — change the password right away.",
+                "title": "Open File Browser",
+                "body": "File Browser is ready — no login required. Open it to start browsing your files.",
                 "url": "http://localhost:${port}"
             },
             {

@@ -328,14 +328,337 @@ A non-technical user installs a service and uses it in < 2 minutes.
 	5.	Address missing features: port injection, post-start hooks, Calibre.app dep discovery
 
 ⸻
+UPDATED 21.04.26
+
+🧭 HavenOS — Extended Roadmap (Facade + Native Capabilities)
+
+⸻
+
+🧩 Phase 9 — Facade Layer Foundation
+
+🎯 Goal
+
+Introduce a stable abstraction layer between Haven and backends.
+
+⸻
+
+🔧 Deliverables
+
+Core interfaces
+
+* CapabilityFacade protocol
+* CapabilityState
+* CapabilitySettings
+* CapabilityAction
+* CapabilityHealth
+
+Backend abstraction
+
+* BackendAdapter interface (per engine)
+* Adapter registry (capability → adapter)
+
+Execution integration
+
+* Facade step added to pipeline:
+
+install → facade.provision → start
+
+Advanced fallback
+
+* advancedURL() support
+* UI hook for “Open underlying service”
+
+⸻
+
+✅ Acceptance Criteria
+
+* UI does NOT reference runtime units directly
+* At least 1 capability uses facade (even minimally)
+* Backend can be swapped without UI changes (theoretically)
+
+⸻
+
+🧠 Phase 10 — Capability Domain Models
+
+🎯 Goal
+
+Define Haven-native data models (backend-independent)
+
+⸻
+
+🔧 Deliverables
+
+Define first-class models:
+
+Books
+
+* libraryPath
+* collections
+* items
+* scanStatus
+
+Files
+
+* roots
+* items
+* permissions (simple)
+* preview support
+
+Music (future-ready)
+
+* library
+* artists
+* albums
+* playback state
+
+⸻
+
+🧱 Rules
+
+* ❌ No backend terms allowed
+* ✅ Only user-facing concepts
+
+⸻
+
+✅ Acceptance Criteria
+
+* Capability models exist independent of any backend
+* Facade maps model ↔ backend config/state
+
+⸻
+
+🎨 Phase 11 — Native Capability UI Foundation
+
+🎯 Goal
+
+Introduce Haven-native application UI layer
+
+⸻
+
+🔧 Deliverables
+
+Reusable UI shell
+
+* CapabilityHomeView
+* EmptyStateView
+* Loading/Indexing state
+* Error/Degraded state
+
+Navigation model
+
+* Home → Capabilities (not services)
+* Capability → native screen
+
+Shared components
+
+* Action bar (Rescan, Settings, Restart, Advanced)
+* Folder picker
+* Status indicators
+
+⸻
+
+⚠️ Important
+
+* No dependency on backend UI
+* UI reads only from facade
+
+⸻
+
+✅ Acceptance Criteria
+
+* At least 1 capability renders a native screen
+* User can stay inside Haven for core interaction
+* “Open in Browser” becomes secondary (Advanced)
+
+⸻
+
+📚 Phase 12 — First Full Capability: Books (Kavita)
+
+🎯 Goal
+
+First end-to-end facade + native UI capability
+
+⸻
+
+🔧 Deliverables
+
+BooksFacade
+
+* provision library
+* apply settings (libraryPath)
+* trigger scan (restart or API/CLI)
+* health detection
+* advanced URL
+
+KavitaAdapter
+
+* config generation (appsettings.json)
+* JWT handling
+* directory mapping
+* port handling
+
+Books UI
+
+* library status
+* “Add folder”
+* “Rescan”
+* “Open library”
+* basic item list (optional v1)
+
+⸻
+
+🧪 Scope (IMPORTANT)
+
+Focus only on:
+
+* happy path
+* 80% use case
+
+NOT:
+
+* full Kavita feature parity
+* deep admin config
+
+⸻
+
+✅ Acceptance Criteria
+
+* User installs Books and never needs Kavita UI for basic use
+* Advanced UI still accessible
+* Backend can be replaced without UI redesign (design-level guarantee)
+
+⸻
+
+🔁 Phase 13 — Backend Replaceability
+
+🎯 Goal
+
+Validate that facade truly enables engine swap
+
+⸻
+
+🔧 Deliverables
+
+Adapter abstraction hardened
+
+* no backend leakage into UI
+* strict separation of models
+
+Migration hooks
+
+* migrate(from:to:) interface
+* config/data migration strategy
+
+Optional experiment
+
+* plug second backend (even mock) for Books
+
+⸻
+
+✅ Acceptance Criteria
+
+* Capability runs with alternative adapter (even partially)
+* No UI changes required
+* Migration path defined
+
+⸻
+
+🚀 Phase 14 — Second Capability (Files)
+
+🎯 Goal
+
+Generalize system beyond Books
+
+⸻
+
+🔧 Deliverables
+
+FilesFacade
+
+* root management
+* file listing
+* basic actions
+
+FileBrowserAdapter
+
+* config mapping
+* CLI/start control
+
+Files UI
+
+* native file browsing
+* folder selection
+* preview (optional later)
+
+⸻
+
+✅ Acceptance Criteria
+
+* Same UI patterns reused
+* No service-specific UI leaks
+* Facade abstraction holds
+
+⸻
+
+🧠 Updated Strategic Direction
+
+After these phases, Haven becomes:
+
+NOT:
+
+* service launcher
+* self-hosting UI
+* homelab dashboard
+
+BUT:
+
+A native operating layer for personal data services
+
+⸻
+
+🔥 Critical Evolution (What changed)
+
+Your original roadmap ends at:
+
+“Install → Start → Open”  ￼
+
+Your new roadmap extends it to:
+
+Install → Start → Use (inside Haven)
+
+That’s the transformation.
+
+⸻
+
+🧭 Suggested Execution Order (Practical)
+
+Do NOT follow phases strictly linearly.
+
+Instead:
+
+1. Phase 9 (Facade skeleton)
+2. Phase 11 (UI shell minimal)
+3. Phase 12 (Books full vertical slice)
+4. Backfill Phase 10 (refine models)
+5. Phase 13 (replaceability validation)
+6. Phase 14 (Files)
+
+👉 Think vertical slice first, then generalize
+
+⸻
 
 💬 Final Note
 
-Haven is becoming:
+This extension turns Haven from:
 
-The missing layer between macOS and self-hosted software
+“infrastructure abstraction”
 
-Not a dev tool.
-Not a package manager.
+into:
 
-👉 A consumer-grade service platform.
+product abstraction
+
+And the key enabler is exactly what you identified:
+
+Facade = stability + replaceability + UX control
+
+⸻
