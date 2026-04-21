@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import HavenCore
+import HavenFacade
 
 struct ServiceDetailView: View {
     @Environment(ServiceManager.self) private var serviceManager
@@ -9,6 +10,10 @@ struct ServiceDetailView: View {
     private var service: InstalledService {
         serviceManager.installedServices.first { $0.id == serviceID }
             ?? InstalledService(id: serviceID, name: serviceID, serviceDescription: "", icon: "shippingbox", iconImagePath: nil, status: .stopped, port: nil, dataPath: "", instructions: nil, onboarding: nil)
+    }
+
+    private var facade: (any CapabilityFacade)? {
+        serviceManager.facade(for: serviceID)
     }
 
     var body: some View {
@@ -75,51 +80,9 @@ struct ServiceDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                // Action buttons
-                HStack(spacing: 12) {
-                    if service.status == .running {
-                        Button("Stop", systemImage: "stop.circle") {
-                            Task { await serviceManager.stopService(capabilityID: service.id) }
-                        }
-                        .buttonStyle(.glass)
-                        .controlSize(.large)
-                        .disabled(serviceManager.isPerformingAction)
-
-                        Button("Restart", systemImage: "arrow.clockwise") {
-                            Task {
-                                await serviceManager.stopService(capabilityID: service.id)
-                                await serviceManager.startService(capabilityID: service.id)
-                            }
-                        }
-                        .buttonStyle(.glass)
-                        .controlSize(.large)
-                        .disabled(serviceManager.isPerformingAction)
-
-                        if let url = service.localURL,
-                           let openURL = URL(string: url) {
-                            Button("Open in Browser", systemImage: "globe") {
-                                NSWorkspace.shared.open(openURL)
-                            }
-                            .buttonStyle(.glass)
-                            .controlSize(.large)
-                        }
-                    } else {
-                        Button("Start", systemImage: "play.circle") {
-                            Task { await serviceManager.startService(capabilityID: service.id) }
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
-                        .disabled(serviceManager.isPerformingAction)
-                    }
-
-                    Spacer()
-
-                    Button("Stop & Remove", systemImage: "trash", role: .destructive) {
-                        Task { await serviceManager.uninstallService(capabilityID: service.id) }
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.large)
-                    .disabled(serviceManager.isPerformingAction)
+                // Action buttons (driven by facade)
+                if let facade {
+                    FacadeActionBar(facade: facade, isPerformingAction: serviceManager.isPerformingAction)
                 }
             }
             .padding(24)

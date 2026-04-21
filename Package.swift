@@ -25,6 +25,14 @@ let package = Package(
             path: "Sources/HavenCore"
         ),
 
+        // MARK: - Facade
+
+        .target(
+            name: "HavenFacade",
+            dependencies: ["HavenCore"],
+            path: "Sources/HavenFacade"
+        ),
+
         // MARK: - Executor
 
         .target(
@@ -85,6 +93,7 @@ let package = Package(
             name: "HavenApp",
             dependencies: [
                 "HavenCore",
+                "HavenFacade",
                 "HavenExecutor",
                 "HavenLaunchd",
                 "HavenRuntimes",

@@ -1,5 +1,6 @@
 import Foundation
 import HavenCore
+import HavenFacade
 import HavenExecutor
 import HavenRuntimes
 import HavenLaunchd
@@ -76,6 +77,33 @@ final class ServiceManager {
     private let paths: HavenPaths
     private let stateStore: FileStateStore
     private let executor: HavenExecutor
+
+    // MARK: - Facade Layer
+
+    private let adapterRegistry = AdapterRegistry()
+    private var facades: [String: any CapabilityFacade] = [:]
+
+    /// Get the facade for an installed capability, creating it on demand.
+    func facade(for capabilityID: String) -> (any CapabilityFacade)? {
+        guard installedServices.contains(where: { $0.id == capabilityID }) else {
+            facades.removeValue(forKey: capabilityID)
+            return nil
+        }
+        if let existing = facades[capabilityID] {
+            return existing
+        }
+        let newFacade = adapterRegistry.createFacade(
+            capabilityID: capabilityID,
+            serviceManager: self
+        )
+        facades[capabilityID] = newFacade
+        return newFacade
+    }
+
+    /// Whether a custom (non-generic) adapter is registered for this capability.
+    func hasNativeUI(for capabilityID: String) -> Bool {
+        adapterRegistry.hasCustomAdapter(for: capabilityID)
+    }
 
     // MARK: - Init
 
@@ -385,6 +413,15 @@ final class ServiceManager {
 
     private func rebuildViewModels() {
         let installedCapIDs = Set(havenState.services.keys)
+
+        // Remove facades for uninstalled services
+        for key in facades.keys where !installedCapIDs.contains(key) {
+            facades.removeValue(forKey: key)
+        }
+        // Refresh existing facades
+        for facade in facades.values {
+            facade.refresh()
+        }
 
         // Build installed services from persisted state (stable order by capability ID)
         installedServices = havenState.services.values.sorted(by: { $0.capability < $1.capability }).map { stored in

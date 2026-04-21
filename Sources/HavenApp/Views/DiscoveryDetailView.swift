@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import HavenFacade
 
 struct DiscoveryDetailView: View {
     @Environment(ServiceManager.self) private var serviceManager
@@ -141,44 +142,8 @@ struct DiscoveryDetailView: View {
                         }
                         .padding(4)
                     }
-                } else if let service = installedService {
-                    // Installed: show full service controls
-                    HStack(spacing: 12) {
-                        if service.status == .running {
-                            Button("Stop", systemImage: "stop.circle") {
-                                Task { await serviceManager.stopService(capabilityID: plugin.id) }
-                            }
-                            .buttonStyle(.glass)
-                            .controlSize(.large)
-                            .disabled(serviceManager.isPerformingAction)
-
-                            Button("Restart", systemImage: "arrow.clockwise") {
-                                Task {
-                                    await serviceManager.stopService(capabilityID: plugin.id)
-                                    await serviceManager.startService(capabilityID: plugin.id)
-                                }
-                            }
-                            .buttonStyle(.glass)
-                            .controlSize(.large)
-                            .disabled(serviceManager.isPerformingAction)
-                        } else {
-                            Button("Start", systemImage: "play.circle") {
-                                Task { await serviceManager.startService(capabilityID: plugin.id) }
-                            }
-                            .buttonStyle(.glassProminent)
-                            .controlSize(.large)
-                            .disabled(serviceManager.isPerformingAction)
-                        }
-
-                        Spacer()
-
-                        Button("Stop & Remove", systemImage: "trash", role: .destructive) {
-                            Task { await serviceManager.uninstallService(capabilityID: plugin.id) }
-                        }
-                        .buttonStyle(.glass)
-                        .controlSize(.large)
-                        .disabled(serviceManager.isPerformingAction)
-                    }
+                } else if installedService != nil, let facade = serviceManager.facade(for: plugin.id) {
+                    FacadeActionBar(facade: facade, isPerformingAction: serviceManager.isPerformingAction)
                 } else {
                     // Not installed
                     HStack {
