@@ -7,13 +7,9 @@ private let log = Logger(subsystem: "com.haven", category: "KavitaBooksFacade")
 
 /// Books facade backed by Kavita.
 ///
-/// Connects to the Kavita REST API to provide library state,
-/// item counts, and scan triggers — all surfaced through the
-/// backend-independent ``BooksFacade`` protocol.
-///
 /// Auth (connect/disconnect) is Kavita-specific and lives here,
 /// not on the protocol. The UI discovers it via `setupState` and
-/// uses a type check on the concrete class for the connect sheet.
+/// downcasts to this class for the connect sheet.
 @MainActor
 @Observable
 final class KavitaBooksFacade: BooksFacade {
@@ -31,24 +27,17 @@ final class KavitaBooksFacade: BooksFacade {
 
     var setupState: BackendSetupState {
         switch connectionState {
-        case .disconnected:
-            return .needsSetup(message: "Connect to see your library")
-        case .connecting:
-            return .settingUp
-        case .connected:
-            return .ready
-        case .failed(let msg):
-            return .failed(msg)
+        case .disconnected: .needsSetup(message: "Connect to see your library")
+        case .connecting:   .settingUp
+        case .connected:    .ready
+        case .failed(let m): .failed(m)
         }
     }
 
     // MARK: - Kavita-Specific (Auth)
 
     enum ConnectionState: Equatable {
-        case disconnected
-        case connecting
-        case connected
-        case failed(String)
+        case disconnected, connecting, connected, failed(String)
     }
 
     private(set) var connectionState: ConnectionState = .disconnected
@@ -60,6 +49,7 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Internal
 
+    private let lifecycle: FacadeLifecycle
     private weak var serviceManager: ServiceManager?
     private var apiClient: KavitaAPIClient?
     private var authToken: String?
@@ -70,6 +60,7 @@ final class KavitaBooksFacade: BooksFacade {
     init(capabilityID: String, serviceManager: ServiceManager) {
         self.capabilityID = capabilityID
         self.serviceManager = serviceManager
+        self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
         refresh()
         loadSavedToken()
     }
@@ -80,12 +71,8 @@ final class KavitaBooksFacade: BooksFacade {
         switch state {
         case .ready:
             var actions: [CapabilityAction] = []
-            if connectionState == .connected {
-                actions.append(.rescan)
-            }
-            if advancedURL != nil {
-                actions.append(.openInBrowser)
-            }
+            if connectionState == .connected { actions.append(.rescan) }
+            if advancedURL != nil { actions.append(.openInBrowser) }
             actions.append(contentsOf: [.stop, .restart, .remove])
             return actions
         case .idle, .error:
@@ -98,21 +85,12 @@ final class KavitaBooksFacade: BooksFacade {
     // MARK: - Perform Actions
 
     func perform(_ action: CapabilityAction) async throws {
-        guard let sm = serviceManager else { return }
-
-        switch action.id {
-        case CapabilityAction.start.id:
-            await sm.startService(capabilityID: capabilityID)
-        case CapabilityAction.stop.id:
-            await sm.stopService(capabilityID: capabilityID)
-        case CapabilityAction.restart.id:
-            await sm.stopService(capabilityID: capabilityID)
-            await sm.startService(capabilityID: capabilityID)
-        case CapabilityAction.remove.id:
-            await sm.uninstallService(capabilityID: capabilityID)
-        case CapabilityAction.rescan.id:
+        if action.id == CapabilityAction.rescan.id {
             try await rescan()
-        default:
+            return
+        }
+        let handled = try await lifecycle.perform(action, capabilityID: capabilityID)
+        if !handled {
             throw FacadeError.actionNotAvailable(action.id)
         }
     }
@@ -164,39 +142,27 @@ final class KavitaBooksFacade: BooksFacade {
     // MARK: - Refresh
 
     func refresh() {
-        guard let sm = serviceManager else { return }
-        guard let service = sm.installedServices.first(where: { $0.id == capabilityID }) else {
-            state = .idle
-            health = .unknown
-            advancedURL = nil
+        let result = lifecycle.refreshState(for: capabilityID)
+        state = result.state
+        health = result.health
+        advancedURL = result.advancedURL
+
+        guard let service = result.service else {
             library = nil
             return
         }
 
-        let stored = sm.storedState(for: capabilityID)
+        let stored = serviceManager?.storedState(for: capabilityID)
         let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
         port = service.port
 
         if let p = port {
             apiClient = KavitaAPIClient(port: p)
-            advancedURL = URL(string: "http://localhost:\(p)")
         }
 
-        switch service.status {
-        case .running:
-            state = .ready
-            health = .healthy
-        case .stopped:
-            state = .idle
-            health = .unknown
+        // Reset connection on stop/fail
+        if state != .ready && state != .starting {
             connectionState = .disconnected
-        case .failed:
-            state = .error("Service failed")
-            health = CapabilityHealth(status: .unhealthy, message: "Service failed")
-            connectionState = .disconnected
-        case .installing:
-            state = .starting
-            health = .unknown
         }
 
         library = BooksLibrary(

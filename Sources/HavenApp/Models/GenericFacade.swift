@@ -13,17 +13,17 @@ final class GenericFacade: CapabilityFacade {
     private(set) var health: CapabilityHealth = .unknown
     private(set) var advancedURL: URL?
 
-    private weak var serviceManager: ServiceManager?
+    private let lifecycle: FacadeLifecycle
 
     init(capabilityID: String, serviceManager: ServiceManager) {
         self.capabilityID = capabilityID
-        self.serviceManager = serviceManager
+        self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
         refresh()
     }
 
     var availableActions: [CapabilityAction] {
         switch state {
-        case .ready:
+        case .ready, .degraded:
             var actions: [CapabilityAction] = [.stop, .restart]
             if advancedURL != nil {
                 actions.insert(.openInBrowser, at: 0)
@@ -34,62 +34,20 @@ final class GenericFacade: CapabilityFacade {
             return [.start, .remove]
         case .starting:
             return []
-        case .degraded:
-            var actions: [CapabilityAction] = [.stop, .restart]
-            if advancedURL != nil {
-                actions.insert(.openInBrowser, at: 0)
-            }
-            actions.append(.remove)
-            return actions
         }
     }
 
     func perform(_ action: CapabilityAction) async throws {
-        guard let sm = serviceManager else { return }
-
-        switch action.id {
-        case CapabilityAction.start.id:
-            await sm.startService(capabilityID: capabilityID)
-        case CapabilityAction.stop.id:
-            await sm.stopService(capabilityID: capabilityID)
-        case CapabilityAction.restart.id:
-            await sm.stopService(capabilityID: capabilityID)
-            await sm.startService(capabilityID: capabilityID)
-        case CapabilityAction.remove.id:
-            await sm.uninstallService(capabilityID: capabilityID)
-        default:
+        let handled = try await lifecycle.perform(action, capabilityID: capabilityID)
+        if !handled {
             throw FacadeError.actionNotAvailable(action.id)
         }
     }
 
     func refresh() {
-        guard let sm = serviceManager else { return }
-        guard let service = sm.installedServices.first(where: { $0.id == capabilityID }) else {
-            state = .idle
-            health = .unknown
-            advancedURL = nil
-            return
-        }
-
-        switch service.status {
-        case .running:
-            state = .ready
-            health = .healthy
-        case .stopped:
-            state = .idle
-            health = .unknown
-        case .failed:
-            state = .error("Service failed")
-            health = CapabilityHealth(status: .unhealthy, message: "Service failed")
-        case .installing:
-            state = .starting
-            health = .unknown
-        }
-
-        if let urlString = service.localURL, let url = URL(string: urlString) {
-            advancedURL = url
-        } else {
-            advancedURL = nil
-        }
+        let result = lifecycle.refreshState(for: capabilityID)
+        state = result.state
+        health = result.health
+        advancedURL = result.advancedURL
     }
 }

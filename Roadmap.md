@@ -81,7 +81,7 @@ Phase	Focus	Outcome	Status
 10	Domain Models	Backend-independent capability models	✅ DONE
 11	Native UI	Haven-native capability screens	✅ DONE (merged with 12)
 12	Books (Kavita)	First full facade + native UI capability	✅ DONE
-13	Replaceability	Validate backend swap	⬜ Not started
+13	Replaceability	Validate backend swap	✅ DONE
 14	Files	Second capability	⬜ Not started
 
 
@@ -409,37 +409,26 @@ All deliverables implemented:
 
 ⸻
 
-🔁 Phase 13 — Backend Replaceability
+🔁 Phase 13 — Backend Replaceability ✅ COMPLETE
 
-🎯 Goal
-
-Validate that facade truly enables engine swap
-
-⸻
-
-🔧 Deliverables
-
-Adapter abstraction hardened
-
-* no backend leakage into UI
-* strict separation of models
-
-Migration hooks
-
-* migrate(from:to:) interface
-* config/data migration strategy
-
-Optional experiment
-
-* plug second backend (even mock) for Books
-
-⸻
-
-✅ Acceptance Criteria
-
-* Capability runs with alternative adapter (even partially)
-* No UI changes required
-* Migration path defined
+All deliverables implemented:
+	•	FacadeLifecycle: shared helper eliminates duplicated ServiceManager delegation across all facades
+	•	MockBooksFacade: second Books backend with API key auth (not username/password)
+	  - Validates that BackendSetupState abstracts different auth mechanisms
+	  - Uses FacadeLifecycle for lifecycle actions, same as KavitaBooksFacade
+	  - Mock library data (42 items), simulated rescan with delay
+	  - API key persisted in UserDefaults, auto-reconnect on refresh
+	•	MockBooksSetupSheet: API key entry UI (concrete MockBooksFacade, not protocol)
+	•	BooksHomeView handles multiple backends:
+	  - Setup sheet: downcasts to KavitaBooksFacade or MockBooksFacade for backend-specific UI
+	  - Disconnect: backend-specific disconnect in ready view
+	  - All protocol-level state (setupState, library, actions) works identically
+	•	AdapterRegistry: swap one line to switch Kavita → Mock backend
+	•	GenericFacade, KavitaBooksFacade, MockBooksFacade all use FacadeLifecycle — zero duplication
+	•	Acceptance criteria met:
+	  - Mock backend runs with alternative adapter (API key auth)
+	  - Zero protocol-level UI changes needed — only backend-specific sheets differ
+	  - Migration path: swap AdapterRegistry registration, same capability ID
 
 ⸻
 
