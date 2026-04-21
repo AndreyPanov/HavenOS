@@ -8,8 +8,12 @@ private let log = Logger(subsystem: "com.haven", category: "KavitaBooksFacade")
 /// Books facade backed by Kavita.
 ///
 /// Connects to the Kavita REST API to provide library state,
-/// series counts, and scan triggers — all surfaced through the
+/// item counts, and scan triggers — all surfaced through the
 /// backend-independent ``BooksFacade`` protocol.
+///
+/// Auth (connect/disconnect) is Kavita-specific and lives here,
+/// not on the protocol. The UI discovers it via `setupState` and
+/// uses a type check on the concrete class for the connect sheet.
 @MainActor
 @Observable
 final class KavitaBooksFacade: BooksFacade {
@@ -25,10 +29,31 @@ final class KavitaBooksFacade: BooksFacade {
 
     private(set) var library: BooksLibrary?
 
-    // MARK: - BooksFacade (connection)
+    var setupState: BackendSetupState {
+        switch connectionState {
+        case .disconnected:
+            return .needsSetup(message: "Connect to see your library")
+        case .connecting:
+            return .settingUp
+        case .connected:
+            return .ready
+        case .failed(let msg):
+            return .failed(msg)
+        }
+    }
 
-    private(set) var connectionState: LibraryConnectionState = .disconnected
-    private(set) var seriesCount: Int?
+    // MARK: - Kavita-Specific (Auth)
+
+    enum ConnectionState: Equatable {
+        case disconnected
+        case connecting
+        case connected
+        case failed(String)
+    }
+
+    private(set) var connectionState: ConnectionState = .disconnected
+    private(set) var itemCount: Int?
+
     var connectedUsername: String? {
         UserDefaults.standard.string(forKey: usernameKey)
     }
@@ -95,20 +120,18 @@ final class KavitaBooksFacade: BooksFacade {
     // MARK: - BooksFacade Methods
 
     func setLibraryPath(_ path: String) async throws {
-        // Future: rewrite Kavita config and restart
-        // For now, this requires reinstall with new settings
         throw FacadeError.adapterError("Changing library path requires reinstalling the service with new settings.")
     }
 
     func rescan() async throws {
         guard let client = apiClient, let token = authToken else {
-            throw FacadeError.adapterError("Not connected to Kavita")
+            throw FacadeError.adapterError("Not connected")
         }
         log.info("Triggering library rescan")
         try await client.scanAllLibraries(token: token)
     }
 
-    // MARK: - Connection
+    // MARK: - Kavita Auth
 
     func connect(username: String, password: String) async throws {
         guard let client = apiClient else {
@@ -133,7 +156,7 @@ final class KavitaBooksFacade: BooksFacade {
     func disconnect() {
         authToken = nil
         connectionState = .disconnected
-        seriesCount = nil
+        itemCount = nil
         clearSavedToken()
         updateLibrary()
     }
@@ -150,7 +173,6 @@ final class KavitaBooksFacade: BooksFacade {
             return
         }
 
-        // Read stored settings for library path
         let stored = sm.storedState(for: capabilityID)
         let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
         port = service.port
@@ -179,8 +201,8 @@ final class KavitaBooksFacade: BooksFacade {
 
         library = BooksLibrary(
             libraryPath: libraryPath,
-            scanStatus: connectionState == .connected ? .idle : .idle,
-            itemCount: seriesCount
+            scanStatus: .idle,
+            itemCount: itemCount
         )
 
         // Auto-reconnect if we have a saved token and service is running
@@ -201,12 +223,11 @@ final class KavitaBooksFacade: BooksFacade {
         do {
             let libraries = try await client.getLibraries(token: token)
             let count = try await client.getSeriesCount(token: token)
-            seriesCount = count
+            itemCount = count
             log.info("Fetched library data: \(libraries.count) libraries, \(count) series")
             updateLibrary()
         } catch {
             log.error("Failed to fetch library data: \(error.localizedDescription)")
-            // Token might be expired
             if let apiError = error as? KavitaAPIError,
                case .httpError(let code, _) = apiError, code == 401 {
                 connectionState = .failed("Session expired — reconnect")
@@ -222,7 +243,7 @@ final class KavitaBooksFacade: BooksFacade {
         library = BooksLibrary(
             libraryPath: libraryPath,
             scanStatus: .idle,
-            itemCount: seriesCount
+            itemCount: itemCount
         )
     }
 
@@ -244,5 +265,4 @@ final class KavitaBooksFacade: BooksFacade {
         UserDefaults.standard.removeObject(forKey: tokenKey)
         UserDefaults.standard.removeObject(forKey: usernameKey)
     }
-
 }

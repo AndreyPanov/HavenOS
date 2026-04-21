@@ -2,9 +2,10 @@ import SwiftUI
 import HavenFacade
 
 /// Credential entry sheet for connecting Haven to Kavita.
+/// This is Kavita-specific — takes the concrete type, not the protocol.
 struct BooksConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let facade: any BooksFacade
+    let facade: KavitaBooksFacade
 
     @State private var username = ""
     @State private var password = ""

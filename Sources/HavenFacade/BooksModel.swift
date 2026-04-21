@@ -9,7 +9,7 @@ public struct BooksLibrary: Sendable, Equatable {
     public let libraryPath: String
     /// Current scan/index status.
     public let scanStatus: ScanStatus
-    /// Total number of books (nil if unknown or not yet scanned).
+    /// Total number of items (nil if unknown or not yet scanned).
     public let itemCount: Int?
 
     public init(libraryPath: String, scanStatus: ScanStatus = .idle, itemCount: Int? = nil) {
@@ -19,15 +19,17 @@ public struct BooksLibrary: Sendable, Equatable {
     }
 }
 
-/// Connection state for backends that require authentication.
-public enum LibraryConnectionState: Sendable, Equatable {
-    /// Not connected — credentials not yet provided.
-    case disconnected
-    /// Connection in progress.
-    case connecting
-    /// Connected and authenticated.
-    case connected
-    /// Connection failed.
+/// Whether the backend needs additional setup before it can report
+/// library data. The meaning varies by backend — could be auth,
+/// first-run config, or nothing at all.
+public enum BackendSetupState: Sendable, Equatable {
+    /// Backend is ready — no setup needed.
+    case ready
+    /// Backend needs user action before it can operate.
+    case needsSetup(message: String)
+    /// Setup is in progress.
+    case settingUp
+    /// Setup failed.
     case failed(String)
 }
 
@@ -38,29 +40,20 @@ public enum LibraryConnectionState: Sendable, Equatable {
 /// Implementations map this interface to a specific backend
 /// (e.g. Kavita, Calibre-Web). The UI programs against this
 /// protocol and never references the backend directly.
+///
+/// Auth, connection, and backend-specific config live on the
+/// concrete implementation — not here.
 @MainActor
 public protocol BooksFacade: CapabilityFacade {
     /// Current library state (nil before first provision).
     var library: BooksLibrary? { get }
 
-    /// Connection state (backends that require auth).
-    var connectionState: LibraryConnectionState { get }
-
-    /// Number of series/items in the library (nil if unknown).
-    var seriesCount: Int? { get }
-
-    /// Display name of the connected account (nil if not connected).
-    var connectedUsername: String? { get }
+    /// Whether the backend needs additional setup (auth, config, etc.).
+    var setupState: BackendSetupState { get }
 
     /// Set or change the library path on disk.
     func setLibraryPath(_ path: String) async throws
 
     /// Trigger a library rescan.
     func rescan() async throws
-
-    /// Authenticate with the backend service.
-    func connect(username: String, password: String) async throws
-
-    /// Disconnect from the backend service.
-    func disconnect()
 }

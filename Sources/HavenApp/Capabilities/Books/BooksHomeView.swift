@@ -4,8 +4,10 @@ import HavenFacade
 
 /// Native Books capability screen.
 ///
-/// Shows library status, series count, and actions — all inside Haven.
-/// "Open in Kavita" is a secondary action, not the primary experience.
+/// Uses ``BooksFacade`` (protocol) for all state. The only concrete
+/// type reference is the optional downcast to ``KavitaBooksFacade``
+/// for the connect sheet — a future backend that doesn't need auth
+/// would skip that entirely via `setupState == .ready`.
 struct BooksHomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
     let facade: any BooksFacade
@@ -40,15 +42,15 @@ struct BooksHomeView: View {
                 case .starting:
                     startingView
                 case .ready, .degraded:
-                    switch facade.connectionState {
-                    case .disconnected:
-                        connectPromptView
-                    case .connecting:
-                        connectingView
-                    case .connected:
-                        connectedView
+                    switch facade.setupState {
+                    case .needsSetup:
+                        setupPromptView
+                    case .settingUp:
+                        settingUpView
+                    case .ready:
+                        readyView
                     case .failed(let message):
-                        connectionFailedView(message: message)
+                        setupFailedView(message: message)
                     }
                 }
 
@@ -61,7 +63,9 @@ struct BooksHomeView: View {
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, alignment: .center)
         .sheet(isPresented: $showingConnectSheet) {
-            BooksConnectSheet(facade: facade)
+            if let kavita = facade as? KavitaBooksFacade {
+                BooksConnectSheet(facade: kavita)
+            }
         }
     }
 
@@ -105,7 +109,7 @@ struct BooksHomeView: View {
         }
     }
 
-    private var connectPromptView: some View {
+    private var setupPromptView: some View {
         GroupBox {
             VStack(spacing: 16) {
                 Image(systemName: "link.badge.plus")
@@ -113,7 +117,7 @@ struct BooksHomeView: View {
                     .foregroundStyle(.tertiary)
                 Text("Connect to your library")
                     .font(.headline)
-                Text("Enter your Kavita credentials so Haven can show your library here.")
+                Text("Sign in so Haven can show your library here.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -129,7 +133,7 @@ struct BooksHomeView: View {
         }
     }
 
-    private var connectingView: some View {
+    private var settingUpView: some View {
         GroupBox {
             HStack(spacing: 12) {
                 ProgressView()
@@ -143,20 +147,21 @@ struct BooksHomeView: View {
         }
     }
 
-    private var connectedView: some View {
+    private var readyView: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Library info card
             GroupBox("Library") {
                 VStack(spacing: 0) {
                     if let lib = facade.library {
                         DetailRow(label: "Location", value: lib.libraryPath)
-                        Divider().padding(.vertical, 6)
-                        DetailRow(
-                            label: "Series",
-                            value: facade.seriesCount.map { "\($0)" } ?? "—"
-                        )
+                        if let count = lib.itemCount {
+                            Divider().padding(.vertical, 6)
+                            DetailRow(label: "Items", value: "\(count)")
+                        }
                     }
-                    if let username = facade.connectedUsername {
+                    // Kavita-specific: show connected user
+                    if let kavita = facade as? KavitaBooksFacade,
+                       let username = kavita.connectedUsername {
                         Divider().padding(.vertical, 6)
                         DetailRow(label: "Connected as", value: username)
                     }
@@ -164,20 +169,21 @@ struct BooksHomeView: View {
                 .padding(4)
             }
 
-            // Connection management
-            HStack {
-                if let username = facade.connectedUsername {
+            // Kavita-specific: disconnect button
+            if let kavita = facade as? KavitaBooksFacade,
+               let username = kavita.connectedUsername {
+                HStack {
                     Label("Connected as \(username)", systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.green)
+                    Spacer()
+                    Button("Disconnect", systemImage: "link.badge.plus") {
+                        kavita.disconnect()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Button("Disconnect", systemImage: "link.badge.plus") {
-                    facade.disconnect()
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             // Setup guide (from onboarding)
@@ -190,7 +196,7 @@ struct BooksHomeView: View {
         }
     }
 
-    private func connectionFailedView(message: String) -> some View {
+    private func setupFailedView(message: String) -> some View {
         GroupBox {
             VStack(spacing: 16) {
                 Image(systemName: "exclamationmark.triangle")
@@ -210,7 +216,9 @@ struct BooksHomeView: View {
                     .controlSize(.large)
 
                     Button("Dismiss") {
-                        facade.disconnect()
+                        if let kavita = facade as? KavitaBooksFacade {
+                            kavita.disconnect()
+                        }
                     }
                     .buttonStyle(.glass)
                     .controlSize(.large)
