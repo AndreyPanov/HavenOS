@@ -77,6 +77,12 @@ Phase	Focus	Outcome	Status
 6	Templates	Scale service creation	⬜ Not started
 7	Pilot Services	Validate system	🔶 Navidrome spec done, live test pending
 8	Multi-Service	Unlock complex apps	✅ DONE
+9	Facade Layer	Stable abstraction between UI and backends	✅ DONE
+10	Domain Models	Backend-independent capability models	✅ DONE
+11	Native UI	Haven-native capability screens	✅ DONE (merged with 12)
+12	Books (Kavita)	First full facade + native UI capability	✅ DONE
+13	Replaceability	Validate backend swap	⬜ Not started
+14	Files	Second capability	⬜ Not started
 
 
 ⸻
@@ -349,198 +355,57 @@ UPDATED 21.04.26
 
 ⸻
 
-🧩 Phase 9 — Facade Layer Foundation
+🧩 Phase 9 — Facade Layer Foundation ✅ COMPLETE
 
-🎯 Goal
-
-Introduce a stable abstraction layer between Haven and backends.
-
-⸻
-
-🔧 Deliverables
-
-Core interfaces
-
-* CapabilityFacade protocol
-* CapabilityState
-* CapabilitySettings
-* CapabilityAction
-* CapabilityHealth
-
-Backend abstraction
-
-* BackendAdapter interface (per engine)
-* Adapter registry (capability → adapter)
-
-Execution integration
-
-* Facade step added to pipeline:
-
-install → facade.provision → start
-
-Advanced fallback
-
-* advancedURL() support
-* UI hook for “Open underlying service”
+All deliverables implemented:
+	•	CapabilityFacade protocol (@MainActor, Observable) with state, health, actions, advancedURL
+	•	CapabilityState (idle/starting/ready/degraded/error), CapabilityHealth, CapabilityAction
+	•	BackendAdapter protocol (Sendable) for engine abstraction
+	•	AdapterRegistry: maps capability IDs to facade factories, falls back to GenericFacade
+	•	FacadeActionBar: renders actions from facade.availableActions with glass styling
+	•	ServiceManager.facade(for:) creates facades on demand, caches, refreshes on state change
+	•	advancedURL support with “Open in Browser” as secondary action
 
 ⸻
 
-✅ Acceptance Criteria
+🧠 Phase 10 — Capability Domain Models ✅ COMPLETE
 
-* UI does NOT reference runtime units directly
-* At least 1 capability uses facade (even minimally)
-* Backend can be swapped without UI changes (theoretically)
-
-⸻
-
-🧠 Phase 10 — Capability Domain Models
-
-🎯 Goal
-
-Define Haven-native data models (backend-independent)
+All deliverables implemented:
+	•	BooksLibrary (libraryPath, scanStatus, itemCount) + BooksFacade protocol
+	•	BackendSetupState (ready/needsSetup/settingUp/failed) — generic, no auth leakage
+	•	FilesRoot + FilesFacade protocol
+	•	MusicLibrary (libraryPath, scanStatus, artist/album/track counts) + MusicFacade protocol
+	•	ScanStatus shared enum (idle/scanning/complete/error)
+	•	All models in HavenFacade/Models/ — zero backend terms, pure user-facing concepts
 
 ⸻
 
-🔧 Deliverables
+🎨 Phase 11 — Native Capability UI Foundation ✅ COMPLETE (merged with Phase 12)
 
-Define first-class models:
-
-Books
-
-* libraryPath
-* collections
-* items
-* scanStatus
-
-Files
-
-* roots
-* items
-* permissions (simple)
-* preview support
-
-Music (future-ready)
-
-* library
-* artists
-* albums
-* playback state
+Delivered as part of the Books vertical slice:
+	•	BooksHomeView: state-driven UI (stopped/starting/setup/ready) from BooksFacade protocol
+	•	FacadeActionBar: reusable action buttons from facade.availableActions
+	•	Navigation: HomeView routes to native screen via `any BooksFacade` protocol check
+	•	StatusBadgeView, ServiceIconView, OnboardingStepsView — shared components
+	•	“Open in Browser” is secondary; primary experience is inside Haven
 
 ⸻
 
-🧱 Rules
+📚 Phase 12 — First Full Capability: Books (Kavita) ✅ COMPLETE
 
-* ❌ No backend terms allowed
-* ✅ Only user-facing concepts
-
-⸻
-
-✅ Acceptance Criteria
-
-* Capability models exist independent of any backend
-* Facade maps model ↔ backend config/state
-
-⸻
-
-🎨 Phase 11 — Native Capability UI Foundation
-
-🎯 Goal
-
-Introduce Haven-native application UI layer
-
-⸻
-
-🔧 Deliverables
-
-Reusable UI shell
-
-* CapabilityHomeView
-* EmptyStateView
-* Loading/Indexing state
-* Error/Degraded state
-
-Navigation model
-
-* Home → Capabilities (not services)
-* Capability → native screen
-
-Shared components
-
-* Action bar (Rescan, Settings, Restart, Advanced)
-* Folder picker
-* Status indicators
-
-⸻
-
-⚠️ Important
-
-* No dependency on backend UI
-* UI reads only from facade
-
-⸻
-
-✅ Acceptance Criteria
-
-* At least 1 capability renders a native screen
-* User can stay inside Haven for core interaction
-* “Open in Browser” becomes secondary (Advanced)
-
-⸻
-
-📚 Phase 12 — First Full Capability: Books (Kavita)
-
-🎯 Goal
-
-First end-to-end facade + native UI capability
-
-⸻
-
-🔧 Deliverables
-
-BooksFacade
-
-* provision library
-* apply settings (libraryPath)
-* trigger scan (restart or API/CLI)
-* health detection
-* advanced URL
-
-KavitaAdapter
-
-* config generation (appsettings.json)
-* JWT handling
-* directory mapping
-* port handling
-
-Books UI
-
-* library status
-* “Add folder”
-* “Rescan”
-* “Open library”
-* basic item list (optional v1)
-
-⸻
-
-🧪 Scope (IMPORTANT)
-
-Focus only on:
-
-* happy path
-* 80% use case
-
-NOT:
-
-* full Kavita feature parity
-* deep admin config
-
-⸻
-
-✅ Acceptance Criteria
-
-* User installs Books and never needs Kavita UI for basic use
-* Advanced UI still accessible
-* Backend can be replaced without UI redesign (design-level guarantee)
+All deliverables implemented:
+	•	BooksFacade protocol: library, setupState, setLibraryPath(), rescan()
+	•	KavitaBooksFacade: JWT auth, API client, auto-reconnect, series count
+	•	KavitaAPIClient: login, getLibraries, scanAllLibraries, getSeriesCount, health
+	•	BooksHomeView: state-driven (stopped → start, needsSetup → connect, ready → library info)
+	•	BooksConnectSheet: Kavita-specific credential entry (concrete type, not protocol)
+	•	KavitaSpec: native Swift spec (replaces JSON catalog files)
+	•	BuiltInCatalog: always-available specs merged with disk catalog
+	•	Architectural boundaries enforced:
+	  - UI uses `any BooksFacade` — never references KavitaBooksFacade
+	  - Auth (connect/disconnect) lives on concrete class, not protocol
+	  - BackendSetupState abstracts auth without leaking it
+	  - Swap backend → zero UI changes needed (setupState == .ready skips auth)
 
 ⸻
 
