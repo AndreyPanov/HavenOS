@@ -143,7 +143,7 @@ let package = Package(
         ),
         .testTarget(
             name: "HavenAppTests",
-            dependencies: ["HavenCore"],
+            dependencies: ["HavenApp", "HavenCore", "HavenFacade"],
             path: "Tests/HavenAppTests"
         ),
     ]

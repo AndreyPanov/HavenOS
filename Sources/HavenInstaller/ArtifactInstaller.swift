@@ -85,7 +85,8 @@ public struct ArtifactInstaller: Sendable {
     /// - Throws: `ArtifactInstallerError` if any step fails.
     public func install(
         descriptor: ArtifactDescriptor,
-        forceReinstall: Bool = false
+        forceReinstall: Bool = false,
+        downloadProgress: (@Sendable (Double) -> Void)? = nil
     ) throws -> ArtifactInstallResult {
         let unitID = descriptor.unitID
         log.info("[install] unit=\(unitID), source=\(String(describing: descriptor.source)), format=\(String(describing: descriptor.format))")
@@ -109,7 +110,7 @@ public struct ArtifactInstaller: Sendable {
         log.info("[install] \(forceReinstall ? "Force reinstall" : "Cache miss") for \(unitID), resolving source...")
 
         // 2. Resolve source to a local file
-        let localFile = try resolveLocalFile(descriptor: descriptor)
+        let localFile = try resolveLocalFile(descriptor: descriptor, downloadProgress: downloadProgress)
 
         // 3. Extract or copy into a work directory.
         //    Artifact-based installs use atomic staging; legacy uses direct directory.
@@ -176,7 +177,7 @@ public struct ArtifactInstaller: Sendable {
 
     // MARK: - Source resolution
 
-    private func resolveLocalFile(descriptor: ArtifactDescriptor) throws -> URL {
+    private func resolveLocalFile(descriptor: ArtifactDescriptor, downloadProgress: (@Sendable (Double) -> Void)? = nil) throws -> URL {
         let unitID = descriptor.unitID
         switch descriptor.source {
         case .local(let fileURL):
@@ -193,7 +194,7 @@ public struct ArtifactInstaller: Sendable {
         case .remote(let remoteURL):
             log.info("[install] Downloading from: \(remoteURL.absoluteString)")
             do {
-                let localFile = try downloadClient.download(from: remoteURL)
+                let localFile = try downloadClient.download(from: remoteURL, progress: downloadProgress)
                 log.info("[install] Downloaded to: \(localFile.path)")
                 return localFile
             } catch {

@@ -15,7 +15,7 @@ final class MockDownloadClient: DownloadClient, @unchecked Sendable {
 
     private(set) var downloadedURLs: [URL] = []
 
-    func download(from url: URL) throws -> URL {
+    func download(from url: URL, progress: (@Sendable (Double) -> Void)?) throws -> URL {
         downloadedURLs.append(url)
         if let error = error {
             throw error

@@ -59,6 +59,8 @@ struct KavitaAPIClient: Sendable {
         let request = authorizedRequest(path: "/api/Library", token: token)
         let (data, response) = try await URLSession.shared.data(for: request)
         try checkHTTPStatus(response, data: data)
+        // Kavita returns 204 No Content when no libraries exist
+        if data.isEmpty { return [] }
         return try JSONDecoder().decode([Library].self, from: data)
     }
 
@@ -162,9 +164,9 @@ enum KavitaAPIError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .httpError(let code, let body):
-            if code == 401 { return "Invalid credentials" }
             if let message = Self.extractMessage(from: body) { return message }
             if !body.isEmpty { return body }
+            if code == 401 { return "Invalid credentials" }
             return "Server error (\(code))"
         }
     }

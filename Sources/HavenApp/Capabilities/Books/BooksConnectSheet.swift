@@ -24,6 +24,10 @@ struct BooksConnectSheet: View {
             switch mode {
             case .choose:
                 chooseView
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .leading).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
             case .createAccount:
                 accountFormView(
                     icon: "person.crop.circle.badge.plus",
@@ -32,6 +36,10 @@ struct BooksConnectSheet: View {
                     actionLabel: "Create Account",
                     action: createAccount
                 )
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .trailing).combined(with: .opacity)
+                ))
             case .signIn:
                 accountFormView(
                     icon: "person.crop.circle",
@@ -40,11 +48,16 @@ struct BooksConnectSheet: View {
                     actionLabel: "Sign In",
                     action: signIn
                 )
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .trailing).combined(with: .opacity)
+                ))
             }
         }
         .padding(32)
         .frame(width: 380)
-        .animation(.default, value: mode)
+        .clipped()
+        .animation(.easeInOut(duration: 0.25), value: mode)
     }
 
     // MARK: - Choose Mode
@@ -194,7 +207,13 @@ struct BooksConnectSheet: View {
                 try await facade.createAccount(username: username, password: password)
                 dismiss()
             } catch {
-                errorMessage = error.localizedDescription
+                // If registration is blocked, guide user to sign in instead
+                let msg = error.localizedDescription
+                if msg.lowercased().contains("not allowed") || msg.lowercased().contains("already") {
+                    errorMessage = "An admin account already exists. Use Sign In instead."
+                } else {
+                    errorMessage = msg
+                }
             }
             isWorking = false
         }

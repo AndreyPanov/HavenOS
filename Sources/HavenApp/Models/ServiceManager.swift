@@ -202,6 +202,12 @@ final class ServiceManager {
         case .success:
             log.info("Install succeeded: \(capabilityID)")
             refresh()
+
+            // Auto-start the service after install
+            actionStatus = "Starting…"
+            await startService(capabilityID: capabilityID)
+            return
+
         case .failure(let error):
             log.error("Install failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
@@ -210,8 +216,6 @@ final class ServiceManager {
         isPerformingAction = false
         activeCapabilityID = nil
         actionStatus = nil
-
-        // Show post-install guidance if the bundle provides onboarding or instructions.
     }
 
     /// Uninstall a service by capability ID.

@@ -52,11 +52,38 @@ struct CapabilityCardView: View {
             // Action row
             HStack {
                 if let service = installedService {
-                    // Already added — no action button needed, status is at top
-                    if service.status == .running, serviceManager.hasNativeUI(for: service.id) {
-                        Text("Open from sidebar")
+                    switch service.status {
+                    case .running:
+                        if serviceManager.hasNativeUI(for: service.id) {
+                            Text("Open from sidebar")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            Text("Running")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    case .stopped:
+                        Button {
+                            Task { await serviceManager.startService(capabilityID: service.id) }
+                        } label: {
+                            Label("Start", systemImage: "play.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .disabled(serviceManager.isPerformingAction)
+                    case .installing:
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text("Setting up…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    case .failed:
+                        Text("Error")
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.red)
                     }
                 } else if serviceManager.activeCapabilityID == plugin.id {
                     HStack(spacing: 6) {

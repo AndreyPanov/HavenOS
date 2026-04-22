@@ -17,7 +17,7 @@ private final class E2EDownloadClient: DownloadClient, @unchecked Sendable {
         self.fixtureFile = fixtureFile
     }
 
-    func download(from url: URL) throws -> URL {
+    func download(from url: URL, progress: (@Sendable (Double) -> Void)?) throws -> URL {
         downloadedURLs.append(url)
         return fixtureFile
     }

@@ -7,9 +7,13 @@ private let log = Logger(subsystem: "com.haven", category: "KavitaBooksFacade")
 
 /// Books facade backed by Kavita.
 ///
-/// Auth (connect/disconnect) is Kavita-specific and lives here,
-/// not on the protocol. The UI discovers it via `setupState` and
-/// downcasts to this class for the connect sheet.
+/// Auth flow:
+/// 1. Service starts → facade polls `/api/health` until Kavita is reachable
+/// 2. Tries saved JWT token → if 401, tries saved password → if no password, registers new account
+/// 3. If all fail, shows "Sign In" for manual entry
+///
+/// The `isManagedByHaven` preference (default true) controls whether auto-connect
+/// runs automatically. When false, user must sign in manually.
 @MainActor
 @Observable
 final class KavitaBooksFacade: BooksFacade {
@@ -34,7 +38,7 @@ final class KavitaBooksFacade: BooksFacade {
         }
     }
 
-    // MARK: - Kavita-Specific (Auth)
+    // MARK: - Connection State
 
     enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
@@ -43,8 +47,28 @@ final class KavitaBooksFacade: BooksFacade {
     private(set) var connectionState: ConnectionState = .disconnected
     private(set) var itemCount: Int?
 
+    /// True while auto-connect is in progress (health polling + auth).
+    private(set) var isAutoConnecting = false
+
+    /// True after auto-connect tried and exhausted all methods.
+    /// Prevents infinite retry loops. Reset on switchToManaged() or manual disconnect/signOut.
+    private var autoConnectExhausted = false
+
+    /// User preference: true = Haven manages the account automatically.
+    /// When false, user must sign in manually. Persisted in UserDefaults.
+    var isManagedByHaven: Bool {
+        get { !UserDefaults.standard.bool(forKey: customAccountKey) }
+        set { UserDefaults.standard.set(!newValue, forKey: customAccountKey) }
+    }
+
     var connectedUsername: String? {
-        UserDefaults.standard.string(forKey: usernameKey)
+        guard connectionState == .connected else { return nil }
+        return UserDefaults.standard.string(forKey: usernameKey)
+    }
+
+    /// True if Haven has a stored password it can use to re-login.
+    var hasSavedCredentials: Bool {
+        UserDefaults.standard.string(forKey: passwordKey) != nil
     }
 
     // MARK: - Internal
@@ -54,6 +78,7 @@ final class KavitaBooksFacade: BooksFacade {
     private var apiClient: KavitaAPIClient?
     private var authToken: String?
     private var port: Int?
+    private var autoConnectTask: Task<Void, Never>?
 
     // MARK: - Init
 
@@ -62,7 +87,6 @@ final class KavitaBooksFacade: BooksFacade {
         self.serviceManager = serviceManager
         self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
         refresh()
-        loadSavedToken()
     }
 
     // MARK: - Available Actions
@@ -72,8 +96,7 @@ final class KavitaBooksFacade: BooksFacade {
         case .ready:
             var actions: [CapabilityAction] = []
             if connectionState == .connected { actions.append(.rescan) }
-            if advancedURL != nil { actions.append(.openInBrowser) }
-            actions.append(contentsOf: [.stop, .restart, .remove])
+            actions.append(.remove)
             return actions
         case .idle, .error:
             return [.start, .remove]
@@ -109,7 +132,149 @@ final class KavitaBooksFacade: BooksFacade {
         try await client.scanAllLibraries(token: token)
     }
 
-    // MARK: - Kavita Auth
+    // MARK: - Auto-Connect
+
+    /// Waits for Kavita API to be healthy, then authenticates.
+    /// Called automatically when service becomes ready and isManagedByHaven is true.
+    func autoConnect() async {
+        guard let client = apiClient else { return }
+        guard !isAutoConnecting else { return }
+
+        isAutoConnecting = true
+        connectionState = .connecting
+        log.info("Auto-connect: waiting for Kavita API...")
+
+        // Step 1: Poll /api/health until reachable (max 15 seconds)
+        let healthy = await pollHealth(client: client, maxAttempts: 15, interval: 1.0)
+        guard healthy else {
+            log.warning("Auto-connect: Kavita API not reachable after polling")
+            connectionState = .failed("Service is starting — try again in a moment")
+            isAutoConnecting = false
+            return
+        }
+        log.info("Auto-connect: Kavita API is healthy")
+
+        // Step 2: Try saved JWT token
+        loadSavedToken()
+        if let token = authToken {
+            log.info("Auto-connect: trying saved token")
+            if await verifyToken(client: client, token: token) {
+                connectionState = .connected
+                log.info("Auto-connect: saved token valid")
+                await fetchLibraryData()
+                isAutoConnecting = false
+                return
+            }
+            log.info("Auto-connect: saved token expired")
+            authToken = nil
+        }
+
+        // Step 3: Try saved password (Haven-managed account)
+        if let username = UserDefaults.standard.string(forKey: usernameKey),
+           let password = UserDefaults.standard.string(forKey: passwordKey) {
+            log.info("Auto-connect: re-login with saved credentials")
+            do {
+                let response = try await client.login(username: username, password: password)
+                authToken = response.token
+                connectionState = .connected
+                saveToken(response.token, username: username)
+                log.info("Auto-connect: re-login succeeded")
+                await fetchLibraryData()
+                isAutoConnecting = false
+                return
+            } catch {
+                log.warning("Auto-connect: re-login failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Step 3b: Try managed credentials (Haven-provisioned account, survives custom sign-in)
+        if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
+           let mPass = UserDefaults.standard.string(forKey: managedPasswordKey) {
+            log.info("Auto-connect: trying managed credentials")
+            do {
+                let response = try await client.login(username: mUser, password: mPass)
+                authToken = response.token
+                connectionState = .connected
+                saveToken(response.token, username: mUser)
+                UserDefaults.standard.set(mPass, forKey: passwordKey)
+                log.info("Auto-connect: managed credentials valid")
+                await fetchLibraryData()
+                isAutoConnecting = false
+                return
+            } catch {
+                log.warning("Auto-connect: managed credentials failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Step 4: Try to register a new account (fresh Kavita install)
+        log.info("Auto-connect: attempting registration")
+        let username = "haven"
+        let password = generatePassword()
+        do {
+            let response = try await client.register(username: username, password: password)
+            authToken = response.token
+            connectionState = .connected
+            saveToken(response.token, username: username)
+            UserDefaults.standard.set(password, forKey: passwordKey)
+            // Persist managed credentials separately so they survive custom sign-in
+            UserDefaults.standard.set(username, forKey: managedUsernameKey)
+            UserDefaults.standard.set(password, forKey: managedPasswordKey)
+            log.info("Auto-connect: registered new account")
+            await fetchLibraryData()
+            isAutoConnecting = false
+            return
+        } catch {
+            log.info("Auto-connect: registration failed (account exists?): \(error.localizedDescription)")
+        }
+
+        // Step 5: All methods exhausted — user must sign in manually
+        connectionState = .disconnected
+        isAutoConnecting = false
+        autoConnectExhausted = true
+        log.info("Auto-connect: giving up, manual sign-in required")
+    }
+
+    /// Poll `/api/health` until it returns 200.
+    private func pollHealth(client: KavitaAPIClient, maxAttempts: Int, interval: TimeInterval) async -> Bool {
+        for attempt in 1...maxAttempts {
+            if await client.isHealthy() {
+                return true
+            }
+            log.debug("Health poll \(attempt)/\(maxAttempts): not ready")
+            try? await Task.sleep(for: .seconds(interval))
+        }
+        return false
+    }
+
+    /// Verify a JWT token is still valid by making a lightweight API call.
+    private func verifyToken(client: KavitaAPIClient, token: String) async -> Bool {
+        do {
+            _ = try await client.getLibraries(token: token)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Generate a strong random password for auto-provisioned accounts.
+    private func generatePassword() -> String {
+        let letters = "abcdefghijklmnopqrstuvwxyz"
+        let upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let digits = "0123456789"
+        let special = "!@#$%^&*"
+        var chars: [Character] = [
+            letters.randomElement()!,
+            upper.randomElement()!,
+            digits.randomElement()!,
+            special.randomElement()!
+        ]
+        let all = letters + upper + digits + special
+        for _ in 0..<12 { chars.append(all.randomElement()!) }
+        chars.shuffle()
+        return String(chars)
+    }
+
+    // MARK: - Manual Auth
 
     /// Create the initial admin account on a fresh Kavita install, then connect.
     func createAccount(username: String, password: String) async throws {
@@ -143,6 +308,9 @@ final class KavitaBooksFacade: BooksFacade {
             authToken = loginResponse.token
             connectionState = .connected
             saveToken(loginResponse.token, username: username)
+            // Custom account: clear Haven password, mark as not managed
+            isManagedByHaven = false
+            UserDefaults.standard.removeObject(forKey: passwordKey)
             log.info("Connected to Kavita as \(username)")
             await fetchLibraryData()
         } catch {
@@ -152,12 +320,44 @@ final class KavitaBooksFacade: BooksFacade {
         }
     }
 
+    /// Disconnect from Kavita. Preserves Haven password for potential reconnect.
     func disconnect() {
+        autoConnectTask?.cancel()
+        autoConnectTask = nil
+        isAutoConnecting = false
         authToken = nil
         connectionState = .disconnected
         itemCount = nil
-        clearSavedToken()
+        UserDefaults.standard.removeObject(forKey: tokenKey)
         updateLibrary()
+    }
+
+    /// Fully sign out and clear all stored credentials.
+    func signOut() {
+        autoConnectTask?.cancel()
+        autoConnectTask = nil
+        isAutoConnecting = false
+        authToken = nil
+        connectionState = .disconnected
+        itemCount = nil
+        clearAllCredentials()
+        updateLibrary()
+    }
+
+    /// Switch to managed mode: disconnect custom session, auto-connect with managed credentials.
+    func switchToManaged() {
+        isManagedByHaven = true
+        autoConnectExhausted = false
+        disconnect()  // Clears token but preserves managed credentials
+        if state == .ready {
+            autoConnectTask = Task { await autoConnect() }
+        }
+    }
+
+    /// Switch to custom account mode: disconnect and let user sign in.
+    func switchToCustom() {
+        isManagedByHaven = false
+        disconnect()
     }
 
     // MARK: - Refresh
@@ -181,9 +381,15 @@ final class KavitaBooksFacade: BooksFacade {
             apiClient = KavitaAPIClient(port: p)
         }
 
-        // Reset connection on stop/fail
+        // Reset connection when service stops
         if state != .ready && state != .starting {
-            connectionState = .disconnected
+            if connectionState != .disconnected {
+                autoConnectTask?.cancel()
+                autoConnectTask = nil
+                isAutoConnecting = false
+                autoConnectExhausted = false
+                connectionState = .disconnected
+            }
         }
 
         library = BooksLibrary(
@@ -192,12 +398,17 @@ final class KavitaBooksFacade: BooksFacade {
             itemCount: itemCount
         )
 
-        // Auto-reconnect if we have a saved token and service is running
-        if state == .ready && connectionState == .disconnected {
-            loadSavedToken()
-            if authToken != nil {
-                connectionState = .connected
-                Task { await fetchLibraryData() }
+        // Auto-connect when service is ready
+        if state == .ready && connectionState == .disconnected && !isAutoConnecting && !autoConnectExhausted {
+            if isManagedByHaven {
+                autoConnectTask = Task { await autoConnect() }
+            } else {
+                // Custom mode: just try saved token (no password/register)
+                loadSavedToken()
+                if authToken != nil {
+                    connectionState = .connected
+                    Task { await fetchLibraryData() }
+                }
             }
         }
     }
@@ -219,7 +430,7 @@ final class KavitaBooksFacade: BooksFacade {
                case .httpError(let code, _) = apiError, code == 401 {
                 connectionState = .failed("Session expired — reconnect")
                 authToken = nil
-                clearSavedToken()
+                clearAllCredentials()
             }
         }
     }
@@ -238,6 +449,10 @@ final class KavitaBooksFacade: BooksFacade {
 
     private var tokenKey: String { "haven.kavita.token.\(capabilityID)" }
     private var usernameKey: String { "haven.kavita.username.\(capabilityID)" }
+    private var passwordKey: String { "haven.kavita.password.\(capabilityID)" }
+    private var managedUsernameKey: String { "haven.kavita.managedUser.\(capabilityID)" }
+    private var managedPasswordKey: String { "haven.kavita.managedPass.\(capabilityID)" }
+    private var customAccountKey: String { "haven.kavita.customAccount.\(capabilityID)" }
 
     private func saveToken(_ token: String, username: String) {
         UserDefaults.standard.set(token, forKey: tokenKey)
@@ -248,8 +463,12 @@ final class KavitaBooksFacade: BooksFacade {
         authToken = UserDefaults.standard.string(forKey: tokenKey)
     }
 
-    private func clearSavedToken() {
+    private func clearAllCredentials() {
         UserDefaults.standard.removeObject(forKey: tokenKey)
         UserDefaults.standard.removeObject(forKey: usernameKey)
+        UserDefaults.standard.removeObject(forKey: passwordKey)
+        UserDefaults.standard.removeObject(forKey: managedUsernameKey)
+        UserDefaults.standard.removeObject(forKey: managedPasswordKey)
+        UserDefaults.standard.removeObject(forKey: customAccountKey)
     }
 }

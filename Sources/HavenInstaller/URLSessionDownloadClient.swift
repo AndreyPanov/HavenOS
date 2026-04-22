@@ -1,56 +1,87 @@
 import Foundation
 
-/// Production `DownloadClient` using URLSession synchronous data download.
+/// Production `DownloadClient` using URLSession with delegate-based progress.
 ///
-/// Downloads the resource to a temporary file in the system temp directory.
-/// The caller is responsible for moving or cleaning up the file.
+/// Uses delegate-only API (no completion handler) so that progress
+/// callbacks are actually delivered by URLSession.
 public struct URLSessionDownloadClient: DownloadClient, Sendable {
 
     public init() {}
 
-    public func download(from url: URL) throws -> URL {
-        // Use a semaphore to make the async URLSession call synchronous.
-        // This is acceptable because artifact installation is not on the main thread.
-        let semaphore = DispatchSemaphore(value: 0)
+    public func download(from url: URL, progress: (@Sendable (Double) -> Void)?) throws -> URL {
+        let delegate = DownloadDelegate(progress: progress)
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
 
-        var resultURL: URL?
-        var resultError: Error?
-
-        let task = URLSession.shared.downloadTask(with: url) { localURL, response, error in
-            if let error = error {
-                resultError = error
-            } else if let httpResponse = response as? HTTPURLResponse,
-                      !(200...299).contains(httpResponse.statusCode) {
-                resultError = URLError(
-                    .badServerResponse,
-                    userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode) for \(url.lastPathComponent)"]
-                )
-            } else if let localURL = localURL {
-                // URLSession deletes the temp file after the completion handler returns,
-                // so we need to move it to a stable location.
-                let stableURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString)
-                    .appendingPathExtension(url.pathExtension)
-                do {
-                    try FileManager.default.moveItem(at: localURL, to: stableURL)
-                    resultURL = stableURL
-                } catch {
-                    resultError = error
-                }
-            } else {
-                resultError = URLError(.badServerResponse)
-            }
-            semaphore.signal()
-        }
+        let task = session.downloadTask(with: url)
         task.resume()
-        semaphore.wait()
+        delegate.semaphore.wait()
 
-        if let error = resultError {
+        session.invalidateAndCancel()
+
+        if let error = delegate.resultError {
             throw error
         }
-        guard let url = resultURL else {
+        guard let resultURL = delegate.resultURL else {
             throw URLError(.badServerResponse)
         }
-        return url
+        return resultURL
+    }
+}
+
+private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    let progress: (@Sendable (Double) -> Void)?
+    let semaphore = DispatchSemaphore(value: 0)
+    var resultURL: URL?
+    var resultError: Error?
+
+    init(progress: (@Sendable (Double) -> Void)?) {
+        self.progress = progress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard let progress else { return }
+        if totalBytesExpectedToWrite > 0 {
+            progress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        } else {
+            progress(-1)
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        if let httpResponse = downloadTask.response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            let file = downloadTask.originalRequest?.url?.lastPathComponent ?? "unknown"
+            resultError = URLError(
+                .badServerResponse,
+                userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode) for \(file)"]
+            )
+            return
+        }
+        let stableURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(location.pathExtension)
+        do {
+            try FileManager.default.moveItem(at: location, to: stableURL)
+            resultURL = stableURL
+        } catch {
+            resultError = error
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error, resultError == nil {
+            resultError = error
+        }
+        semaphore.signal()
     }
 }

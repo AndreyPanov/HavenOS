@@ -10,7 +10,7 @@ import HavenFacade
 struct BooksHomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
     let facade: any BooksFacade
-    @State private var showingSetupSheet = false
+    @State private var showingConnectSheet = false
 
     var body: some View {
         ScrollView {
@@ -28,9 +28,15 @@ struct BooksHomeView: View {
                 advancedMenu
             }
         }
-        .sheet(isPresented: $showingSetupSheet) {
+        .sheet(isPresented: $showingConnectSheet) {
             if let kavita = facade as? KavitaBooksFacade {
                 BooksConnectSheet(facade: kavita)
+            }
+        }
+        .onChange(of: showingConnectSheet) {
+            // Refresh after sheet dismissal to pick up new connection state
+            if !showingConnectSheet {
+                facade.refresh()
             }
         }
     }
@@ -157,18 +163,18 @@ struct BooksHomeView: View {
 
     private var needsSetupView: some View {
         centeredCard {
-            Image(systemName: "folder.badge.gearshape")
+            Image(systemName: "person.crop.circle")
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
-            Text("Set up your library")
+            Text("Sign in to your library")
                 .font(.headline)
-            Text("Choose where your books are stored so Haven can organize them for you.")
+            Text("An existing account was found. Sign in to connect Haven to your library.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            Button("Set Up Library") {
-                showingSetupSheet = true
+            Button("Sign In") {
+                showingConnectSheet = true
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
@@ -232,8 +238,9 @@ struct BooksHomeView: View {
         VStack(alignment: .leading, spacing: 16) {
             libraryInfoSection
 
-            // Kavita-specific: connected user
+            // Show signed-in user for custom accounts (not Haven-managed)
             if let kavita = facade as? KavitaBooksFacade,
+               !kavita.isManagedByHaven,
                let username = kavita.connectedUsername {
                 HStack {
                     Label("Signed in as \(username)", systemImage: "person.crop.circle.fill")
@@ -241,7 +248,7 @@ struct BooksHomeView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Sign Out") {
-                        kavita.disconnect()
+                        kavita.signOut()
                     }
                     .buttonStyle(.borderless)
                     .font(.caption)
@@ -299,11 +306,29 @@ struct BooksHomeView: View {
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 12) {
-                Button("Retry") {
-                    showingSetupSheet = true
+                if let kavita = facade as? KavitaBooksFacade {
+                    if kavita.isManagedByHaven {
+                        Button("Retry") {
+                            Task { await kavita.autoConnect() }
+                        }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.large)
+
+                        Button("Sign In") {
+                            kavita.disconnect()
+                            showingConnectSheet = true
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
+                    } else {
+                        Button("Sign In") {
+                            kavita.disconnect()
+                            showingConnectSheet = true
+                        }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.large)
+                    }
                 }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
             }
         }
     }
@@ -346,28 +371,10 @@ struct BooksHomeView: View {
                 }
             }
 
-            if let url = facade.advancedURL {
-                Button("Open in Browser", systemImage: "globe") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-
             if facade.library != nil, let lib = facade.library {
                 Button("Open Library Folder", systemImage: "folder") {
                     let path = (lib.libraryPath as NSString).expandingTildeInPath
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
-                }
-            }
-
-            Divider()
-
-            if case .ready = facade.state {
-                Button("Stop Library", systemImage: "stop.circle") {
-                    Task { try? await facade.perform(.stop) }
-                }
-
-                Button("Restart", systemImage: "arrow.clockwise") {
-                    Task { try? await facade.perform(.restart) }
                 }
             }
 
@@ -400,6 +407,12 @@ struct BooksHomeView: View {
         case .degraded:
             return .error("Library is running with issues")
         case .ready:
+            // When managed by Haven and auto-connect is actively working, show settingUp
+            if let kavita = facade as? KavitaBooksFacade,
+               kavita.isManagedByHaven,
+               (kavita.isAutoConnecting || kavita.connectionState == .connecting) {
+                return .settingUp
+            }
             switch facade.setupState {
             case .needsSetup:
                 return .needsSetup

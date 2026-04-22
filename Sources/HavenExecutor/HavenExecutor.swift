@@ -305,7 +305,11 @@ public struct HavenExecutor: Sendable {
 
                 let installResult: ArtifactInstallResult
                 do {
-                    installResult = try installer.install(descriptor: descriptor)
+                    installResult = try installer.install(descriptor: descriptor, downloadProgress: { fraction in
+                        if fraction >= 0 {
+                            progress?("Downloading artifact… \(Int(fraction * 100))%")
+                        }
+                    })
                     log.info("[install] Artifact installed: dir=\(installResult.installDirectory.path), cached=\(installResult.wasCached)")
                 } catch {
                     try rollback(ExecutorError.artifactInstallFailed(

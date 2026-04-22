@@ -1,11 +1,13 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import HavenCore
+import HavenFacade
 
 struct SettingsView: View {
     @Environment(HavenSettingsModel.self) private var settings
     @Environment(ServiceManager.self) private var serviceManager
     @State private var showFolderPicker = false
+    @State private var showingConnectSheet = false
 
     var body: some View {
         @Bindable var settings = settings
@@ -74,6 +76,11 @@ struct SettingsView: View {
                 }
             }
 
+            // Dynamic capability sections
+            if let kavitaFacade = kavitaFacade {
+                booksLibrarySection(kavitaFacade)
+            }
+
             Section("Advanced") {
                 Toggle("Show Internal Details", isOn: $settings.showInternalDetails)
                 LabeledContent("Logs") {
@@ -102,6 +109,11 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity)
+        .sheet(isPresented: $showingConnectSheet) {
+            if let kavita = kavitaFacade {
+                BooksConnectSheet(facade: kavita)
+            }
+        }
         .fileImporter(
             isPresented: $showFolderPicker,
             allowedContentTypes: [.folder],
@@ -109,6 +121,44 @@ struct SettingsView: View {
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 settings.catalogFolder = url.path
+            }
+        }
+    }
+
+    /// Returns the Kavita facade if Books is installed.
+    private var kavitaFacade: KavitaBooksFacade? {
+        serviceManager.facade(for: "haven.capability.kavita") as? KavitaBooksFacade
+    }
+
+    private func booksLibrarySection(_ facade: KavitaBooksFacade) -> some View {
+        // Read observable properties directly so SwiftUI tracks them
+        let managed = facade.isManagedByHaven
+        let connState = facade.connectionState
+        let username = facade.connectedUsername
+
+        return Section("Books Library") {
+            Toggle("Account managed by Haven", isOn: Binding(
+                get: { managed },
+                set: { newValue in
+                    if newValue {
+                        facade.switchToManaged()
+                    } else {
+                        facade.switchToCustom()
+                    }
+                }
+            ))
+
+            if !managed {
+                if connState == .connected, let username {
+                    LabeledContent("Signed in as") {
+                        Text(username)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button("Sign In") {
+                        showingConnectSheet = true
+                    }
+                }
             }
         }
     }
