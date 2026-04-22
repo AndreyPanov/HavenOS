@@ -56,12 +56,31 @@ struct KavitaAPIClient: Sendable {
     }
 
     func getLibraries(token: String) async throws -> [Library] {
-        let request = authorizedRequest(path: "/api/Library", token: token)
+        let request = authorizedRequest(path: "/api/Library/libraries", token: token)
         let (data, response) = try await URLSession.shared.data(for: request)
         try checkHTTPStatus(response, data: data)
         // Kavita returns 204 No Content when no libraries exist
         if data.isEmpty { return [] }
         return try JSONDecoder().decode([Library].self, from: data)
+    }
+
+    /// Create a new library in Kavita.
+    /// Type 2 = "Book" library. FileGroupTypes [2] = epub/book files.
+    func createLibrary(name: String, folders: [String], token: String) async throws {
+        var request = authorizedRequest(path: "/api/Library/create", token: token)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "name": name,
+            "type": 2,
+            "folders": folders,
+            "folderWatching": true,
+            "fileGroupTypes": [2],
+            "excludePatterns": []
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data)
     }
 
     func scanLibrary(id: Int, token: String) async throws {

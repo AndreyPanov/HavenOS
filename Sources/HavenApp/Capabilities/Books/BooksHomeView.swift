@@ -241,6 +241,15 @@ struct BooksHomeView: View {
         VStack(alignment: .leading, spacing: 16) {
             libraryInfoSection
 
+            // Device access: server address + OPDS feed + QR codes
+            if let kavita = facade as? KavitaBooksFacade,
+               let address = kavita.serverAddress {
+                DeviceAccessSection(
+                    serverAddress: address,
+                    opdsURL: kavita.opdsURL
+                )
+            }
+
             // Show signed-in user for custom accounts (not Haven-managed)
             if let kavita = facade as? KavitaBooksFacade,
                !kavita.isManagedByHaven,
@@ -256,14 +265,6 @@ struct BooksHomeView: View {
                     .buttonStyle(.borderless)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                }
-            }
-
-            // Setup guide (from onboarding)
-            if let onboarding = service?.onboarding, !onboarding.steps.isEmpty {
-                GroupBox("Getting Started") {
-                    OnboardingStepsView(steps: onboarding.steps)
-                        .padding(4)
                 }
             }
         }
@@ -291,6 +292,15 @@ struct BooksHomeView: View {
             .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
             libraryInfoSection
+
+            // Device access (still show while scanning)
+            if let kavita = facade as? KavitaBooksFacade,
+               let address = kavita.serverAddress {
+                DeviceAccessSection(
+                    serverAddress: address,
+                    opdsURL: kavita.opdsURL
+                )
+            }
         }
     }
 
@@ -345,7 +355,7 @@ struct BooksHomeView: View {
                     DetailRow(label: "Location", value: lib.libraryPath)
                     if let count = lib.itemCount {
                         Divider().padding(.vertical, 6)
-                        DetailRow(label: "Items", value: "\(count)")
+                        DetailRow(label: "Items", value: "\(count) series")
                     }
                 }
             }
@@ -374,10 +384,16 @@ struct BooksHomeView: View {
                 }
             }
 
-            if facade.library != nil, let lib = facade.library {
+            if let lib = facade.library {
                 Button("Open Library Folder", systemImage: "folder") {
                     let path = (lib.libraryPath as NSString).expandingTildeInPath
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                }
+            }
+
+            if let url = facade.advancedURL {
+                Button("Open in Browser", systemImage: "globe") {
+                    NSWorkspace.shared.open(url)
                 }
             }
 

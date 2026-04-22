@@ -46,6 +46,7 @@ final class KavitaBooksFacade: BooksFacade {
 
     private(set) var connectionState: ConnectionState = .disconnected
     private(set) var itemCount: Int?
+    private(set) var apiKey: String?
 
     /// True while auto-connect is in progress (health polling + auth).
     private(set) var isAutoConnecting = false
@@ -71,6 +72,22 @@ final class KavitaBooksFacade: BooksFacade {
         UserDefaults.standard.string(forKey: passwordKey) != nil
     }
 
+    // MARK: - Device Access
+
+    /// LAN-accessible server address (e.g. `http://MacBook-Pro.local:5001`).
+    var serverAddress: String? {
+        guard let p = port else { return nil }
+        let hostname = ProcessInfo.processInfo.hostName
+        return "http://\(hostname):\(p)"
+    }
+
+    /// OPDS feed URL for e-reader apps (requires connected + apiKey).
+    var opdsURL: String? {
+        guard let p = port, let key = apiKey, connectionState == .connected else { return nil }
+        let hostname = ProcessInfo.processInfo.hostName
+        return "http://\(hostname):\(p)/api/opds/\(key)"
+    }
+
     // MARK: - Internal
 
     private let lifecycle: FacadeLifecycle
@@ -79,6 +96,8 @@ final class KavitaBooksFacade: BooksFacade {
     private var authToken: String?
     private var port: Int?
     private var autoConnectTask: Task<Void, Never>?
+    private var scanPollTask: Task<Void, Never>?
+    private var currentScanStatus: ScanStatus = .idle
 
     // MARK: - Init
 
@@ -129,7 +148,28 @@ final class KavitaBooksFacade: BooksFacade {
             throw FacadeError.adapterError("Not connected")
         }
         log.info("Triggering library rescan")
+        currentScanStatus = .scanning
+        updateLibrary()
         try await client.scanAllLibraries(token: token)
+
+        // Poll for completion: watch for item count change
+        scanPollTask?.cancel()
+        let preScanCount = itemCount
+        scanPollTask = Task {
+            for _ in 1...10 {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                guard let client = self.apiClient, let token = self.authToken else { return }
+                if let count = try? await client.getSeriesCount(token: token) {
+                    self.itemCount = count
+                    if count != preScanCount {
+                        break
+                    }
+                }
+            }
+            self.currentScanStatus = .idle
+            self.updateLibrary()
+        }
     }
 
     // MARK: - Auto-Connect
@@ -155,7 +195,7 @@ final class KavitaBooksFacade: BooksFacade {
         log.info("Auto-connect: Kavita API is healthy")
 
         // Step 2: Try saved JWT token
-        loadSavedToken()
+        loadSavedCredentials()
         if let token = authToken {
             log.info("Auto-connect: trying saved token")
             if await verifyToken(client: client, token: token) {
@@ -176,8 +216,9 @@ final class KavitaBooksFacade: BooksFacade {
             do {
                 let response = try await client.login(username: username, password: password)
                 authToken = response.token
+                apiKey = response.apiKey
                 connectionState = .connected
-                saveToken(response.token, username: username)
+                saveCredentials(response.token, username: username, apiKey: response.apiKey)
                 log.info("Auto-connect: re-login succeeded")
                 await fetchLibraryData()
                 isAutoConnecting = false
@@ -194,8 +235,9 @@ final class KavitaBooksFacade: BooksFacade {
             do {
                 let response = try await client.login(username: mUser, password: mPass)
                 authToken = response.token
+                apiKey = response.apiKey
                 connectionState = .connected
-                saveToken(response.token, username: mUser)
+                saveCredentials(response.token, username: mUser, apiKey: response.apiKey)
                 UserDefaults.standard.set(mPass, forKey: passwordKey)
                 log.info("Auto-connect: managed credentials valid")
                 await fetchLibraryData()
@@ -213,8 +255,9 @@ final class KavitaBooksFacade: BooksFacade {
         do {
             let response = try await client.register(username: username, password: password)
             authToken = response.token
+            apiKey = response.apiKey
             connectionState = .connected
-            saveToken(response.token, username: username)
+            saveCredentials(response.token, username: username, apiKey: response.apiKey)
             UserDefaults.standard.set(password, forKey: passwordKey)
             // Persist managed credentials separately so they survive custom sign-in
             UserDefaults.standard.set(username, forKey: managedUsernameKey)
@@ -286,8 +329,9 @@ final class KavitaBooksFacade: BooksFacade {
         do {
             let response = try await client.register(username: username, password: password)
             authToken = response.token
+            apiKey = response.apiKey
             connectionState = .connected
-            saveToken(response.token, username: username)
+            saveCredentials(response.token, username: username, apiKey: response.apiKey)
             log.info("Created Kavita admin account: \(username)")
             await fetchLibraryData()
         } catch {
@@ -306,8 +350,9 @@ final class KavitaBooksFacade: BooksFacade {
         do {
             let loginResponse = try await client.login(username: username, password: password)
             authToken = loginResponse.token
+            apiKey = loginResponse.apiKey
             connectionState = .connected
-            saveToken(loginResponse.token, username: username)
+            saveCredentials(loginResponse.token, username: username, apiKey: loginResponse.apiKey)
             // Custom account: clear Haven password, mark as not managed
             isManagedByHaven = false
             UserDefaults.standard.removeObject(forKey: passwordKey)
@@ -324,10 +369,14 @@ final class KavitaBooksFacade: BooksFacade {
     func disconnect() {
         autoConnectTask?.cancel()
         autoConnectTask = nil
+        scanPollTask?.cancel()
+        scanPollTask = nil
         isAutoConnecting = false
         authToken = nil
+        apiKey = nil
         connectionState = .disconnected
         itemCount = nil
+        currentScanStatus = .idle
         UserDefaults.standard.removeObject(forKey: tokenKey)
         updateLibrary()
     }
@@ -336,10 +385,14 @@ final class KavitaBooksFacade: BooksFacade {
     func signOut() {
         autoConnectTask?.cancel()
         autoConnectTask = nil
+        scanPollTask?.cancel()
+        scanPollTask = nil
         isAutoConnecting = false
         authToken = nil
+        apiKey = nil
         connectionState = .disconnected
         itemCount = nil
+        currentScanStatus = .idle
         clearAllCredentials()
         updateLibrary()
     }
@@ -394,7 +447,7 @@ final class KavitaBooksFacade: BooksFacade {
 
         library = BooksLibrary(
             libraryPath: libraryPath,
-            scanStatus: .idle,
+            scanStatus: currentScanStatus,
             itemCount: itemCount
         )
 
@@ -404,7 +457,7 @@ final class KavitaBooksFacade: BooksFacade {
                 autoConnectTask = Task { await autoConnect() }
             } else {
                 // Custom mode: just try saved token (no password/register)
-                loadSavedToken()
+                loadSavedCredentials()
                 if authToken != nil {
                     connectionState = .connected
                     Task { await fetchLibraryData() }
@@ -419,7 +472,21 @@ final class KavitaBooksFacade: BooksFacade {
         guard let client = apiClient, let token = authToken else { return }
 
         do {
-            let libraries = try await client.getLibraries(token: token)
+            var libraries = try await client.getLibraries(token: token)
+
+            // Auto-create library if none exists (first-time setup)
+            if libraries.isEmpty {
+                let stored = serviceManager?.storedState(for: capabilityID)
+                let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
+                let expandedPath = (libraryPath as NSString).expandingTildeInPath
+                log.info("No Kavita libraries found — creating 'Books' library at \(expandedPath)")
+                try await client.createLibrary(name: "Books", folders: [expandedPath], token: token)
+                // Re-fetch after creation
+                libraries = try await client.getLibraries(token: token)
+                // Trigger initial scan
+                try? await client.scanAllLibraries(token: token)
+            }
+
             let count = try await client.getSeriesCount(token: token)
             itemCount = count
             log.info("Fetched library data: \(libraries.count) libraries, \(count) series")
@@ -440,7 +507,7 @@ final class KavitaBooksFacade: BooksFacade {
         let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
         library = BooksLibrary(
             libraryPath: libraryPath,
-            scanStatus: .idle,
+            scanStatus: currentScanStatus,
             itemCount: itemCount
         )
     }
@@ -452,15 +519,18 @@ final class KavitaBooksFacade: BooksFacade {
     private var passwordKey: String { "haven.kavita.password.\(capabilityID)" }
     private var managedUsernameKey: String { "haven.kavita.managedUser.\(capabilityID)" }
     private var managedPasswordKey: String { "haven.kavita.managedPass.\(capabilityID)" }
+    private var apiKeyKey: String { "haven.kavita.apiKey.\(capabilityID)" }
     private var customAccountKey: String { "haven.kavita.customAccount.\(capabilityID)" }
 
-    private func saveToken(_ token: String, username: String) {
+    private func saveCredentials(_ token: String, username: String, apiKey: String?) {
         UserDefaults.standard.set(token, forKey: tokenKey)
         UserDefaults.standard.set(username, forKey: usernameKey)
+        if let apiKey { UserDefaults.standard.set(apiKey, forKey: apiKeyKey) }
     }
 
-    private func loadSavedToken() {
+    private func loadSavedCredentials() {
         authToken = UserDefaults.standard.string(forKey: tokenKey)
+        apiKey = UserDefaults.standard.string(forKey: apiKeyKey)
     }
 
     private func clearAllCredentials() {
@@ -469,6 +539,7 @@ final class KavitaBooksFacade: BooksFacade {
         UserDefaults.standard.removeObject(forKey: passwordKey)
         UserDefaults.standard.removeObject(forKey: managedUsernameKey)
         UserDefaults.standard.removeObject(forKey: managedPasswordKey)
+        UserDefaults.standard.removeObject(forKey: apiKeyKey)
         UserDefaults.standard.removeObject(forKey: customAccountKey)
     }
 }

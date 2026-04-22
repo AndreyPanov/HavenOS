@@ -462,6 +462,209 @@ All deliverables implemented:
 
 ⸻
 
+
+🧭 HavenOS — Roadmap Update 22.04.26 (Books Usability Layer)
+
+⸻
+
+📚 Phase 12.5 — Books Usability (Local Files + Device Access)
+
+🎯 Goal
+
+Move Books from:
+
+“service is running”
+
+to:
+
+“user can actually use their library across devices”
+
+⸻
+
+🔧 Deliverables
+
+1. Library Folder Management
+
+User must be able to:
+
+* Select a local folder (macOS native picker)
+* Persist it as the Books library root
+* Validate folder (exists, readable)
+* Change folder later
+
+Facade API:
+
+func setLibraryPath(_ url: URL)
+
+⸻
+
+2. Rescan UX
+
+Expose scanning as a first-class user action:
+
+* “Rescan Library” button
+* Show scanning state (already modeled via ScanStatus)
+* Show:
+    * last scan time
+    * item count after scan
+
+Optional (nice-to-have):
+
+* auto-rescan on app launch or interval
+
+⸻
+
+3. External Device Access (CRITICAL FEATURE)
+
+Expose Kavita’s OPDS endpoint in a user-friendly way.
+
+UI must show:
+
+Read on other devices
+Server address:
+http://<your-mac>:5001
+OPDS catalog:
+http://<your-mac>:5001/opds
+[ Copy Address ]
+[ Copy OPDS Link ]
+[ Show QR Code ]
+
+⸻
+
+4. QR Code Sharing
+
+Generate QR codes for:
+
+* base URL
+* OPDS URL
+
+👉 This removes friction for:
+
+* e-readers
+* phones
+* tablets
+
+⸻
+
+5. “Open Library” Action
+
+Keep Kavita UI as:
+
+* secondary fallback
+* accessed via:
+    * button (“Open Library”)
+    * or toolbar menu
+
+⸻
+
+6. Clean “Ready” Screen
+
+When library is ready:
+
+Show:
+
+* book count
+* scan status
+* last scan time
+* device access block
+* actions:
+    * Add Folder
+    * Rescan
+    * Open Library
+
+⸻
+
+⚠️ Product Constraints
+
+DO:
+
+* Expose OPDS as the main integration point
+* Keep language user-friendly (“Read on other devices”)
+
+DO NOT:
+
+* Expose API endpoints (/api/...)
+* Expose ports directly
+* Mention “Kavita” in primary UI
+* Promise full cross-device progress sync
+
+⸻
+
+🧠 Capability Contract Update
+
+Extend BooksLibrary:
+
+struct BooksLibrary {
+    var libraryPath: URL?
+    var itemCount: Int
+    var scanStatus: ScanStatus
+    var lastScanDate: Date?
+    var baseURL: URL
+    var opdsURL: URL
+}
+
+⸻
+
+✅ Acceptance Criteria
+
+* User can:
+    * add books via folder
+    * rescan library
+    * access books from another device in < 30 seconds
+* OPDS works with at least:
+    * one e-reader (e.g. KOReader)
+    * one mobile app
+* No manual configuration outside Haven
+* No backend terminology exposed in UI
+
+⸻
+
+🔄 Phase 12 Impact (Refinement)
+
+Phase 12 remains complete, but now:
+
+Phase 12 = “Books capability foundation”
+Phase 12.5 = “Books usable in real life”
+
+⸻
+
+🚀 Why This Matters
+
+Right now Haven achieves:
+
+Install → Start → (still figuring out how to use it)
+
+After Phase 12.5:
+
+Install → Start → Use anywhere
+
+This directly supports your core metric:
+
+“non-technical user uses it in < 2 minutes”  ￼
+
+⸻
+
+🧭 What Comes After
+
+After this phase, you’ll have:
+
+* real user value
+* cross-device story
+* validated facade design
+
+Then you can move to:
+
+👉 Phase 14 — Files
+(with the same philosophy: local + shareable + simple)
+
+⸻
+
+🔥 One-liner
+
+Phase 12.5 turns Books from “installed software” into a personal cloud library
+
+⸻
+
 🚀 Phase 14 — Second Capability (Files)
 
 🎯 Goal
