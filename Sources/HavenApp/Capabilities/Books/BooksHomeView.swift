@@ -20,7 +20,7 @@ struct BooksHomeView: View {
             }
             .padding(24)
         }
-        .navigationTitle("Books Library")
+        .navigationTitle("Books")
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, alignment: .center)
         .toolbar {
@@ -53,9 +53,12 @@ struct BooksHomeView: View {
             .glassEffect(in: .rect(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Books Library")
+                Text("Books")
                     .font(.title2)
                     .fontWeight(.semibold)
+                Text("Powered by Kavita")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                 HStack(spacing: 6) {
                     statusDot
                     Text(statusLabel)
@@ -384,10 +387,6 @@ struct BooksHomeView: View {
                 Task { try? await facade.perform(.remove) }
             }
 
-            if let name = service?.name {
-                Divider()
-                Text("Powered by \(name)")
-            }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
