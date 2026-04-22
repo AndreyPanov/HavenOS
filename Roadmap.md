@@ -396,11 +396,22 @@ Delivered as part of the Books vertical slice:
 All deliverables implemented:
 	•	BooksFacade protocol: library, setupState, setLibraryPath(), rescan()
 	•	KavitaBooksFacade: JWT auth, API client, auto-reconnect, series count
-	•	KavitaAPIClient: login, getLibraries, scanAllLibraries, getSeriesCount, health
+	•	KavitaAPIClient: login, register, getLibraries, scanAllLibraries, getSeriesCount, health
 	•	BooksHomeView: state-driven (stopped → start, needsSetup → connect, ready → library info)
-	•	BooksConnectSheet: Kavita-specific credential entry (concrete type, not protocol)
+	•	BooksConnectSheet: chooser (Create Account / Sign In) with slide transitions
 	•	KavitaSpec: native Swift spec (replaces JSON catalog files)
 	•	BuiltInCatalog: always-available specs merged with disk catalog
+	•	Auto-provisioning: Haven creates and manages Kavita accounts automatically
+	  - Health polling: waits for Kavita API before auth (fixes connection-refused errors)
+	  - Cascading auth: saved token → saved password → managed credentials → register new account
+	  - Managed credentials persist separately, survive custom account switching
+	  - Settings toggle: "Account managed by Haven" ON/OFF with seamless switching
+	•	Consumer-focused UX:
+	  - Auto-start after install (no manual start needed)
+	  - No stop/restart buttons (Haven manages lifecycle internally)
+	  - Download progress % shown during artifact installation
+	  - API error parsing: ASP.NET validation, plain text, JSON objects/arrays
+	  - 27 tests for auth state machine and error parsing
 	•	Architectural boundaries enforced:
 	  - UI uses `any BooksFacade` — never references KavitaBooksFacade
 	  - Auth (connect/disconnect) lives on concrete class, not protocol
