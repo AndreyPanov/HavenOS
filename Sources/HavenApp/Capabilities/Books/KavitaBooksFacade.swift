@@ -48,6 +48,9 @@ final class KavitaBooksFacade: BooksFacade {
     private(set) var itemCount: Int?
     private(set) var apiKey: String?
 
+    /// Files that Kavita couldn't parse during the last scan.
+    private(set) var scanErrors: [String] = []
+
     /// True while auto-connect is in progress (health polling + auth).
     private(set) var isAutoConnecting = false
 
@@ -147,33 +150,52 @@ final class KavitaBooksFacade: BooksFacade {
         guard let client = apiClient, let token = authToken else {
             throw FacadeError.adapterError("Not connected")
         }
+        guard currentScanStatus != .scanning else { return }
         log.info("Triggering library rescan")
         currentScanStatus = .scanning
+        scanErrors = []
         updateLibrary()
 
         // Organize loose files into subdirectories (Kavita requires this)
         organizeLibraryFolder()
 
-        // Scan each library by ID
+        // Record scan start time for log parsing
+        let scanStartTime = Date()
+
+        // Record pre-scan timestamp so we can detect when scan completes
         let libraries = try await client.getLibraries(token: token)
+        let preScanTimestamp = libraries.first?.lastScanned
+
+        // Trigger scan
         for lib in libraries {
             log.info("Scanning library \(lib.id): \(lib.name)")
             try await client.scanLibrary(id: lib.id, token: token)
         }
 
-        // Poll for completion: watch for item count change
+        // Poll for completion: Kavita updates lastScanned when scan finishes
         scanPollTask?.cancel()
-        let preScanCount = itemCount
+        let configDir = serviceManager?.storedState(for: capabilityID)?.directoryLayout.config
         scanPollTask = Task {
-            for _ in 1...10 {
-                try? await Task.sleep(for: .seconds(3))
+            for _ in 1...15 {
+                try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled else { return }
                 guard let client = self.apiClient, let token = self.authToken else { return }
-                if let count = try? await client.getSeriesCount(token: token) {
-                    self.itemCount = count
-                    if count != preScanCount {
-                        break
+
+                if let libs = try? await client.getLibraries(token: token),
+                   let lib = libs.first,
+                   lib.lastScanned != preScanTimestamp {
+                    if let count = try? await client.getSeriesCount(token: token) {
+                        self.itemCount = count
                     }
+                    log.info("Scan complete (lastScanned changed)")
+                    // Parse scan errors from Kavita log
+                    if let configDir {
+                        self.scanErrors = KavitaLogParser.parseScanErrors(
+                            configDir: configDir,
+                            after: scanStartTime
+                        )
+                    }
+                    break
                 }
             }
             self.currentScanStatus = .idle
@@ -511,6 +533,11 @@ final class KavitaBooksFacade: BooksFacade {
             itemCount = count
             log.info("Fetched library data: \(libraries.count) libraries, \(count) series")
             updateLibrary()
+
+            // Auto-rescan on connect: organize loose files and pick up changes since last run
+            if currentScanStatus != .scanning {
+                try? await rescan()
+            }
         } catch {
             log.error("Failed to fetch library data: \(error.localizedDescription)")
             if let apiError = error as? KavitaAPIError,
@@ -534,48 +561,11 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Library Organization
 
-    /// Book file extensions that Kavita supports.
-    private static let bookExtensions: Set<String> = [
-        "epub", "pdf", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"
-    ]
-
-    /// Moves loose book files in the library root into subdirectories.
-    ///
-    /// Kavita requires books to be inside subdirectories (e.g. `~/Books/Title/file.epub`).
-    /// Users naturally drop files directly into the library folder, so we organize them
-    /// transparently before each scan.
     private func organizeLibraryFolder() {
         let stored = serviceManager?.storedState(for: capabilityID)
         let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
         let expandedPath = (libraryPath as NSString).expandingTildeInPath
-        let libraryURL = URL(fileURLWithPath: expandedPath)
-        let fm = FileManager.default
-
-        guard let contents = try? fm.contentsOfDirectory(
-            at: libraryURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-
-        for fileURL in contents {
-            let ext = fileURL.pathExtension.lowercased()
-            guard Self.bookExtensions.contains(ext) else { continue }
-
-            // Create subdirectory named after the file (without extension)
-            let title = fileURL.deletingPathExtension().lastPathComponent
-            let subdir = libraryURL.appendingPathComponent(title)
-            let destination = subdir.appendingPathComponent(fileURL.lastPathComponent)
-
-            do {
-                if !fm.fileExists(atPath: subdir.path) {
-                    try fm.createDirectory(at: subdir, withIntermediateDirectories: true)
-                }
-                try fm.moveItem(at: fileURL, to: destination)
-                log.info("Organized: \(fileURL.lastPathComponent) → \(title)/")
-            } catch {
-                log.warning("Failed to organize \(fileURL.lastPathComponent): \(error.localizedDescription)")
-            }
-        }
+        LibraryOrganizer.organize(at: URL(fileURLWithPath: expandedPath))
     }
 
     // MARK: - Token Persistence
@@ -609,3 +599,100 @@ final class KavitaBooksFacade: BooksFacade {
         UserDefaults.standard.removeObject(forKey: customAccountKey)
     }
 }
+
+// MARK: - Library Organizer
+
+/// Moves loose book files in a directory into subdirectories.
+///
+/// Kavita requires books to be inside subdirectories (e.g. `Books/Title/file.epub`).
+/// Users naturally drop files directly into the library folder, so we organize them
+/// transparently before each scan.
+enum LibraryOrganizer {
+    static let bookExtensions: Set<String> = [
+        "epub", "pdf", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"
+    ]
+
+    static func organize(at libraryURL: URL) {
+        let fm = FileManager.default
+
+        guard let contents = try? fm.contentsOfDirectory(
+            at: libraryURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for fileURL in contents {
+            let ext = fileURL.pathExtension.lowercased()
+            guard bookExtensions.contains(ext) else { continue }
+
+            let title = fileURL.deletingPathExtension().lastPathComponent
+            let subdir = libraryURL.appendingPathComponent(title)
+            let destination = subdir.appendingPathComponent(fileURL.lastPathComponent)
+
+            do {
+                if !fm.fileExists(atPath: subdir.path) {
+                    try fm.createDirectory(at: subdir, withIntermediateDirectories: true)
+                }
+                try fm.moveItem(at: fileURL, to: destination)
+                log.info("Organized: \(fileURL.lastPathComponent) → \(title)/")
+            } catch {
+                log.warning("Failed to organize \(fileURL.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+    }
+}
+
+// MARK: - Kavita Log Parser
+
+/// Parses Kavita log files to extract scan errors (files that couldn't be processed).
+enum KavitaLogParser {
+    /// Parse scan errors from the most recent Kavita log file.
+    /// Returns deduplicated file names (not full paths) of files that failed to parse.
+    static func parseScanErrors(configDir: URL, after startTime: Date) -> [String] {
+        let timestampRegex = /\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})/
+        let parseErrorRegex = /Unable to parse any meaningful information out of file (.+)$/
+        let logsDir = configDir.appendingPathComponent("logs")
+        let fm = FileManager.default
+
+        // Find the most recent kavita log file
+        guard let logFiles = try? fm.contentsOfDirectory(at: logsDir, includingPropertiesForKeys: nil),
+              let latestLog = logFiles
+                .filter({ $0.lastPathComponent.hasPrefix("kavita") && $0.pathExtension == "log" })
+                .sorted(by: { $0.lastPathComponent > $1.lastPathComponent })
+                .first,
+              let content = try? String(contentsOf: latestLog, encoding: .utf8)
+        else { return [] }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        // Kavita logs include timezone offset but we compare loosely — just use local time
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+
+        var errorFiles: Set<String> = []
+
+        for line in content.split(separator: "\n").reversed() {
+            let lineStr = String(line)
+
+            // Only look at [Error] lines
+            guard lineStr.contains("[Error]") else { continue }
+
+            // Parse timestamp — skip lines before scan start
+            if let match = lineStr.firstMatch(of: timestampRegex) {
+                let tsString = String(match.1)
+                if let ts = dateFormatter.date(from: tsString), ts < startTime {
+                    break // Logs are chronological, so we can stop once we pass the start time
+                }
+            }
+
+            // Extract failed file path
+            if let match = lineStr.firstMatch(of: parseErrorRegex) {
+                let fullPath = String(match.1)
+                let fileName = (fullPath as NSString).lastPathComponent
+                errorFiles.insert(fileName)
+            }
+        }
+
+        return errorFiles.sorted()
+    }
+}
+

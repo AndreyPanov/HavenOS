@@ -81,6 +81,7 @@ Phase	Focus	Outcome	Status
 10	Domain Models	Backend-independent capability models	✅ DONE
 11	Native UI	Haven-native capability screens	✅ DONE (merged with 12)
 12	Books (Kavita)	First full facade + native UI capability	✅ DONE
+12.5	Books Usability	Device access, auto-organize, scan errors	✅ DONE
 13	Replaceability	Validate backend swap	✅ DONE
 14	Files	Second capability	⬜ Not started
 
@@ -467,195 +468,52 @@ All deliverables implemented:
 
 ⸻
 
-📚 Phase 12.5 — Books Usability (Local Files + Device Access)
+📚 Phase 12.5 — Books Usability (Local Files + Device Access) ✅ COMPLETE
 
-🎯 Goal
+All deliverables implemented:
 
-Move Books from:
+1. Device Access (OPDS-first, credential-free)
+	•	DeviceAccessSection: OPDS feed URL with API key baked in (no login on device)
+	•	Copy-to-clipboard with checkmark feedback
+	•	QR code popover (CoreImage CIQRCodeGenerator) for scanning from e-reader/phone
+	•	Reader app guides: Kobo/Kindle (KOReader), iOS (Panels/KyBook), Android (Moon+/Librera), Comics (Mihon/Chunky)
+	•	serverAddress + opdsURL computed from hostname + port + apiKey
 
-“service is running”
+2. Library Organization (Transparent)
+	•	LibraryOrganizer: auto-moves loose book files into subdirectories before scan
+	  - Kavita requires `Books/Title/file.epub` structure — users just drop files in
+	  - Supports epub, pdf, cbz, cbr, cb7, cbt, zip, rar, 7z
+	  - Skips hidden files, handles unicode/CJK filenames
+	  - 14 unit tests (organization, edge cases, extensions, case-insensitive)
+	•	Folder structure hint in library info section explains the pattern
 
-to:
+3. Rescan UX
+	•	Auto-rescan on connect: organizes files and triggers scan on every app launch
+	•	Auto-rescan after “Add Books”: sets pendingRescanOnFocus flag, rescans on NSApplication.didBecomeActiveNotification
+	•	Inline “Refresh Library” button next to “Add Books” for manual rescan
+	•	Scan completion detection via lastScanned timestamp polling (not item count)
+	•	Scanning banner with progress indicator shown during scan
 
-“user can actually use their library across devices”
+4. Scan Error Reporting
+	•	KavitaLogParser: parses Kavita log files after scan for “Unable to parse” errors
+	•	Shows warning: “N files couldn’t be imported” with expandable list of file names
+	•	Errors cleared on each new scan, populated when scan completes
 
-⸻
+5. Scanner Safety (fileGroupTypes fix)
+	•	Auto-fix: removes unsafe fileGroupTypes values (0, 1, 5) that crash macOS .NET scanner
+	•	Safe values [2, 3, 4] (epub, PDF, images) enforced on every connect
+	•	createLibrary uses safe values by default
+	•	5 unit tests for fileGroupTypes safety
 
-🔧 Deliverables
-
-1. Library Folder Management
-
-User must be able to:
-
-* Select a local folder (macOS native picker)
-* Persist it as the Books library root
-* Validate folder (exists, readable)
-* Change folder later
-
-Facade API:
-
-func setLibraryPath(_ url: URL)
-
-⸻
-
-2. Rescan UX
-
-Expose scanning as a first-class user action:
-
-* “Rescan Library” button
-* Show scanning state (already modeled via ScanStatus)
-* Show:
-    * last scan time
-    * item count after scan
-
-Optional (nice-to-have):
-
-* auto-rescan on app launch or interval
-
-⸻
-
-3. External Device Access (CRITICAL FEATURE)
-
-Expose Kavita’s OPDS endpoint in a user-friendly way.
-
-UI must show:
-
-Read on other devices
-Server address:
-http://<your-mac>:5001
-OPDS catalog:
-http://<your-mac>:5001/opds
-[ Copy Address ]
-[ Copy OPDS Link ]
-[ Show QR Code ]
-
-⸻
-
-4. QR Code Sharing
-
-Generate QR codes for:
-
-* base URL
-* OPDS URL
-
-👉 This removes friction for:
-
-* e-readers
-* phones
-* tablets
-
-⸻
-
-5. “Open Library” Action
-
-Keep Kavita UI as:
-
-* secondary fallback
-* accessed via:
-    * button (“Open Library”)
-    * or toolbar menu
-
-⸻
-
-6. Clean “Ready” Screen
-
-When library is ready:
-
-Show:
-
-* book count
-* scan status
-* last scan time
-* device access block
-* actions:
-    * Add Folder
-    * Rescan
-    * Open Library
-
-⸻
-
-⚠️ Product Constraints
-
-DO:
-
-* Expose OPDS as the main integration point
-* Keep language user-friendly (“Read on other devices”)
-
-DO NOT:
-
-* Expose API endpoints (/api/...)
-* Expose ports directly
-* Mention “Kavita” in primary UI
-* Promise full cross-device progress sync
-
-⸻
-
-🧠 Capability Contract Update
-
-Extend BooksLibrary:
-
-struct BooksLibrary {
-    var libraryPath: URL?
-    var itemCount: Int
-    var scanStatus: ScanStatus
-    var lastScanDate: Date?
-    var baseURL: URL
-    var opdsURL: URL
-}
-
-⸻
-
-✅ Acceptance Criteria
-
-* User can:
-    * add books via folder
-    * rescan library
-    * access books from another device in < 30 seconds
-* OPDS works with at least:
-    * one e-reader (e.g. KOReader)
-    * one mobile app
-* No manual configuration outside Haven
-* No backend terminology exposed in UI
-
-⸻
-
-🔄 Phase 12 Impact (Refinement)
-
-Phase 12 remains complete, but now:
+6. Clean Ready Screen
+	•	Library info: path, item count, Add Books + Refresh Library buttons, folder structure hint
+	•	Scan errors section (when applicable)
+	•	Device access: OPDS URL, copy, QR code, reader guides
+	•	Signed-in user info (custom accounts only)
+	•	Improved text visibility (.secondary/.tertiary instead of .tertiary/.quaternary)
 
 Phase 12 = “Books capability foundation”
 Phase 12.5 = “Books usable in real life”
-
-⸻
-
-🚀 Why This Matters
-
-Right now Haven achieves:
-
-Install → Start → (still figuring out how to use it)
-
-After Phase 12.5:
-
-Install → Start → Use anywhere
-
-This directly supports your core metric:
-
-“non-technical user uses it in < 2 minutes”  ￼
-
-⸻
-
-🧭 What Comes After
-
-After this phase, you’ll have:
-
-* real user value
-* cross-device story
-* validated facade design
-
-Then you can move to:
-
-👉 Phase 14 — Files
-(with the same philosophy: local + shareable + simple)
 
 ⸻
 

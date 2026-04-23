@@ -11,6 +11,7 @@ struct BooksHomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
     let facade: any BooksFacade
     @State private var showingConnectSheet = false
+    @State private var pendingRescanOnFocus = false
 
     var body: some View {
         ScrollView {
@@ -37,6 +38,12 @@ struct BooksHomeView: View {
             // Refresh after sheet dismissal to pick up new connection state
             if !showingConnectSheet {
                 facade.refresh()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if pendingRescanOnFocus {
+                pendingRescanOnFocus = false
+                Task { try? await facade.rescan() }
             }
         }
     }
@@ -210,27 +217,20 @@ struct BooksHomeView: View {
                     .foregroundStyle(.tertiary)
                 Text("Your library is empty")
                     .font(.headline)
-                Text("Add books to your library folder and they'll appear here.")
+                Text("Drop EPUB, PDF, or CBZ files into your library folder.\nSwitch back to Haven and your library will refresh.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
-                HStack(spacing: 12) {
-                    Button("Open Library Folder") {
-                        if let lib = facade.library {
-                            let path = (lib.libraryPath as NSString).expandingTildeInPath
-                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
-                        }
+                Button("Open Library Folder") {
+                    if let lib = facade.library {
+                        let path = (lib.libraryPath as NSString).expandingTildeInPath
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                        pendingRescanOnFocus = true
                     }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.large)
-
-                    Button("Rescan") {
-                        Task { try? await facade.rescan() }
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.large)
                 }
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
             }
         }
     }
@@ -240,6 +240,8 @@ struct BooksHomeView: View {
     private var readyView: some View {
         VStack(alignment: .leading, spacing: 16) {
             libraryInfoSection
+
+            scanErrorsSection
 
             // Device access: server address + OPDS feed + QR codes
             if let kavita = facade as? KavitaBooksFacade,
@@ -348,6 +350,36 @@ struct BooksHomeView: View {
 
     // MARK: - Shared Components
 
+    @ViewBuilder
+    private var scanErrorsSection: some View {
+        if let kavita = facade as? KavitaBooksFacade, !kavita.scanErrors.isEmpty {
+            GroupBox {
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(kavita.scanErrors, id: \.self) { fileName in
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.questionmark")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                                Text(fileName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+                } label: {
+                    Label(
+                        "\(kavita.scanErrors.count) file\(kavita.scanErrors.count == 1 ? "" : "s") couldn't be imported",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
     private var libraryInfoSection: some View {
         GroupBox("Library") {
             VStack(spacing: 0) {
@@ -358,21 +390,48 @@ struct BooksHomeView: View {
                         DetailRow(label: "Items", value: "\(count) series")
                     }
                     Divider().padding(.vertical, 6)
-                    HStack {
-                        Text("Supports EPUB, PDF, CBZ, CBR, and more.")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                        Spacer()
+                    HStack(spacing: 8) {
                         Button("Add Books", systemImage: "plus") {
                             let path = (lib.libraryPath as NSString).expandingTildeInPath
                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                            pendingRescanOnFocus = true
                         }
                         .buttonStyle(.glass)
                         .controlSize(.small)
+
+                        if facade.setupState == .ready {
+                            Button("Refresh Library", systemImage: "arrow.triangle.2.circlepath") {
+                                Task { try? await facade.rescan() }
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.small)
+                        }
+
+                        Spacer()
                     }
+                    Divider().padding(.vertical, 6)
+                    folderStructureHint
                 }
             }
             .padding(4)
+        }
+    }
+
+    private var folderStructureHint: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Drop books into the library folder — Haven organizes them automatically. For series, create a folder yourself:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("""
+            Books/
+              Dune/
+                Dune - 01.epub
+                Dune - 02.epub
+              My Book.pdf  ← moved to My Book/My Book.pdf
+            """)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -391,12 +450,6 @@ struct BooksHomeView: View {
 
     private var advancedMenu: some View {
         Menu {
-            if facade.library != nil, facade.setupState == .ready {
-                Button("Rescan Library", systemImage: "arrow.triangle.2.circlepath") {
-                    Task { try? await facade.rescan() }
-                }
-            }
-
             if let lib = facade.library {
                 Button("Open Library Folder", systemImage: "folder") {
                     let path = (lib.libraryPath as NSString).expandingTildeInPath

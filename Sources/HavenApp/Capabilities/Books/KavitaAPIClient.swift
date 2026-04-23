@@ -54,6 +54,7 @@ struct KavitaAPIClient: Sendable {
         let folders: [String]
         let type: Int
         let libraryFileTypes: [Int]?
+        let lastScanned: String?
     }
 
     func getLibraries(token: String) async throws -> [Library] {
