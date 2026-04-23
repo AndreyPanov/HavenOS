@@ -10,6 +10,7 @@ enum BuiltInCatalog {
     /// All built-in specs, ready to merge into a SpecRegistry.
     static let entries: [(Capability, HavenCore.Bundle, [RuntimeUnit])] = [
         kavita,
+        navidrome,
     ]
 
     /// Build a SpecRegistry from built-in entries alone.

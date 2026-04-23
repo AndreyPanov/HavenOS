@@ -128,6 +128,9 @@ final class ServiceManager {
         adapterRegistry.register(capabilityID: "haven.capability.kavita") { capID, sm in
             KavitaBooksFacade(capabilityID: capID, serviceManager: sm)
         }
+        adapterRegistry.register(capabilityID: "haven.capability.navidrome") { capID, sm in
+            NavidromeMusicFacade(capabilityID: capID, serviceManager: sm)
+        }
 
         log.info("Initialized with base path: \(basePath.path)")
     }

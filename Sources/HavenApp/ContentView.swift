@@ -85,8 +85,12 @@ struct ContentView: View {
     /// User-facing tab label — capability type, not backend name.
     private func capabilityLabel(for service: InstalledService) -> String {
         if serviceManager.hasNativeUI(for: service.id),
-           let facade = serviceManager.facade(for: service.id) as? any BooksFacade {
+           serviceManager.facade(for: service.id) is any BooksFacade {
             return "Books"
+        }
+        if serviceManager.hasNativeUI(for: service.id),
+           serviceManager.facade(for: service.id) is any MusicFacade {
+            return "Music"
         }
         return service.name
     }
@@ -95,7 +99,9 @@ struct ContentView: View {
     private func capabilityView(for id: String) -> some View {
         if let facade = serviceManager.facade(for: id) as? any BooksFacade {
             BooksHomeView(facade: facade)
-        } else if let facade = serviceManager.facade(for: id) {
+        } else if let facade = serviceManager.facade(for: id) as? any MusicFacade {
+            MusicHomeView(facade: facade)
+        } else if serviceManager.facade(for: id) != nil {
             ServiceDetailView(serviceID: id)
         } else {
             Text("Service not found")

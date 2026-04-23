@@ -43,6 +43,9 @@ public protocol MusicFacade: CapabilityFacade {
     /// Current music library state (nil before first provision).
     var library: MusicLibrary? { get }
 
+    /// Backend setup state (auth, provisioning).
+    var setupState: BackendSetupState { get }
+
     /// Set or change the music library path on disk.
     func setLibraryPath(_ path: String) async throws
 
