@@ -150,7 +150,16 @@ final class KavitaBooksFacade: BooksFacade {
         log.info("Triggering library rescan")
         currentScanStatus = .scanning
         updateLibrary()
-        try await client.scanAllLibraries(token: token)
+
+        // Organize loose files into subdirectories (Kavita requires this)
+        organizeLibraryFolder()
+
+        // Scan each library by ID
+        let libraries = try await client.getLibraries(token: token)
+        for lib in libraries {
+            log.info("Scanning library \(lib.id): \(lib.name)")
+            try await client.scanLibrary(id: lib.id, token: token)
+        }
 
         // Poll for completion: watch for item count change
         scanPollTask?.cancel()
@@ -481,10 +490,21 @@ final class KavitaBooksFacade: BooksFacade {
                 let expandedPath = (libraryPath as NSString).expandingTildeInPath
                 log.info("No Kavita libraries found — creating 'Books' library at \(expandedPath)")
                 try await client.createLibrary(name: "Books", folders: [expandedPath], token: token)
-                // Re-fetch after creation
+                // Organize loose files, re-fetch, and trigger initial scan
+                organizeLibraryFolder()
                 libraries = try await client.getLibraries(token: token)
-                // Trigger initial scan
-                try? await client.scanAllLibraries(token: token)
+                for lib in libraries {
+                    try? await client.scanLibrary(id: lib.id, token: token)
+                }
+            }
+
+            // Auto-fix libraries with unsafe fileGroupTypes (0, 1, 5 crash macOS scanner)
+            let safeTypes = [2, 3, 4]
+            for lib in libraries {
+                if let types = lib.libraryFileTypes, types != safeTypes {
+                    log.info("Fixing library \(lib.id) fileTypes from \(types) to \(safeTypes)")
+                    try? await client.updateLibraryFileTypes(library: lib, fileTypes: safeTypes, token: token)
+                }
             }
 
             let count = try await client.getSeriesCount(token: token)
@@ -510,6 +530,52 @@ final class KavitaBooksFacade: BooksFacade {
             scanStatus: currentScanStatus,
             itemCount: itemCount
         )
+    }
+
+    // MARK: - Library Organization
+
+    /// Book file extensions that Kavita supports.
+    private static let bookExtensions: Set<String> = [
+        "epub", "pdf", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"
+    ]
+
+    /// Moves loose book files in the library root into subdirectories.
+    ///
+    /// Kavita requires books to be inside subdirectories (e.g. `~/Books/Title/file.epub`).
+    /// Users naturally drop files directly into the library folder, so we organize them
+    /// transparently before each scan.
+    private func organizeLibraryFolder() {
+        let stored = serviceManager?.storedState(for: capabilityID)
+        let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
+        let expandedPath = (libraryPath as NSString).expandingTildeInPath
+        let libraryURL = URL(fileURLWithPath: expandedPath)
+        let fm = FileManager.default
+
+        guard let contents = try? fm.contentsOfDirectory(
+            at: libraryURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for fileURL in contents {
+            let ext = fileURL.pathExtension.lowercased()
+            guard Self.bookExtensions.contains(ext) else { continue }
+
+            // Create subdirectory named after the file (without extension)
+            let title = fileURL.deletingPathExtension().lastPathComponent
+            let subdir = libraryURL.appendingPathComponent(title)
+            let destination = subdir.appendingPathComponent(fileURL.lastPathComponent)
+
+            do {
+                if !fm.fileExists(atPath: subdir.path) {
+                    try fm.createDirectory(at: subdir, withIntermediateDirectories: true)
+                }
+                try fm.moveItem(at: fileURL, to: destination)
+                log.info("Organized: \(fileURL.lastPathComponent) → \(title)/")
+            } catch {
+                log.warning("Failed to organize \(fileURL.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Token Persistence

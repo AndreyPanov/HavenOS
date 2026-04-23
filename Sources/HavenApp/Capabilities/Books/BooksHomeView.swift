@@ -357,6 +357,19 @@ struct BooksHomeView: View {
                         Divider().padding(.vertical, 6)
                         DetailRow(label: "Items", value: "\(count) series")
                     }
+                    Divider().padding(.vertical, 6)
+                    HStack {
+                        Text("Supports EPUB, PDF, CBZ, CBR, and more.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                        Button("Add Books", systemImage: "plus") {
+                            let path = (lib.libraryPath as NSString).expandingTildeInPath
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                    }
                 }
             }
             .padding(4)
@@ -388,12 +401,6 @@ struct BooksHomeView: View {
                 Button("Open Library Folder", systemImage: "folder") {
                     let path = (lib.libraryPath as NSString).expandingTildeInPath
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
-                }
-            }
-
-            if let url = facade.advancedURL {
-                Button("Open in Browser", systemImage: "globe") {
-                    NSWorkspace.shared.open(url)
                 }
             }
 

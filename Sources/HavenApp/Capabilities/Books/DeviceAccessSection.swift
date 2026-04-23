@@ -1,7 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// "Read on Other Devices" section showing server address, OPDS feed, and QR codes.
+/// "Read on Your Devices" section — OPDS-first, credential-free e-reader flow.
+///
+/// The primary use case: user adds books and wants to read them on an e-reader or tablet.
+/// OPDS feed URL has the API key baked in, so no login is needed on the device.
 struct DeviceAccessSection: View {
     let serverAddress: String
     let opdsURL: String?
@@ -10,37 +13,42 @@ struct DeviceAccessSection: View {
     @State private var showingQRPopover = false
 
     var body: some View {
-        GroupBox("Read on Other Devices") {
+        GroupBox("Read on Your Devices") {
             VStack(spacing: 0) {
-                addressRow(
-                    label: "Web address",
-                    value: serverAddress,
-                    fieldID: "web"
-                )
-
                 if let opds = opdsURL {
-                    Divider().padding(.vertical, 6)
-                    addressRow(
-                        label: "Reader app feed",
-                        value: opds,
-                        fieldID: "opds"
-                    )
-                }
+                    // Primary: OPDS feed (credential-free)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Open your e-reader app, go to **Add OPDS catalog**, and paste this address:")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                Divider().padding(.vertical, 6)
+                        HStack(spacing: 8) {
+                            addressRow(value: opds, fieldID: "opds")
 
-                HStack {
-                    Text("Use these addresses on phones, tablets, or e-readers on your network.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                    Button("Show QR Code") {
-                        showingQRPopover = true
+                            Button {
+                                showingQRPopover = true
+                            } label: {
+                                Image(systemName: "qrcode")
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.small)
+                            .popover(isPresented: $showingQRPopover, arrowEdge: .bottom) {
+                                qrPopoverContent(opds: opds)
+                            }
+                        }
                     }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .popover(isPresented: $showingQRPopover, arrowEdge: .bottom) {
-                        qrPopoverContent
+
+                    Divider().padding(.vertical, 10)
+
+                    // App guides
+                    readerGuides
+                } else {
+                    HStack {
+                        Text("Device access will be available once the library is fully set up.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
                     }
                 }
             }
@@ -50,15 +58,14 @@ struct DeviceAccessSection: View {
 
     // MARK: - Address Row
 
-    private func addressRow(label: String, value: String, fieldID: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+    private func addressRow(value: String, fieldID: String) -> some View {
+        HStack(spacing: 8) {
             Text(value)
+                .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
+
             Button {
                 copyToClipboard(value, fieldID: fieldID)
             } label: {
@@ -68,35 +75,103 @@ struct DeviceAccessSection: View {
             }
             .buttonStyle(.borderless)
         }
-        .font(.callout)
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    // MARK: - Reader Guides
+
+    private var readerGuides: some View {
+        VStack(spacing: 0) {
+            DisclosureGroup("Books & E-Readers") {
+                VStack(spacing: 1) {
+                    guideRow(
+                        icon: "book.closed",
+                        device: "Kobo / Kindle",
+                        app: "KOReader",
+                        hint: "Install KOReader → OPDS catalog → add feed"
+                    )
+                    guideRow(
+                        icon: "ipad.and.iphone",
+                        device: "iPhone / iPad",
+                        app: "Panels or KyBook 3",
+                        hint: "Add OPDS feed in app settings"
+                    )
+                    guideRow(
+                        icon: "phone",
+                        device: "Android",
+                        app: "Moon+ Reader or Librera",
+                        hint: "Add OPDS catalog → paste feed URL"
+                    )
+                }
+                .padding(.top, 6)
+            }
+            .font(.callout)
+
+            Divider().padding(.vertical, 6)
+
+            DisclosureGroup("Comics & Manga") {
+                VStack(spacing: 1) {
+                    guideRow(
+                        icon: "ipad.and.iphone",
+                        device: "iPhone / iPad",
+                        app: "Panels or Chunky",
+                        hint: "Add OPDS feed in app settings"
+                    )
+                    guideRow(
+                        icon: "phone",
+                        device: "Android",
+                        app: "Mihon",
+                        hint: "Install Kavita extension → add server URL"
+                    )
+                }
+                .padding(.top, 6)
+            }
+            .font(.callout)
+        }
+    }
+
+    private func guideRow(icon: String, device: String, app: String, hint: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .frame(width: 16, alignment: .center)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 0) {
+                    Text(device)
+                        .fontWeight(.medium)
+                        .font(.caption)
+                    Text("  ·  ")
+                        .foregroundStyle(.quaternary)
+                        .font(.caption)
+                    Text(app)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+                Text(hint)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - QR Popover
 
-    private var qrPopoverContent: some View {
+    private func qrPopoverContent(opds: String) -> some View {
         VStack(spacing: 16) {
-            Text("Scan to connect")
+            Text("Scan with your device")
                 .font(.headline)
 
-            HStack(spacing: 24) {
-                VStack(spacing: 8) {
-                    QRCodeView(content: serverAddress, size: 140)
-                    Text("Web")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            QRCodeView(content: opds, size: 160)
 
-                if let opds = opdsURL {
-                    VStack(spacing: 8) {
-                        QRCodeView(content: opds, size: 140)
-                        Text("OPDS Feed")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Text("Point your device's camera or reader app at the QR code.")
+            Text("Point your device's camera at the code,\nor scan from your e-reader app.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)

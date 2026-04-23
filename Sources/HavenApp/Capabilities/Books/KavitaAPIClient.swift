@@ -53,6 +53,7 @@ struct KavitaAPIClient: Sendable {
         let name: String
         let folders: [String]
         let type: Int
+        let libraryFileTypes: [Int]?
     }
 
     func getLibraries(token: String) async throws -> [Library] {
@@ -65,7 +66,9 @@ struct KavitaAPIClient: Sendable {
     }
 
     /// Create a new library in Kavita.
-    /// Type 2 = "Book" library. FileGroupTypes [2] = epub/book files.
+    /// Type 2 = "Book" library.
+    /// FileGroupTypes: 2=epub, 3=PDF, 4=images.
+    /// Values 0, 1 (archive types) and 5 (other) crash the macOS scanner, so we skip them.
     func createLibrary(name: String, folders: [String], token: String) async throws {
         var request = authorizedRequest(path: "/api/Library/create", token: token)
         request.httpMethod = "POST"
@@ -75,7 +78,27 @@ struct KavitaAPIClient: Sendable {
             "type": 2,
             "folders": folders,
             "folderWatching": true,
-            "fileGroupTypes": [2],
+            "fileGroupTypes": [2, 3, 4],
+            "excludePatterns": []
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data)
+    }
+
+    /// Update an existing library's file group types.
+    /// Safe values on macOS: 2=epub, 3=PDF, 4=images. Values 0, 1, 5 crash the scanner.
+    func updateLibraryFileTypes(library: Library, fileTypes: [Int], token: String) async throws {
+        var request = authorizedRequest(path: "/api/Library/update", token: token)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "id": library.id,
+            "name": library.name,
+            "type": library.type,
+            "folders": library.folders,
+            "folderWatching": true,
+            "fileGroupTypes": fileTypes,
             "excludePatterns": []
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
