@@ -35,7 +35,6 @@ struct BooksHomeView: View {
             }
         }
         .onChange(of: showingConnectSheet) {
-            // Refresh after sheet dismissal to pick up new connection state
             if !showingConnectSheet {
                 facade.refresh()
             }
@@ -81,12 +80,12 @@ struct BooksHomeView: View {
     @ViewBuilder
     private var statusDot: some View {
         switch resolvedState {
-        case .starting:
+        case .starting, .settingUp:
             ProgressView()
                 .controlSize(.mini)
-        case .needsSetup, .settingUp:
+        case .needsSetup:
             Circle().fill(.orange).frame(width: 8, height: 8)
-        case .empty, .ready, .scanning:
+        case .empty, .ready, .updating:
             Circle().fill(.green).frame(width: 8, height: 8)
         case .error:
             Circle().fill(.red).frame(width: 8, height: 8)
@@ -97,12 +96,12 @@ struct BooksHomeView: View {
 
     private var statusLabel: String {
         switch resolvedState {
-        case .starting:    "Starting up..."
+        case .starting:    "Starting up…"
         case .needsSetup:  "Needs setup"
-        case .settingUp:   "Setting up..."
-        case .empty:       "Running"
-        case .ready:       "Running"
-        case .scanning:    "Scanning..."
+        case .settingUp:   "Setting up…"
+        case .empty:       "Ready"
+        case .ready:       "Ready"
+        case .updating:    "Updating…"
         case .error:       "Error"
         case .stopped:     "Offline"
         }
@@ -125,8 +124,8 @@ struct BooksHomeView: View {
             emptyView
         case .ready:
             readyView
-        case .scanning:
-            scanningView
+        case .updating:
+            updatingView
         case .error(let message):
             errorView(message: message)
         }
@@ -161,7 +160,7 @@ struct BooksHomeView: View {
         centeredCard {
             ProgressView()
                 .controlSize(.regular)
-            Text("Starting your library...")
+            Text("Starting your library…")
                 .font(.headline)
             Text("This usually takes a few seconds.")
                 .font(.subheadline)
@@ -197,9 +196,9 @@ struct BooksHomeView: View {
         centeredCard {
             ProgressView()
                 .controlSize(.regular)
-            Text("Setting up your library...")
+            Text("Setting up your library…")
                 .font(.headline)
-            Text("Connecting to your book collection.")
+            Text("This usually takes a few seconds.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -208,8 +207,8 @@ struct BooksHomeView: View {
     // MARK: - State: Empty
 
     private var emptyView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            libraryInfoSection
+        VStack(alignment: .leading, spacing: 24) {
+            libraryCard
 
             centeredCard {
                 Image(systemName: "books.vertical")
@@ -217,7 +216,7 @@ struct BooksHomeView: View {
                     .foregroundStyle(.tertiary)
                 Text("Your library is empty")
                     .font(.headline)
-                Text("Drop EPUB, PDF, or CBZ files into your library folder.\nSwitch back to Haven and your library will refresh.")
+                Text("Drop books into your library folder — Haven takes care of the rest.\nSwitch back here and your library will update automatically.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -238,12 +237,11 @@ struct BooksHomeView: View {
     // MARK: - State: Ready
 
     private var readyView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            libraryInfoSection
+        VStack(alignment: .leading, spacing: 24) {
+            libraryCard
 
             scanErrorsSection
 
-            // Device access: server address + OPDS feed + QR codes
             if let kavita = facade as? KavitaBooksFacade,
                let address = kavita.serverAddress {
                 DeviceAccessSection(
@@ -251,40 +249,21 @@ struct BooksHomeView: View {
                     opdsURL: kavita.opdsURL
                 )
             }
-
-            // Show signed-in user for custom accounts (not Haven-managed)
-            if let kavita = facade as? KavitaBooksFacade,
-               !kavita.isManagedByHaven,
-               let username = kavita.connectedUsername {
-                HStack {
-                    Label("Signed in as \(username)", systemImage: "person.crop.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Sign Out") {
-                        kavita.signOut()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-            }
         }
     }
 
-    // MARK: - State: Scanning
+    // MARK: - State: Updating
 
-    private var scanningView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Scanning banner
+    private var updatingView: some View {
+        VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 12) {
                 ProgressView()
                     .controlSize(.small)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Scanning your library...")
+                    Text("Updating your library…")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    Text("New books will appear when the scan is complete.")
+                    Text("New books will appear shortly.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -293,9 +272,8 @@ struct BooksHomeView: View {
             .padding(12)
             .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
-            libraryInfoSection
+            libraryCard
 
-            // Device access (still show while scanning)
             if let kavita = facade as? KavitaBooksFacade,
                let address = kavita.serverAddress {
                 DeviceAccessSection(
@@ -313,7 +291,7 @@ struct BooksHomeView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 48))
                 .foregroundStyle(.orange)
-            Text("We couldn't load your library")
+            Text("Something went wrong")
                 .font(.headline)
             Text(message)
                 .font(.subheadline)
@@ -348,48 +326,37 @@ struct BooksHomeView: View {
         }
     }
 
-    // MARK: - Shared Components
+    // MARK: - Library Card
 
-    @ViewBuilder
-    private var scanErrorsSection: some View {
-        if let kavita = facade as? KavitaBooksFacade, !kavita.scanErrors.isEmpty {
-            GroupBox {
-                DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(kavita.scanErrors, id: \.self) { fileName in
-                            HStack(spacing: 6) {
-                                Image(systemName: "doc.questionmark")
-                                    .font(.caption2)
-                                    .foregroundStyle(.orange)
-                                Text(fileName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+    private var libraryCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 16) {
+                if let lib = facade.library {
+                    // Book count (prominent)
+                    if let count = lib.itemCount {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(count)")
+                                .font(.system(.title, design: .rounded, weight: .semibold))
+                            Text(count == 1 ? "book" : "books")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.top, 4)
-                } label: {
-                    Label(
-                        "\(kavita.scanErrors.count) file\(kavita.scanErrors.count == 1 ? "" : "s") couldn't be imported",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                }
-            }
-        }
-    }
 
-    private var libraryInfoSection: some View {
-        GroupBox("Library") {
-            VStack(spacing: 0) {
-                if let lib = facade.library {
-                    DetailRow(label: "Location", value: lib.libraryPath)
-                    if let count = lib.itemCount {
-                        Divider().padding(.vertical, 6)
-                        DetailRow(label: "Items", value: "\(count) series")
+                    // Folder path
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        Text(lib.libraryPath)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    Divider().padding(.vertical, 6)
+
+                    // Actions
                     HStack(spacing: 8) {
                         Button("Add Books", systemImage: "plus") {
                             let path = (lib.libraryPath as NSString).expandingTildeInPath
@@ -400,7 +367,7 @@ struct BooksHomeView: View {
                         .controlSize(.small)
 
                         if facade.setupState == .ready {
-                            Button("Refresh Library", systemImage: "arrow.triangle.2.circlepath") {
+                            Button("Check for New Books", systemImage: "arrow.triangle.2.circlepath") {
                                 Task { try? await facade.rescan() }
                             }
                             .buttonStyle(.glass)
@@ -409,33 +376,56 @@ struct BooksHomeView: View {
 
                         Spacer()
                     }
-                    Divider().padding(.vertical, 6)
-                    folderStructureHint
+
+                    // Hint
+                    Text("Add your EPUB, PDF, or CBZ files to the library folder — Haven organizes them automatically.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(4)
         }
     }
 
-    private var folderStructureHint: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Drop books into the library folder — Haven organizes them automatically. For series, create a folder yourself:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("""
-            Books/
-              Dune/
-                Dune - 01.epub
-                Dune - 02.epub
-              My Book.pdf  ← moved to My Book/My Book.pdf
-            """)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
+    // MARK: - Scan Errors
+
+    @ViewBuilder
+    private var scanErrorsSection: some View {
+        if let kavita = facade as? KavitaBooksFacade, !kavita.scanErrors.isEmpty {
+            GroupBox {
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(kavita.scanErrors, id: \.self) { fileName in
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.questionmark")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                                Text(fileName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Text("Make sure your files are in a supported format (EPUB, PDF, CBZ).")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 2)
+                    }
+                    .padding(.top, 6)
+                } label: {
+                    Label(
+                        "\(kavita.scanErrors.count) book\(kavita.scanErrors.count == 1 ? "" : "s") couldn't be added",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                }
+            }
         }
     }
 
-    /// Reusable centered card for state screens.
+    // MARK: - Centered Card
+
     private func centeredCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         GroupBox {
             VStack(spacing: 16) {
@@ -457,6 +447,21 @@ struct BooksHomeView: View {
                 }
             }
 
+            if facade.setupState == .ready {
+                Button("Check for New Books", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { try? await facade.rescan() }
+                }
+            }
+
+            if let kavita = facade as? KavitaBooksFacade,
+               !kavita.isManagedByHaven,
+               kavita.connectedUsername != nil {
+                Divider()
+                Button("Sign Out", systemImage: "person.crop.circle.badge.minus") {
+                    kavita.signOut()
+                }
+            }
+
             Divider()
 
             Button("Remove Library", systemImage: "trash", role: .destructive) {
@@ -470,7 +475,6 @@ struct BooksHomeView: View {
 
     // MARK: - State Resolution
 
-    /// Maps facade state + setup state + library data into a single UI state.
     private var resolvedState: BooksUIState {
         switch facade.state {
         case .idle:
@@ -482,7 +486,6 @@ struct BooksHomeView: View {
         case .degraded:
             return .error("Library is running with issues")
         case .ready:
-            // When managed by Haven and auto-connect is actively working, show settingUp
             if let kavita = facade as? KavitaBooksFacade,
                kavita.isManagedByHaven,
                (kavita.isAutoConnecting || kavita.connectionState == .connecting) {
@@ -498,7 +501,7 @@ struct BooksHomeView: View {
             case .ready:
                 if let lib = facade.library {
                     if lib.scanStatus == .scanning {
-                        return .scanning
+                        return .updating
                     }
                     if let count = lib.itemCount, count > 0 {
                         return .ready
@@ -526,24 +529,6 @@ private enum BooksUIState {
     case settingUp
     case empty
     case ready
-    case scanning
+    case updating
     case error(String)
-}
-
-// MARK: - Detail Row
-
-private struct DetailRow: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .textSelection(.enabled)
-        }
-        .font(.callout)
-    }
 }
