@@ -74,7 +74,7 @@ struct DeviceAccessSection: View {
                                 guideRow("text.book.closed", "Comics & Manga", "Panels, Chunky, or Mihon → add server → paste link")
                             }
                             .padding(.top, 8)
-                            .padding(.leading, 12)
+                            .padding(.leading, 10)
                         }
                     }
                 } else {
