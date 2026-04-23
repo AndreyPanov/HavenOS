@@ -10,6 +10,7 @@ struct MusicHomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
     let facade: any MusicFacade
     @State private var showingConnectSheet = false
+    @State private var pendingRescanOnFocus = false
 
     var body: some View {
         ScrollView {
@@ -35,6 +36,12 @@ struct MusicHomeView: View {
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
                 facade.refresh()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if pendingRescanOnFocus {
+                pendingRescanOnFocus = false
+                Task { try? await facade.rescan() }
             }
         }
     }
@@ -231,6 +238,8 @@ struct MusicHomeView: View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
 
+            accountInfoSection
+
             if let navidrome = facade as? NavidromeMusicFacade,
                let address = navidrome.serverAddress {
                 MusicDeviceAccessSection(serverAddress: address)
@@ -259,6 +268,8 @@ struct MusicHomeView: View {
             .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
             libraryCard
+
+            accountInfoSection
 
             if let navidrome = facade as? NavidromeMusicFacade,
                let address = navidrome.serverAddress {
@@ -382,6 +393,21 @@ struct MusicHomeView: View {
         }
     }
 
+    // MARK: - Account Info
+
+    @ViewBuilder
+    private var accountInfoSection: some View {
+        if let navidrome = facade as? NavidromeMusicFacade,
+           let username = navidrome.connectedUsername {
+            GroupBox {
+                LabeledContent("Signed in as") {
+                    Text(username)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     // MARK: - Centered Card
 
     private func centeredCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -448,6 +474,11 @@ struct MusicHomeView: View {
                navidrome.isManagedByHaven,
                (navidrome.isAutoConnecting || navidrome.connectionState == .connecting) {
                 return .settingUp
+            }
+            if let navidrome = facade as? NavidromeMusicFacade,
+               navidrome.isManagedByHaven,
+               navidrome.autoConnectExhausted {
+                return .error("Couldn't connect automatically — try signing in manually")
             }
             switch facade.setupState {
             case .needsSetup:

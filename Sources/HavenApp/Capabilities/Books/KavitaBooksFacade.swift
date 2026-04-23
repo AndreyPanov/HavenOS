@@ -16,20 +16,20 @@ private let log = Logger(subsystem: "com.haven", category: "KavitaBooksFacade")
 /// runs automatically. When false, user must sign in manually.
 @MainActor
 @Observable
-final class KavitaBooksFacade: BooksFacade {
-    let capabilityID: String
+package final class KavitaBooksFacade: BooksFacade {
+    package let capabilityID: String
 
     // MARK: - CapabilityFacade
 
-    private(set) var state: CapabilityState = .idle
-    private(set) var health: CapabilityHealth = .unknown
-    private(set) var advancedURL: URL?
+    package private(set) var state: CapabilityState = .idle
+    package private(set) var health: CapabilityHealth = .unknown
+    package private(set) var advancedURL: URL?
 
     // MARK: - BooksFacade
 
-    private(set) var library: BooksLibrary?
+    package private(set) var library: BooksLibrary?
 
-    var setupState: BackendSetupState {
+    package var setupState: BackendSetupState {
         switch connectionState {
         case .disconnected: .needsSetup(message: "Connect to see your library")
         case .connecting:   .settingUp
@@ -40,52 +40,52 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Connection State
 
-    enum ConnectionState: Equatable {
+    package enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
     }
 
-    private(set) var connectionState: ConnectionState = .disconnected
-    private(set) var itemCount: Int?
-    private(set) var apiKey: String?
+    package private(set) var connectionState: ConnectionState = .disconnected
+    package private(set) var itemCount: Int?
+    package private(set) var apiKey: String?
 
     /// Files that Kavita couldn't parse during the last scan.
-    private(set) var scanErrors: [String] = []
+    package private(set) var scanErrors: [String] = []
 
     /// True while auto-connect is in progress (health polling + auth).
-    private(set) var isAutoConnecting = false
+    package private(set) var isAutoConnecting = false
 
     /// True after auto-connect tried and exhausted all methods.
     /// Prevents infinite retry loops. Reset on switchToManaged() or manual disconnect/signOut.
-    private var autoConnectExhausted = false
+    package private(set) var autoConnectExhausted = false
 
     /// User preference: true = Haven manages the account automatically.
     /// When false, user must sign in manually. Persisted in UserDefaults.
-    var isManagedByHaven: Bool {
+    package var isManagedByHaven: Bool {
         get { !UserDefaults.standard.bool(forKey: customAccountKey) }
         set { UserDefaults.standard.set(!newValue, forKey: customAccountKey) }
     }
 
-    var connectedUsername: String? {
+    package var connectedUsername: String? {
         guard connectionState == .connected else { return nil }
         return UserDefaults.standard.string(forKey: usernameKey)
     }
 
     /// True if Haven has a stored password it can use to re-login.
-    var hasSavedCredentials: Bool {
+    package var hasSavedCredentials: Bool {
         UserDefaults.standard.string(forKey: passwordKey) != nil
     }
 
     // MARK: - Device Access
 
     /// LAN-accessible server address (e.g. `http://MacBook-Pro.local:5001`).
-    var serverAddress: String? {
+    package var serverAddress: String? {
         guard let p = port else { return nil }
         let hostname = ProcessInfo.processInfo.hostName
         return "http://\(hostname):\(p)"
     }
 
     /// OPDS feed URL for e-reader apps (requires connected + apiKey).
-    var opdsURL: String? {
+    package var opdsURL: String? {
         guard let p = port, let key = apiKey, connectionState == .connected else { return nil }
         let hostname = ProcessInfo.processInfo.hostName
         return "http://\(hostname):\(p)/api/opds/\(key)"
@@ -104,7 +104,7 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Init
 
-    init(capabilityID: String, serviceManager: ServiceManager) {
+    package init(capabilityID: String, serviceManager: ServiceManager) {
         self.capabilityID = capabilityID
         self.serviceManager = serviceManager
         self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
@@ -113,7 +113,7 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Available Actions
 
-    var availableActions: [CapabilityAction] {
+    package var availableActions: [CapabilityAction] {
         switch state {
         case .ready:
             var actions: [CapabilityAction] = []
@@ -129,7 +129,7 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Perform Actions
 
-    func perform(_ action: CapabilityAction) async throws {
+    package func perform(_ action: CapabilityAction) async throws {
         if action.id == CapabilityAction.rescan.id {
             try await rescan()
             return
@@ -142,12 +142,12 @@ final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - BooksFacade Methods
 
-    func setLibraryPath(_ path: String) async throws {
+    package func setLibraryPath(_ path: String) async throws {
         try await changeLibraryFolder(to: path)
     }
 
     /// Change the library folder: update Kavita via API, persist override, rescan.
-    func changeLibraryFolder(to path: String) async throws {
+    package func changeLibraryFolder(to path: String) async throws {
         guard let client = apiClient, let token = authToken else {
             throw FacadeError.adapterError("Not connected")
         }
@@ -176,7 +176,7 @@ final class KavitaBooksFacade: BooksFacade {
         try await rescan()
     }
 
-    func rescan() async throws {
+    package func rescan() async throws {
         guard let client = apiClient, let token = authToken else {
             throw FacadeError.adapterError("Not connected")
         }
@@ -237,7 +237,7 @@ final class KavitaBooksFacade: BooksFacade {
 
     /// Waits for Kavita API to be healthy, then authenticates.
     /// Called automatically when service becomes ready and isManagedByHaven is true.
-    func autoConnect() async {
+    package func autoConnect() async {
         guard let client = apiClient else { return }
         guard !isAutoConnecting else { return }
 
@@ -381,7 +381,7 @@ final class KavitaBooksFacade: BooksFacade {
     // MARK: - Manual Auth
 
     /// Create the initial admin account on a fresh Kavita install, then connect.
-    func createAccount(username: String, password: String) async throws {
+    package func createAccount(username: String, password: String) async throws {
         guard let client = apiClient else {
             throw FacadeError.adapterError("Service is not running")
         }
@@ -402,7 +402,7 @@ final class KavitaBooksFacade: BooksFacade {
         }
     }
 
-    func connect(username: String, password: String) async throws {
+    package func connect(username: String, password: String) async throws {
         guard let client = apiClient else {
             throw FacadeError.adapterError("Service is not running")
         }
@@ -427,7 +427,7 @@ final class KavitaBooksFacade: BooksFacade {
     }
 
     /// Disconnect from Kavita. Preserves Haven password for potential reconnect.
-    func disconnect() {
+    package func disconnect() {
         autoConnectTask?.cancel()
         autoConnectTask = nil
         scanPollTask?.cancel()
@@ -443,7 +443,7 @@ final class KavitaBooksFacade: BooksFacade {
     }
 
     /// Fully sign out and clear all stored credentials.
-    func signOut() {
+    package func signOut() {
         autoConnectTask?.cancel()
         autoConnectTask = nil
         scanPollTask?.cancel()
@@ -459,7 +459,7 @@ final class KavitaBooksFacade: BooksFacade {
     }
 
     /// Switch to managed mode: disconnect custom session, auto-connect with managed credentials.
-    func switchToManaged() {
+    package func switchToManaged() {
         isManagedByHaven = true
         autoConnectExhausted = false
         disconnect()  // Clears token but preserves managed credentials
@@ -469,14 +469,14 @@ final class KavitaBooksFacade: BooksFacade {
     }
 
     /// Switch to custom account mode: disconnect and let user sign in.
-    func switchToCustom() {
+    package func switchToCustom() {
         isManagedByHaven = false
         disconnect()
     }
 
     // MARK: - Refresh
 
-    func refresh() {
+    package func refresh() {
         let result = lifecycle.refreshState(for: capabilityID)
         state = result.state
         health = result.health
@@ -639,12 +639,12 @@ final class KavitaBooksFacade: BooksFacade {
 /// Kavita requires books to be inside subdirectories (e.g. `Books/Title/file.epub`).
 /// Users naturally drop files directly into the library folder, so we organize them
 /// transparently before each scan.
-enum LibraryOrganizer {
-    static let bookExtensions: Set<String> = [
+package enum LibraryOrganizer {
+    package static let bookExtensions: Set<String> = [
         "epub", "pdf", "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z"
     ]
 
-    static func organize(at libraryURL: URL) {
+    package static func organize(at libraryURL: URL) {
         let fm = FileManager.default
 
         guard let contents = try? fm.contentsOfDirectory(

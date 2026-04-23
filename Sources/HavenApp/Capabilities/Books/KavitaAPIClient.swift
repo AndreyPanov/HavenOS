@@ -220,10 +220,10 @@ struct KavitaAPIClient: Sendable {
     }
 }
 
-enum KavitaAPIError: Error, LocalizedError {
+package enum KavitaAPIError: Error, LocalizedError {
     case httpError(statusCode: Int, body: String)
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .httpError(let code, let body):
             if let message = Self.extractMessage(from: body) { return message }

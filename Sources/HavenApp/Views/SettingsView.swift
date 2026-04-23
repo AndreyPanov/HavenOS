@@ -7,7 +7,13 @@ struct SettingsView: View {
     @Environment(HavenSettingsModel.self) private var settings
     @Environment(ServiceManager.self) private var serviceManager
     @State private var showFolderPicker = false
-    @State private var showingConnectSheet = false
+    @State private var activeSheet: SettingsSheet?
+
+    private enum SettingsSheet: Identifiable {
+        case booksConnect
+        case musicConnect
+        var id: Int { hashValue }
+    }
 
     var body: some View {
         @Bindable var settings = settings
@@ -81,6 +87,10 @@ struct SettingsView: View {
                 booksLibrarySection(kavitaFacade)
             }
 
+            if let navidromeFacade = navidromeFacade {
+                musicLibrarySection(navidromeFacade)
+            }
+
             Section("Advanced") {
                 Toggle("Show Internal Details", isOn: $settings.showInternalDetails)
                 LabeledContent("Logs") {
@@ -109,9 +119,16 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity)
-        .sheet(isPresented: $showingConnectSheet) {
-            if let kavita = kavitaFacade {
-                BooksConnectSheet(facade: kavita)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .booksConnect:
+                if let kavita = kavitaFacade {
+                    BooksConnectSheet(facade: kavita)
+                }
+            case .musicConnect:
+                if let navidrome = navidromeFacade {
+                    MusicConnectSheet(facade: navidrome)
+                }
             }
         }
         .fileImporter(
@@ -130,15 +147,15 @@ struct SettingsView: View {
         serviceManager.facade(for: "haven.capability.kavita") as? KavitaBooksFacade
     }
 
-    private func booksLibrarySection(_ facade: KavitaBooksFacade) -> some View {
-        // Read observable properties directly so SwiftUI tracks them
-        let managed = facade.isManagedByHaven
-        let connState = facade.connectionState
-        let username = facade.connectedUsername
+    /// Returns the Navidrome facade if Music is installed.
+    private var navidromeFacade: NavidromeMusicFacade? {
+        serviceManager.facade(for: "haven.capability.navidrome") as? NavidromeMusicFacade
+    }
 
-        return Section("Books Library") {
+    private func booksLibrarySection(_ facade: KavitaBooksFacade) -> some View {
+        Section("Books Library") {
             Toggle("Account managed by Haven", isOn: Binding(
-                get: { managed },
+                get: { facade.isManagedByHaven },
                 set: { newValue in
                     if newValue {
                         facade.switchToManaged()
@@ -148,15 +165,43 @@ struct SettingsView: View {
                 }
             ))
 
-            if !managed {
-                if connState == .connected, let username {
+            if !facade.isManagedByHaven {
+                if facade.connectionState == .connected, let username = facade.connectedUsername {
                     LabeledContent("Signed in as") {
                         Text(username)
                             .foregroundStyle(.secondary)
                     }
                 } else {
                     Button("Sign In") {
-                        showingConnectSheet = true
+                        activeSheet = .booksConnect
+                    }
+                }
+            }
+        }
+    }
+
+    private func musicLibrarySection(_ facade: NavidromeMusicFacade) -> some View {
+        Section("Music Library") {
+            Toggle("Account managed by Haven", isOn: Binding(
+                get: { facade.isManagedByHaven },
+                set: { newValue in
+                    if newValue {
+                        facade.switchToManaged()
+                    } else {
+                        facade.switchToCustom()
+                    }
+                }
+            ))
+
+            if !facade.isManagedByHaven {
+                if facade.connectionState == .connected, let username = facade.connectedUsername {
+                    LabeledContent("Signed in as") {
+                        Text(username)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button("Sign In") {
+                        activeSheet = .musicConnect
                     }
                 }
             }

@@ -242,6 +242,8 @@ struct BooksHomeView: View {
 
             scanErrorsSection
 
+            accountInfoSection
+
             if let kavita = facade as? KavitaBooksFacade,
                let address = kavita.serverAddress {
                 DeviceAccessSection(
@@ -273,6 +275,8 @@ struct BooksHomeView: View {
             .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
             libraryCard
+
+            accountInfoSection
 
             if let kavita = facade as? KavitaBooksFacade,
                let address = kavita.serverAddress {
@@ -433,6 +437,21 @@ struct BooksHomeView: View {
         }
     }
 
+    // MARK: - Account Info
+
+    @ViewBuilder
+    private var accountInfoSection: some View {
+        if let kavita = facade as? KavitaBooksFacade,
+           let username = kavita.connectedUsername {
+            GroupBox {
+                LabeledContent("Signed in as") {
+                    Text(username)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     // MARK: - Centered Card
 
     private func centeredCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -499,6 +518,11 @@ struct BooksHomeView: View {
                kavita.isManagedByHaven,
                (kavita.isAutoConnecting || kavita.connectionState == .connecting) {
                 return .settingUp
+            }
+            if let kavita = facade as? KavitaBooksFacade,
+               kavita.isManagedByHaven,
+               kavita.autoConnectExhausted {
+                return .error("Couldn't connect automatically — try signing in manually")
             }
             switch facade.setupState {
             case .needsSetup:

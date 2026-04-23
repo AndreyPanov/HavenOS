@@ -13,20 +13,20 @@ private let log = Logger(subsystem: "com.haven", category: "NavidromeMusicFacade
 /// 3. If all fail, shows "Sign In" for manual entry
 @MainActor
 @Observable
-final class NavidromeMusicFacade: MusicFacade {
-    let capabilityID: String
+package final class NavidromeMusicFacade: MusicFacade {
+    package let capabilityID: String
 
     // MARK: - CapabilityFacade
 
-    private(set) var state: CapabilityState = .idle
-    private(set) var health: CapabilityHealth = .unknown
-    private(set) var advancedURL: URL?
+    package private(set) var state: CapabilityState = .idle
+    package private(set) var health: CapabilityHealth = .unknown
+    package private(set) var advancedURL: URL?
 
     // MARK: - MusicFacade
 
-    private(set) var library: MusicLibrary?
+    package private(set) var library: MusicLibrary?
 
-    var setupState: BackendSetupState {
+    package var setupState: BackendSetupState {
         switch connectionState {
         case .disconnected: .needsSetup(message: "Connect to see your library")
         case .connecting:   .settingUp
@@ -37,33 +37,37 @@ final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Connection State
 
-    enum ConnectionState: Equatable {
+    package enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
     }
 
-    private(set) var connectionState: ConnectionState = .disconnected
+    package private(set) var connectionState: ConnectionState = .disconnected
 
     /// True while auto-connect is in progress.
-    private(set) var isAutoConnecting = false
+    package private(set) var isAutoConnecting = false
 
     /// True after auto-connect exhausted all methods.
-    private var autoConnectExhausted = false
+    package private(set) var autoConnectExhausted = false
 
     /// User preference: true = Haven manages the account automatically.
-    var isManagedByHaven: Bool {
+    package var isManagedByHaven: Bool {
         get { !UserDefaults.standard.bool(forKey: customAccountKey) }
         set { UserDefaults.standard.set(!newValue, forKey: customAccountKey) }
     }
 
-    var connectedUsername: String? {
+    package var connectedUsername: String? {
         guard connectionState == .connected else { return nil }
         return UserDefaults.standard.string(forKey: usernameKey)
+    }
+
+    package var hasSavedCredentials: Bool {
+        UserDefaults.standard.string(forKey: tokenKey) != nil
     }
 
     // MARK: - Device Access
 
     /// LAN-accessible server address (e.g. `http://MacBook-Pro.local:4533`).
-    var serverAddress: String? {
+    package var serverAddress: String? {
         guard let p = port else { return nil }
         let hostname = ProcessInfo.processInfo.hostName
         return "http://\(hostname):\(p)"
@@ -71,9 +75,9 @@ final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Library Stats
 
-    private(set) var artistCount: Int?
-    private(set) var albumCount: Int?
-    private(set) var trackCount: Int?
+    package private(set) var artistCount: Int?
+    package private(set) var albumCount: Int?
+    package private(set) var trackCount: Int?
 
     // MARK: - Internal
 
@@ -88,7 +92,7 @@ final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Init
 
-    init(capabilityID: String, serviceManager: ServiceManager) {
+    package init(capabilityID: String, serviceManager: ServiceManager) {
         self.capabilityID = capabilityID
         self.serviceManager = serviceManager
         self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
@@ -97,7 +101,7 @@ final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Available Actions
 
-    var availableActions: [CapabilityAction] {
+    package var availableActions: [CapabilityAction] {
         switch state {
         case .ready:
             var actions: [CapabilityAction] = []
@@ -113,7 +117,7 @@ final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Perform Actions
 
-    func perform(_ action: CapabilityAction) async throws {
+    package func perform(_ action: CapabilityAction) async throws {
         if action.id == CapabilityAction.rescan.id {
             try await rescan()
             return
@@ -126,43 +130,65 @@ final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - MusicFacade Methods
 
-    func setLibraryPath(_ path: String) async throws {
+    package func setLibraryPath(_ path: String) async throws {
         throw FacadeError.adapterError("Changing music folder requires reinstalling the service with new settings.")
     }
 
-    func rescan() async throws {
-        guard let client = apiClient, let token = authToken else {
+    package func rescan() async throws {
+        guard let client = apiClient else {
             throw FacadeError.adapterError("Not connected")
+        }
+        guard let username = UserDefaults.standard.string(forKey: usernameKey),
+              let password = UserDefaults.standard.string(forKey: passwordKey) else {
+            throw FacadeError.adapterError("No credentials for scan")
         }
         guard currentScanStatus != .scanning else { return }
         log.info("Triggering library rescan")
         currentScanStatus = .scanning
         updateLibrary()
 
-        try await client.scanLibrary(token: token)
+        do {
+            try await client.startScan(username: username, password: password)
+        } catch {
+            log.warning("Scan API failed: \(error.localizedDescription)")
+            currentScanStatus = .idle
+            updateLibrary()
+            throw error
+        }
 
-        // Poll scan status until complete
+        // Poll scan status until done, then refresh stats
         scanPollTask?.cancel()
         scanPollTask = Task {
-            for _ in 1...30 {
-                try? await Task.sleep(for: .seconds(2))
-                guard !Task.isCancelled else { return }
-                guard let client = self.apiClient, let token = self.authToken else { return }
+            try? await Task.sleep(for: .seconds(2))
 
-                if let status = try? await client.getScanStatus(token: token), !status.scanning {
-                    await self.fetchLibraryStats()
-                    log.info("Scan complete")
+            for i in 1...30 {
+                guard !Task.isCancelled else { return }
+                do {
+                    let status = try await client.getScanStatus(username: username, password: password)
+                    if !status.scanning {
+                        log.info("Scan complete (\(status.count) tracks)")
+                        break
+                    }
+                    log.debug("Scan poll \(i)/30: scanning (\(status.count) tracks so far)")
+                } catch {
+                    log.warning("Scan poll failed: \(error.localizedDescription)")
                     break
                 }
+                try? await Task.sleep(for: .seconds(2))
             }
+
+            // Brief delay for Navidrome to finalize counts after scan
+            try? await Task.sleep(for: .seconds(1))
+            await self.fetchLibraryStats()
             self.currentScanStatus = .idle
             self.updateLibrary()
+            log.info("Rescan finished")
         }
     }
 
     // MARK: - Auto-Connect
 
-    func autoConnect() async {
+    package func autoConnect() async {
         guard let client = apiClient else { return }
         guard !isAutoConnecting else { return }
 
@@ -186,9 +212,9 @@ final class NavidromeMusicFacade: MusicFacade {
             log.info("Auto-connect: trying saved token")
             if await verifyToken(client: client, token: token) {
                 connectionState = .connected
+                isAutoConnecting = false
                 log.info("Auto-connect: saved token valid")
                 await fetchLibraryStats()
-                isAutoConnecting = false
                 return
             }
             log.info("Auto-connect: saved token expired")
@@ -204,9 +230,9 @@ final class NavidromeMusicFacade: MusicFacade {
                 authToken = response.token
                 connectionState = .connected
                 saveCredentials(response.token, username: username)
+                isAutoConnecting = false
                 log.info("Auto-connect: re-login succeeded")
                 await fetchLibraryStats()
-                isAutoConnecting = false
                 return
             } catch {
                 log.warning("Auto-connect: re-login failed: \(error.localizedDescription)")
@@ -223,9 +249,9 @@ final class NavidromeMusicFacade: MusicFacade {
                 connectionState = .connected
                 saveCredentials(response.token, username: mUser)
                 UserDefaults.standard.set(mPass, forKey: passwordKey)
+                isAutoConnecting = false
                 log.info("Auto-connect: managed credentials valid")
                 await fetchLibraryStats()
-                isAutoConnecting = false
                 return
             } catch {
                 log.warning("Auto-connect: managed credentials failed: \(error.localizedDescription)")
@@ -245,8 +271,8 @@ final class NavidromeMusicFacade: MusicFacade {
             UserDefaults.standard.set(username, forKey: managedUsernameKey)
             UserDefaults.standard.set(password, forKey: managedPasswordKey)
             log.info("Auto-connect: created admin account")
-            await fetchLibraryStats()
             isAutoConnecting = false
+            await fetchLibraryStats()
             return
         } catch {
             log.info("Auto-connect: admin creation failed (account exists?): \(error.localizedDescription)")
@@ -272,7 +298,7 @@ final class NavidromeMusicFacade: MusicFacade {
 
     private func verifyToken(client: NavidromeAPIClient, token: String) async -> Bool {
         do {
-            _ = try await client.getArtistCount(token: token)
+            _ = try await client.getLibraryInfo(token: token)
             return true
         } catch {
             return false
@@ -298,7 +324,29 @@ final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Manual Auth
 
-    func connect(username: String, password: String) async throws {
+    package func createAccount(username: String, password: String) async throws {
+        guard let client = apiClient else {
+            throw FacadeError.adapterError("Service is not running")
+        }
+
+        connectionState = .connecting
+        do {
+            let response = try await client.createAdmin(username: username, password: password)
+            authToken = response.token
+            connectionState = .connected
+            saveCredentials(response.token, username: username)
+            isManagedByHaven = false
+            UserDefaults.standard.removeObject(forKey: passwordKey)
+            log.info("Created Navidrome admin account: \(username)")
+            await fetchLibraryStats()
+        } catch {
+            connectionState = .failed(error.localizedDescription)
+            authToken = nil
+            throw error
+        }
+    }
+
+    package func connect(username: String, password: String) async throws {
         guard let client = apiClient else {
             throw FacadeError.adapterError("Service is not running")
         }
@@ -320,7 +368,7 @@ final class NavidromeMusicFacade: MusicFacade {
         }
     }
 
-    func disconnect() {
+    package func disconnect() {
         autoConnectTask?.cancel()
         autoConnectTask = nil
         scanPollTask?.cancel()
@@ -336,7 +384,7 @@ final class NavidromeMusicFacade: MusicFacade {
         updateLibrary()
     }
 
-    func signOut() {
+    package func signOut() {
         autoConnectTask?.cancel()
         autoConnectTask = nil
         scanPollTask?.cancel()
@@ -352,7 +400,7 @@ final class NavidromeMusicFacade: MusicFacade {
         updateLibrary()
     }
 
-    func switchToManaged() {
+    package func switchToManaged() {
         isManagedByHaven = true
         autoConnectExhausted = false
         disconnect()
@@ -361,14 +409,14 @@ final class NavidromeMusicFacade: MusicFacade {
         }
     }
 
-    func switchToCustom() {
+    package func switchToCustom() {
         isManagedByHaven = false
         disconnect()
     }
 
     // MARK: - Refresh
 
-    func refresh() {
+    package func refresh() {
         let result = lifecycle.refreshState(for: capabilityID)
         state = result.state
         health = result.health
@@ -423,27 +471,35 @@ final class NavidromeMusicFacade: MusicFacade {
     private func fetchLibraryStats() async {
         guard let client = apiClient, let token = authToken else { return }
 
-        do {
-            let artists = try await client.getArtistCount(token: token)
-            let albums = try await client.getAlbumCount(token: token)
-            let tracks = try await client.getTrackCount(token: token)
-            artistCount = artists
-            albumCount = albums
-            trackCount = tracks
-            log.info("Fetched library stats: \(artists) artists, \(albums) albums, \(tracks) tracks")
-            updateLibrary()
+        // Retry up to 3 times with delay — Navidrome may need a moment after login
+        for attempt in 1...3 {
+            do {
+                let info = try await client.getLibraryInfo(token: token)
+                artistCount = info.totalArtists
+                albumCount = info.totalAlbums
+                trackCount = info.totalSongs
+                log.info("Fetched library stats: \(info.totalArtists ?? 0) artists, \(info.totalAlbums ?? 0) albums, \(info.totalSongs ?? 0) tracks")
+                updateLibrary()
+                return
+            } catch {
+                let is401 = (error as? NavidromeAPIError).flatMap {
+                    if case .httpError(let code, _) = $0, code == 401 { return true }
+                    return nil
+                } ?? false
 
-            // Auto-rescan on connect
-            if currentScanStatus != .scanning {
-                try? await rescan()
-            }
-        } catch {
-            log.error("Failed to fetch library stats: \(error.localizedDescription)")
-            if let apiError = error as? NavidromeAPIError,
-               case .httpError(let code, _) = apiError, code == 401 {
-                connectionState = .failed("Session expired — reconnect")
-                authToken = nil
-                clearAllCredentials()
+                if is401 && attempt < 3 {
+                    log.info("Stats fetch got 401, retrying in \(attempt)s (attempt \(attempt)/3)")
+                    try? await Task.sleep(for: .seconds(attempt))
+                    continue
+                }
+
+                log.error("Failed to fetch library stats: \(error.localizedDescription)")
+                if is401 {
+                    connectionState = .failed("Session expired — reconnect")
+                    authToken = nil
+                    UserDefaults.standard.removeObject(forKey: tokenKey)
+                }
+                return
             }
         }
     }
