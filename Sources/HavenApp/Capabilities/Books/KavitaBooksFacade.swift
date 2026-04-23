@@ -143,7 +143,37 @@ final class KavitaBooksFacade: BooksFacade {
     // MARK: - BooksFacade Methods
 
     func setLibraryPath(_ path: String) async throws {
-        throw FacadeError.adapterError("Changing library path requires reinstalling the service with new settings.")
+        try await changeLibraryFolder(to: path)
+    }
+
+    /// Change the library folder: update Kavita via API, persist override, rescan.
+    func changeLibraryFolder(to path: String) async throws {
+        guard let client = apiClient, let token = authToken else {
+            throw FacadeError.adapterError("Not connected")
+        }
+
+        let expandedPath = (path as NSString).expandingTildeInPath
+
+        // Create the folder if it doesn't exist
+        try FileManager.default.createDirectory(
+            atPath: expandedPath,
+            withIntermediateDirectories: true
+        )
+
+        // Update Kavita library folders via API
+        let libraries = try await client.getLibraries(token: token)
+        if let lib = libraries.first {
+            try await client.updateLibraryFolders(library: lib, folders: [expandedPath], token: token)
+        } else {
+            try await client.createLibrary(name: "Books", folders: [expandedPath], token: token)
+        }
+
+        // Persist the override in UserDefaults
+        UserDefaults.standard.set(path, forKey: libraryPathOverrideKey)
+        log.info("Library folder changed to \(path)")
+
+        updateLibrary()
+        try await rescan()
     }
 
     func rescan() async throws {
@@ -457,8 +487,6 @@ final class KavitaBooksFacade: BooksFacade {
             return
         }
 
-        let stored = serviceManager?.storedState(for: capabilityID)
-        let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
         port = service.port
 
         if let p = port {
@@ -477,7 +505,7 @@ final class KavitaBooksFacade: BooksFacade {
         }
 
         library = BooksLibrary(
-            libraryPath: libraryPath,
+            libraryPath: resolvedLibraryPath,
             scanStatus: currentScanStatus,
             itemCount: itemCount
         )
@@ -507,9 +535,7 @@ final class KavitaBooksFacade: BooksFacade {
 
             // Auto-create library if none exists (first-time setup)
             if libraries.isEmpty {
-                let stored = serviceManager?.storedState(for: capabilityID)
-                let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
-                let expandedPath = (libraryPath as NSString).expandingTildeInPath
+                let expandedPath = (resolvedLibraryPath as NSString).expandingTildeInPath
                 log.info("No Kavita libraries found — creating 'Books' library at \(expandedPath)")
                 try await client.createLibrary(name: "Books", folders: [expandedPath], token: token)
                 // Organize loose files, re-fetch, and trigger initial scan
@@ -550,10 +576,8 @@ final class KavitaBooksFacade: BooksFacade {
     }
 
     private func updateLibrary() {
-        let stored = serviceManager?.storedState(for: capabilityID)
-        let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
         library = BooksLibrary(
-            libraryPath: libraryPath,
+            libraryPath: resolvedLibraryPath,
             scanStatus: currentScanStatus,
             itemCount: itemCount
         )
@@ -562,9 +586,7 @@ final class KavitaBooksFacade: BooksFacade {
     // MARK: - Library Organization
 
     private func organizeLibraryFolder() {
-        let stored = serviceManager?.storedState(for: capabilityID)
-        let libraryPath = stored?.resolvedSettings["library_path"] ?? "~/Books"
-        let expandedPath = (libraryPath as NSString).expandingTildeInPath
+        let expandedPath = (resolvedLibraryPath as NSString).expandingTildeInPath
         LibraryOrganizer.organize(at: URL(fileURLWithPath: expandedPath))
     }
 
@@ -577,6 +599,7 @@ final class KavitaBooksFacade: BooksFacade {
     private var managedPasswordKey: String { "haven.kavita.managedPass.\(capabilityID)" }
     private var apiKeyKey: String { "haven.kavita.apiKey.\(capabilityID)" }
     private var customAccountKey: String { "haven.kavita.customAccount.\(capabilityID)" }
+    private var libraryPathOverrideKey: String { "haven.kavita.libraryPath.\(capabilityID)" }
 
     private func saveCredentials(_ token: String, username: String, apiKey: String?) {
         UserDefaults.standard.set(token, forKey: tokenKey)
@@ -587,6 +610,15 @@ final class KavitaBooksFacade: BooksFacade {
     private func loadSavedCredentials() {
         authToken = UserDefaults.standard.string(forKey: tokenKey)
         apiKey = UserDefaults.standard.string(forKey: apiKeyKey)
+    }
+
+    /// Resolved library path: UserDefaults override > stored settings > default.
+    private var resolvedLibraryPath: String {
+        if let override = UserDefaults.standard.string(forKey: libraryPathOverrideKey) {
+            return override
+        }
+        let stored = serviceManager?.storedState(for: capabilityID)
+        return stored?.resolvedSettings["library_path"] ?? "~/Books"
     }
 
     private func clearAllCredentials() {

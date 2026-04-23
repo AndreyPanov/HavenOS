@@ -354,6 +354,15 @@ struct BooksHomeView: View {
                             .textSelection(.enabled)
                             .lineLimit(1)
                             .truncationMode(.middle)
+
+                        if facade is KavitaBooksFacade {
+                            Button("Change") {
+                                pickLibraryFolder()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.callout)
+                            .foregroundStyle(.tint)
+                        }
                     }
 
                     // Actions
@@ -510,6 +519,30 @@ struct BooksHomeView: View {
                 }
                 return .empty
             }
+        }
+    }
+
+    // MARK: - Folder Picker
+
+    private func pickLibraryFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Library Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        if let lib = facade.library {
+            let expanded = (lib.libraryPath as NSString).expandingTildeInPath
+            panel.directoryURL = URL(fileURLWithPath: expanded)
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let path = url.path
+
+        guard let kavita = facade as? KavitaBooksFacade else { return }
+        Task {
+            try? await kavita.changeLibraryFolder(to: path)
         }
     }
 

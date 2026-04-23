@@ -107,6 +107,25 @@ struct KavitaAPIClient: Sendable {
         try checkHTTPStatus(response, data: data)
     }
 
+    /// Update an existing library's folders (changes where Kavita looks for books).
+    func updateLibraryFolders(library: Library, folders: [String], token: String) async throws {
+        var request = authorizedRequest(path: "/api/Library/update", token: token)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "id": library.id,
+            "name": library.name,
+            "type": library.type,
+            "folders": folders,
+            "folderWatching": true,
+            "fileGroupTypes": library.libraryFileTypes ?? [2, 3, 4],
+            "excludePatterns": []
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data)
+    }
+
     func scanLibrary(id: Int, token: String) async throws {
         var request = authorizedRequest(path: "/api/Library/scan", token: token)
         request.httpMethod = "POST"
