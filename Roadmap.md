@@ -83,7 +83,9 @@ Phase	Focus	Outcome	Status
 12	Books (Kavita)	First full facade + native UI capability	✅ DONE
 12.5	Books Usability	Device access, auto-organize, scan errors	✅ DONE
 13	Replaceability	Validate backend swap	✅ DONE
-14	Files	Second capability	⬜ Not started
+14	Music (Navidrome)	Second capability — validate pattern scales	⬜ Not started
+15	Files	Third capability — basic file access	⬜ Not started
+16	Movies (Jellyfin)	Fourth capability — video streaming	⬜ Future
 
 
 ⸻
@@ -505,8 +507,14 @@ All deliverables implemented:
 	•	createLibrary uses safe values by default
 	•	5 unit tests for fileGroupTypes safety
 
-6. Clean Ready Screen
-	•	Library info: path, item count, Add Books + Refresh Library buttons, folder structure hint
+6. Library Folder Management
+	•	"Change" button next to library path opens NSOpenPanel folder picker
+	•	Updates Kavita library folders via API, persists path override in UserDefaults
+	•	Auto-creates folder if needed, triggers rescan after change
+	•	Path resolution: UserDefaults override > StoredServiceState > default ~/Books
+
+7. Clean Ready Screen
+	•	Library info: path + change button, item count, Add Books + Check for New Books buttons
 	•	Scan errors section (when applicable)
 	•	Device access: OPDS URL, copy, QR code, reader guides
 	•	Signed-in user info (custom accounts only)
@@ -523,102 +531,131 @@ Phase 12.5 turns Books from “installed software” into a personal cloud libra
 
 ⸻
 
-🚀 Phase 14 — Second Capability (Files)
+🎵 Phase 14 — Music (Navidrome)
 
 🎯 Goal
 
-Generalize system beyond Books
+Validate that the Books pattern generalizes to another domain:
+Local files → Organized → Served → Accessed on all devices
 
 ⸻
 
 🔧 Deliverables
 
-FilesFacade
+1. MusicFacade (Domain Layer)
+	•	MusicLibrary: libraryPath, artistCount, albumCount, trackCount, scanStatus, lastScanDate
+	•	MusicFacade protocol: setLibraryPath(), rescan()
 
-* root management
-* file listing
-* basic actions
+2. NavidromeAdapter (Backend Layer)
+	•	Config mapping (music folder, port)
+	•	Subsonic API integration
+	•	Healthcheck integration
+	•	Auth handled internally (like Kavita)
 
-FileBrowserAdapter
+3. Music UI (State-driven)
+	•	Reuse Books structure: starting → needsSetup → empty → ready → scanning → error
+	•	Library info: artist/album/track counts, folder path + change button
+	•	"Check for New Music" inline + toolbar
 
-* config mapping
-* CLI/start control
+4. Library Management
+	•	Select music folder (NSOpenPanel)
+	•	Persist path (UserDefaults override, same pattern as Books)
+	•	Validate folder
 
-Files UI
+5. Rescan UX
+	•	Auto-rescan on connect and after adding files
+	•	Scanning banner with progress indicator
+	•	Scan completion detection
 
-* native file browsing
-* folder selection
-* preview (optional later)
+6. Device Access (Subsonic-first)
+	•	"Listen on your devices" section with server address
+	•	Copy + QR code (reuse DeviceAccessSection pattern)
+	•	Client guides: iPhone (Amperfy/Substreamer), Android (Symfonium/DSub), Desktop (browser)
+
+7. Open in Browser (Fallback)
+	•	Navidrome web UI as secondary action (toolbar menu)
+
+⸻
+
+⚠️ Product Constraints
+
+DO:
+	•	Emphasize "Listen on your devices"
+	•	Reuse Books UI patterns
+	•	Keep UX identical where possible
+
+DO NOT:
+	•	Expose Subsonic / API terminology
+	•	Build native player (for now)
+	•	Rebuild Navidrome UI
 
 ⸻
 
 ✅ Acceptance Criteria
-
-* Same UI patterns reused
-* No service-specific UI leaks
-* Facade abstraction holds
-
-⸻
-
-🧠 Updated Strategic Direction
-
-After these phases, Haven becomes:
-
-NOT:
-
-* service launcher
-* self-hosting UI
-* homelab dashboard
-
-BUT:
-
-A native operating layer for personal data services
+	•	User can add music folder, rescan library, play music from phone in < 2 minutes
+	•	Works with at least one iOS client and one Android client
+	•	No manual configuration outside Haven
 
 ⸻
 
-🔥 Critical Evolution (What changed)
+📁 Phase 15 — Files
 
-Your original roadmap ends at:
+🎯 Goal
 
-“Install → Start → Open”  ￼
+Provide basic local file access capability.
 
-Your new roadmap extends it to:
+🔧 Deliverables
+	•	FilesFacade: root management, file listing, basic actions
+	•	FileBrowserAdapter: config mapping, CLI/start control
+	•	Native file browsing UI, folder selection
+	•	Basic preview (optional)
+
+⚠️ Note: Files is simpler technically but weaker in differentiation. Keep scope minimal.
+
+⸻
+
+🎬 Phase 16 — Movies (Future)
+
+🎯 Goal
+
+Extend pattern to video streaming.
+
+Candidate backend: Jellyfin (preferred). Plex optional (licensing concerns).
+
+⚠️ Complexity: transcoding, metadata scraping, performance tuning.
+Only after Music is stable.
+
+⸻
+
+🧠 Strategic Evolution
+
+Proven Pattern
+
+Raw files → Haven cleanup → Backend engine → Device access
+
+Capability Map
+
+Capability	Engine	Protocol
+Books	Kavita	OPDS
+Music	Navidrome	Subsonic
+Files	File Browser	HTTP
+Movies	Jellyfin	DLNA / HTTP
+
+Execution Strategy
+
+Books → Music → Files → Movies
+Each: full vertical slice, real usability, cross-device flow.
+
+Books validated: Haven can wrap a backend.
+Music validates: Haven can scale the pattern.
+
+⸻
 
 Install → Start → Use (inside Haven)
 
-That’s the transformation.
+💬 One-liner
+
+Music is the second proof that Haven is a system, not a one-off.
 
 ⸻
-
-🧭 Suggested Execution Order (Practical)
-
-Do NOT follow phases strictly linearly.
-
-Instead:
-
-1. Phase 9 (Facade skeleton)
-2. Phase 11 (UI shell minimal)
-3. Phase 12 (Books full vertical slice)
-4. Backfill Phase 10 (refine models)
-5. Phase 13 (replaceability validation)
-6. Phase 14 (Files)
-
-👉 Think vertical slice first, then generalize
-
-⸻
-
-💬 Final Note
-
-This extension turns Haven from:
-
-“infrastructure abstraction”
-
-into:
-
-product abstraction
-
-And the key enabler is exactly what you identified:
-
-Facade = stability + replaceability + UX control
-
-⸻
+UPDATED 23.04.26 (Music roadmap, phase reordering)
