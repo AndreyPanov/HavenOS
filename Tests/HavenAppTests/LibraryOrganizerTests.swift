@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import HavenApp
+import HavenAppKit
 
 @Suite("LibraryOrganizer")
 struct LibraryOrganizerTests {

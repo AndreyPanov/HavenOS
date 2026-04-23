@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import HavenFacade
-@testable import HavenApp
+import HavenAppKit
 
 // MARK: - Auth State Machine Tests
 

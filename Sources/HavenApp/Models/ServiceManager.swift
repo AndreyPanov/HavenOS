@@ -39,7 +39,7 @@ enum CatalogState: Equatable {
 /// - Lifecycle: Delegates install/uninstall/start/stop to `HavenExecutor`
 @MainActor
 @Observable
-final class ServiceManager {
+package final class ServiceManager {
 
     // MARK: - Published Data
 
@@ -109,7 +109,7 @@ final class ServiceManager {
 
     // MARK: - Init
 
-    init(basePath: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".haven")) {
+    package init(basePath: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".haven")) {
         self.paths = HavenPaths(base: basePath)
         self.stateStore = FileStateStore(paths: paths)
         self.executor = HavenExecutor(
@@ -138,7 +138,7 @@ final class ServiceManager {
     // MARK: - Loading
 
     /// Load catalog from the given URL and installed state. Call once on app launch.
-    func load(catalogURL: URL) {
+    package func load(catalogURL: URL) {
         ensureCatalogFolderExists(at: catalogURL)
         loadCatalog(from: catalogURL)
         loadInstalledState()

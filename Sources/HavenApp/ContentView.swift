@@ -7,9 +7,11 @@ enum SidebarItem: Hashable {
     case settings
 }
 
-struct ContentView: View {
+package struct ContentView: View {
     @Environment(ServiceManager.self) private var serviceManager
     @State private var selectedSidebar: SidebarItem? = .home
+
+    package init() {}
 
     /// Installed capabilities that have native UI (sidebar tabs).
     private var capabilityTabs: [InstalledService] {
@@ -18,7 +20,7 @@ struct ContentView: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         NavigationSplitView {
             List(selection: $selectedSidebar) {
                 Section("Haven") {

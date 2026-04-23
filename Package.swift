@@ -89,8 +89,9 @@ let package = Package(
 
         // MARK: - macOS App
 
-        .executableTarget(
-            name: "HavenApp",
+        /// All app logic lives here so it is importable by tests.
+        .target(
+            name: "HavenAppKit",
             dependencies: [
                 "HavenCore",
                 "HavenFacade",
@@ -101,6 +102,13 @@ let package = Package(
             ],
             path: "Sources/HavenApp",
             exclude: ["Info.plist"]
+        ),
+
+        /// Thin entry point — creates the SwiftUI App.
+        .executableTarget(
+            name: "HavenApp",
+            dependencies: ["HavenAppKit"],
+            path: "Sources/HavenAppEntry"
         ),
 
         // MARK: - Tests
@@ -143,7 +151,7 @@ let package = Package(
         ),
         .testTarget(
             name: "HavenAppTests",
-            dependencies: ["HavenApp", "HavenCore", "HavenFacade"],
+            dependencies: ["HavenAppKit", "HavenCore", "HavenFacade"],
             path: "Tests/HavenAppTests"
         ),
     ]

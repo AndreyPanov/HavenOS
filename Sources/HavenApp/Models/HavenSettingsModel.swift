@@ -4,7 +4,7 @@ import os
 private let log = Logger(subsystem: "com.haven", category: "Settings")
 
 @Observable
-class HavenSettingsModel {
+package class HavenSettingsModel {
     var dataDirectory = "~/.haven"
     var launchAtLogin = false
     var autoStartServices = true
@@ -21,7 +21,7 @@ class HavenSettingsModel {
     // MARK: - Catalog
 
     /// Local catalog folder path, persisted in UserDefaults.
-    var catalogFolder: String {
+    package var catalogFolder: String {
         didSet {
             UserDefaults.standard.set(catalogFolder, forKey: "catalogFolderPath")
             log.info("Catalog folder changed to: \(self.catalogFolder)")
@@ -29,13 +29,13 @@ class HavenSettingsModel {
     }
 
     /// The catalog folder as a resolved file URL (expands ~).
-    var catalogFolderURL: URL {
+    package var catalogFolderURL: URL {
         URL(fileURLWithPath: NSString(string: catalogFolder).expandingTildeInPath)
     }
 
     static let defaultCatalogFolder = "~/.haven/Catalog"
 
-    init() {
+    package init() {
         self.catalogFolder = UserDefaults.standard.string(forKey: "catalogFolderPath")
             ?? Self.defaultCatalogFolder
     }

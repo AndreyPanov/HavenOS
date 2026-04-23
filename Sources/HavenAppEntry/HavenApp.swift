@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import HavenAppKit
 
 @main
 struct HavenApp: App {
