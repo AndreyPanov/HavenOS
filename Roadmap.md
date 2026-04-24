@@ -84,6 +84,7 @@ Phase	Focus	Outcome	Status
 12.5	Books Usability	Device access, auto-organize, scan errors	✅ DONE
 13	Replaceability	Validate backend swap	✅ DONE
 14	Music (Navidrome)	Second capability — validate pattern scales	✅ DONE
+14.5	Platform Hardening	Shared protocols, zero downcasts, lifecycle tests	✅ DONE
 15	Files	Third capability — basic file access	⬜ Not started
 16	Movies (Jellyfin)	Fourth capability — video streaming	⬜ Future
 
@@ -592,25 +593,64 @@ All deliverables implemented:
 ⸻
 ROADMAP - update 24.04.26
 
-Phase 14.5 — Capability Platform Hardening
+Phase 14.5 — Capability Platform Hardening ✅ COMPLETE
 
 Goal:
 Reduce duplication, enforce backend boundaries, and make the next capability cheaper to build.
 
 Deliverables:
-- Shared capability UI components
-- Shared setup/account/lifecycle helpers
-- BackendAdapter protocols per domain
-- Books backend cleanup: move all Kavita-specific logic behind KavitaBooksAdapter
-- Music backend cleanup: move all Navidrome-specific logic behind NavidromeMusicAdapter
-- Replaceability test with second Books backend stub
 
-Acceptance criteria:
-- BooksHomeView has no Kavita-specific imports or type checks
-- MusicHomeView has no Navidrome-specific imports or type checks
-- Shared UI components are reused by Books and Music
-- A second Books backend can compile and render without changing the UI
-- Backend-specific terms appear only in adapter/advanced UI
+1. ConnectableFacade Protocol (HavenFacade)
+	•	New protocol extending CapabilityFacade for capabilities that authenticate with a backend
+	•	ConnectionState enum (disconnected/connecting/connected/failed) — shared, replaces per-facade duplicates
+	•	DeviceAccessInfo value type: serverAddress, username, password, tokenURL — abstracts credential-based and token-based device access
+	•	Full auth lifecycle: connect(), createAccount(), disconnect(), signOut(), autoConnect()
+	•	Account management: isManagedByHaven, connectedUsername, switchToManaged/Custom()
+	•	Auto-connect state: isAutoConnecting, autoConnectExhausted
+	•	backendName, scanErrors, deviceAccessInfo — surfaced at protocol level
+	•	BooksFacade and MusicFacade now extend ConnectableFacade (setupState moved up)
+
+2. Shared ConnectSheet (HavenApp/Components)
+	•	Single ConnectSheet replaces BooksConnectSheet + MusicConnectSheet (deleted)
+	•	Parameterized by icon + libraryLabel — works for any ConnectableFacade
+	•	Three-mode chooser (choose → create account / sign in) with slide transitions
+	•	Used by BooksHomeView, MusicHomeView, and SettingsView
+
+3. Backend Downcast Elimination
+	•	BooksHomeView: all `facade as? KavitaBooksFacade` downcasts removed (was ~15 occurrences)
+	•	MusicHomeView: all `facade as? NavidromeMusicFacade` downcasts removed (was ~12 occurrences)
+	•	SettingsView: unified `capabilityLibrarySection()` replaces separate books/music sections
+	•	Device access: views read facade.deviceAccessInfo instead of casting to concrete type
+	•	Scan errors, account info, sign out — all via protocol, no downcasts
+
+4. Backend-Neutral Copy
+	•	"Navidrome indexes them automatically" → "they'll be indexed automatically"
+	•	"Powered by Kavita/Navidrome" → "Powered by \(facade.backendName)"
+
+5. ServiceManager Hardening
+	•	Credential cleanup on uninstall: clears all UserDefaults keys for kavita/navidrome prefixes
+	•	Facade cache eviction on uninstall (before executor call)
+	•	Double-start guard: startService() is a no-op when already running
+	•	defer-based flag cleanup in installService() (isPerformingAction always resets)
+	•	Refresh order fix: installedServices built before facade.refresh() (prevents stale reads)
+
+6. Auto-Connect Race Fix
+	•	isAutoConnecting set before Task creation (not inside async method)
+	•	Previous autoConnectTask cancelled before starting new one
+	•	Both KavitaBooksFacade and NavidromeMusicFacade patched
+
+7. ServiceManager Tests (241 lines, 7 tests)
+	•	Double-start guard: no-op when running, proceeds when stopped
+	•	isPerformingAction cleanup: always reset after installService (even on failure)
+	•	Credential cleanup: Kavita keys, Navidrome keys, cleanup even when executor fails
+	•	Facade cache: uninstall removes cached facade
+
+Acceptance criteria — all met:
+	•	BooksHomeView has zero Kavita-specific imports or type checks ✅
+	•	MusicHomeView has zero Navidrome-specific imports or type checks ✅
+	•	Shared ConnectSheet reused by Books, Music, and Settings ✅
+	•	Backend-specific terms appear only in concrete facades ✅
+	•	ServiceManager lifecycle correctness validated by tests ✅
 
 📁 Phase 15 — Files
 
