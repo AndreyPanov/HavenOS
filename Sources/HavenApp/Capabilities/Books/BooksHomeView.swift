@@ -443,12 +443,7 @@ struct BooksHomeView: View {
     private var accountInfoSection: some View {
         if let kavita = facade as? KavitaBooksFacade,
            let username = kavita.connectedUsername {
-            GroupBox {
-                LabeledContent("Signed in as") {
-                    Text(username)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            AccountInfoSection(username: username)
         }
     }
 

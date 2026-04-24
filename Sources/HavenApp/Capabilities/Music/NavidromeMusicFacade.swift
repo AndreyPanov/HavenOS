@@ -131,45 +131,7 @@ package final class NavidromeMusicFacade: MusicFacade {
     // MARK: - MusicFacade Methods
 
     package func setLibraryPath(_ path: String) async throws {
-        try await changeMusicFolder(to: path)
-    }
-
-    /// Change the music folder: update navidrome.toml, restart, and rescan.
-    package func changeMusicFolder(to path: String) async throws {
-        guard let stored = serviceManager?.storedState(for: capabilityID) else {
-            throw FacadeError.adapterError("Service is not installed")
-        }
-
-        let expandedPath = (path as NSString).expandingTildeInPath
-
-        // Create the folder if it doesn't exist
-        try FileManager.default.createDirectory(
-            atPath: expandedPath,
-            withIntermediateDirectories: true
-        )
-
-        // Update navidrome.toml: replace the MusicFolder line
-        let configFile = stored.directoryLayout.config
-            .appendingPathComponent("navidrome.toml")
-        let content = try String(contentsOf: configFile, encoding: .utf8)
-        let updated = content.replacing(
-            /MusicFolder\s*=\s*"[^"]*"/,
-            with: "MusicFolder = \"\(expandedPath)\""
-        )
-        try updated.write(to: configFile, atomically: true, encoding: .utf8)
-
-        // Persist the override in UserDefaults
-        UserDefaults.standard.set(path, forKey: libraryPathOverrideKey)
-        log.info("Music folder changed to \(path)")
-
-        updateLibrary()
-
-        // Restart Navidrome to pick up the new config
-        try await lifecycle.perform(.restart, capabilityID: capabilityID)
-
-        // Wait for service to come back, then reconnect and rescan
-        disconnect()
-        refresh()
+        throw FacadeError.adapterError("Changing music folder requires reinstalling the service with new settings.")
     }
 
     package func rescan() async throws {
@@ -560,13 +522,9 @@ package final class NavidromeMusicFacade: MusicFacade {
     private var managedUsernameKey: String { "haven.navidrome.managedUser.\(capabilityID)" }
     private var managedPasswordKey: String { "haven.navidrome.managedPass.\(capabilityID)" }
     private var customAccountKey: String { "haven.navidrome.customAccount.\(capabilityID)" }
-    private var libraryPathOverrideKey: String { "haven.navidrome.libraryPath.\(capabilityID)" }
 
-    /// Resolved library path: UserDefaults override > stored settings > default.
+    /// Resolved library path from stored settings.
     private var resolvedLibraryPath: String {
-        if let override = UserDefaults.standard.string(forKey: libraryPathOverrideKey) {
-            return override
-        }
         let stored = serviceManager?.storedState(for: capabilityID)
         return stored?.resolvedSettings["music_path"] ?? "~/Music"
     }
