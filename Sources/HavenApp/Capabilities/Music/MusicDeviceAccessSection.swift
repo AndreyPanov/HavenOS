@@ -1,23 +1,29 @@
 import AppKit
 import SwiftUI
 
-/// "Listen on your devices" section — server address for Subsonic clients.
+/// "Listen on your devices" section — server address + credentials for Subsonic clients.
 struct MusicDeviceAccessSection: View {
     let serverAddress: String
+    let username: String?
+    let password: String?
 
-    @State private var copied = false
+    @State private var copiedField: CopiedField?
     @State private var showingQRPopover = false
     @State private var showingGuides = true
+    @State private var showPassword = false
+
+    private enum CopiedField { case address, username, password }
 
     var body: some View {
         GroupBox("Listen on your devices") {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Use this address in a music app on your phone or tablet to stream your library.")
+                    Text("Subsonic-compatible music apps require a server address, username, and password. Copy each field below into your player's settings.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    // Server address
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Server address")
                             .font(.caption)
@@ -25,7 +31,9 @@ struct MusicDeviceAccessSection: View {
                             .textCase(.uppercase)
 
                         HStack(spacing: 8) {
-                            linkRow(value: serverAddress)
+                            fieldRow(value: serverAddress, copied: copiedField == .address) {
+                                copyToClipboard(serverAddress, field: .address)
+                            }
 
                             Button {
                                 showingQRPopover = true
@@ -37,6 +45,47 @@ struct MusicDeviceAccessSection: View {
                             .help("Show QR Code")
                             .popover(isPresented: $showingQRPopover, arrowEdge: .bottom) {
                                 qrPopoverContent(link: serverAddress)
+                            }
+                        }
+                    }
+
+                    // Credentials
+                    if let username, let password {
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Username")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .textCase(.uppercase)
+
+                                fieldRow(value: username, copied: copiedField == .username) {
+                                    copyToClipboard(username, field: .username)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Password")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .textCase(.uppercase)
+
+                                HStack(spacing: 8) {
+                                    fieldRow(
+                                        value: showPassword ? password : String(repeating: "•", count: 8),
+                                        copied: copiedField == .password
+                                    ) {
+                                        copyToClipboard(password, field: .password)
+                                    }
+
+                                    Button {
+                                        showPassword.toggle()
+                                    } label: {
+                                        Image(systemName: showPassword ? "eye.slash" : "eye")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .foregroundStyle(.secondary)
+                                    .help(showPassword ? "Hide password" : "Show password")
+                                }
                             }
                         }
                     }
@@ -62,8 +111,8 @@ struct MusicDeviceAccessSection: View {
 
                     if showingGuides {
                         VStack(alignment: .leading, spacing: 6) {
-                            guideRow("iphone", "iPhone / iPad", "Amperfy or Substreamer → add server → paste address")
-                            guideRow("phone", "Android", "Symfonium or DSub → add server → paste address")
+                            guideRow("iphone", "iPhone / iPad", "Amperfy or Substreamer → add server → paste address + credentials")
+                            guideRow("phone", "Android", "Symfonium or DSub → add server → paste address + credentials")
                             guideRow("desktopcomputer", "Desktop", "Open in browser or use Sonixd")
                         }
                         .padding(.top, 8)
@@ -75,9 +124,9 @@ struct MusicDeviceAccessSection: View {
         }
     }
 
-    // MARK: - Link Row
+    // MARK: - Field Row
 
-    private func linkRow(value: String) -> some View {
+    private func fieldRow(value: String, copied: Bool, onCopy: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Text(value)
                 .font(.system(.callout, design: .monospaced))
@@ -86,7 +135,7 @@ struct MusicDeviceAccessSection: View {
                 .truncationMode(.middle)
 
             Button {
-                copyToClipboard(value)
+                onCopy()
             } label: {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .foregroundStyle(copied ? .green : .secondary)
@@ -139,13 +188,13 @@ struct MusicDeviceAccessSection: View {
 
     // MARK: - Clipboard
 
-    private func copyToClipboard(_ string: String) {
+    private func copyToClipboard(_ string: String, field: CopiedField) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
-        copied = true
+        copiedField = field
         Task {
             try? await Task.sleep(for: .seconds(2))
-            copied = false
+            if copiedField == field { copiedField = nil }
         }
     }
 }

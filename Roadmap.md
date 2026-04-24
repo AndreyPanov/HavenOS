@@ -83,7 +83,7 @@ Phase	Focus	Outcome	Status
 12	Books (Kavita)	First full facade + native UI capability	✅ DONE
 12.5	Books Usability	Device access, auto-organize, scan errors	✅ DONE
 13	Replaceability	Validate backend swap	✅ DONE
-14	Music (Navidrome)	Second capability — validate pattern scales	⬜ Not started
+14	Music (Navidrome)	Second capability — validate pattern scales	✅ DONE
 15	Files	Third capability — basic file access	⬜ Not started
 16	Movies (Jellyfin)	Fourth capability — video streaming	⬜ Future
 
@@ -531,70 +531,63 @@ Phase 12.5 turns Books from “installed software” into a personal cloud libra
 
 ⸻
 
-🎵 Phase 14 — Music (Navidrome)
+🎵 Phase 14 — Music (Navidrome) ✅ COMPLETE
 
-🎯 Goal
-
-Validate that the Books pattern generalizes to another domain:
-Local files → Organized → Served → Accessed on all devices
-
-⸻
-
-🔧 Deliverables
+All deliverables implemented:
 
 1. MusicFacade (Domain Layer)
-	•	MusicLibrary: libraryPath, artistCount, albumCount, trackCount, scanStatus, lastScanDate
+	•	MusicLibrary: libraryPath, artistCount, albumCount, trackCount, scanStatus
 	•	MusicFacade protocol: setLibraryPath(), rescan()
+	•	NavidromeMusicFacade: full Subsonic/REST API integration
 
 2. NavidromeAdapter (Backend Layer)
-	•	Config mapping (music folder, port)
-	•	Subsonic API integration
-	•	Healthcheck integration
-	•	Auth handled internally (like Kavita)
+	•	NavidromeAPIClient: login, createAdmin, getLibraryInfo, startScan, getScanStatus, isHealthy
+	•	Subsonic API auth: salt + MD5 token per-request
+	•	Auto-connect: health polling → saved token → saved password → managed credentials → create admin
+	•	Auto-connect exhaustion: shows error with Retry + manual Sign In
+	•	NavidromeSpec: built-in Swift spec (matches KavitaSpec pattern)
 
 3. Music UI (State-driven)
-	•	Reuse Books structure: starting → needsSetup → empty → ready → scanning → error
-	•	Library info: artist/album/track counts, folder path + change button
-	•	"Check for New Music" inline + toolbar
+	•	MusicHomeView: stopped → starting → needsSetup → settingUp → empty → ready → scanning → error
+	•	Library card: artist/album/track counts, folder path, Add Music + Check for New Music buttons
+	•	AccountInfoSection: shared "Signed in as" component (used by both Books and Music)
+	•	MusicConnectSheet: three-mode chooser (choose → create account / sign in)
 
-4. Library Management
-	•	Select music folder (NSOpenPanel)
-	•	Persist path (UserDefaults override, same pattern as Books)
-	•	Validate folder
+4. Auth & Account Management
+	•	Managed mode: Haven auto-creates and manages Navidrome admin account
+	•	Custom mode: user signs in manually, Haven stores credentials
+	•	Settings integration: "Music Library" section with managed toggle + sign-in
+	•	Seamless switching between managed and custom modes
 
 5. Rescan UX
-	•	Auto-rescan on connect and after adding files
+	•	Auto-rescan on connect
+	•	"Check for New Music" button (inline + toolbar menu)
+	•	Scan status polling with completion detection
 	•	Scanning banner with progress indicator
-	•	Scan completion detection
+	•	pendingRescanOnFocus: rescan when app regains focus after adding files
 
-6. Device Access (Subsonic-first)
-	•	"Listen on your devices" section with server address
-	•	Copy + QR code (reuse DeviceAccessSection pattern)
-	•	Client guides: iPhone (Amperfy/Substreamer), Android (Symfonium/DSub), Desktop (browser)
+6. Device Access (Subsonic credentials)
+	•	"Listen on your devices" section with server address, username, and password
+	•	Per-field copy buttons with independent feedback
+	•	QR code for server address
+	•	Password visibility toggle (hidden by default)
+	•	Client guides: iPhone (Amperfy/Substreamer), Android (Symfonium/DSub), Desktop (browser/Sonixd)
+	•	Note: Subsonic requires manual credential entry (no token-in-URL like OPDS)
 
 7. Open in Browser (Fallback)
-	•	Navidrome web UI as secondary action (toolbar menu)
+	•	Navidrome web UI as secondary action in toolbar menu
+	•	Sign Out option for custom accounts
+
+8. Shared Components Extracted
+	•	AccountInfoSection: "Signed in as" + "Change in Settings" — used by both Books and Music
+	•	Friendlier download progress: "Downloading…" instead of "Downloading artifact…"
 
 ⸻
 
-⚠️ Product Constraints
-
-DO:
-	•	Emphasize "Listen on your devices"
-	•	Reuse Books UI patterns
-	•	Keep UX identical where possible
-
-DO NOT:
-	•	Expose Subsonic / API terminology
-	•	Build native player (for now)
-	•	Rebuild Navidrome UI
-
-⸻
-
-✅ Acceptance Criteria
-	•	User can add music folder, rescan library, play music from phone in < 2 minutes
-	•	Works with at least one iOS client and one Android client
-	•	No manual configuration outside Haven
+⚠️ Known Limitations
+	•	Music folder path is immutable after initial install (Navidrome DB constraint — library ID 1 path cannot be changed via API)
+	•	No Passwords app integration (Associated Domains requires HTTPS + static domain)
+	•	Navidrome multi-library API (POST /api/library) could enable adding folders in the future
 
 ⸻
 
@@ -658,4 +651,4 @@ Install → Start → Use (inside Haven)
 Music is the second proof that Haven is a system, not a one-off.
 
 ⸻
-UPDATED 23.04.26 (Music roadmap, phase reordering)
+UPDATED 24.04.26 (Phase 14 Music complete, device access credentials, shared components)

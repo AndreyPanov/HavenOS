@@ -60,6 +60,11 @@ package final class NavidromeMusicFacade: MusicFacade {
         return UserDefaults.standard.string(forKey: usernameKey)
     }
 
+    package var connectedPassword: String? {
+        guard connectionState == .connected else { return nil }
+        return UserDefaults.standard.string(forKey: passwordKey)
+    }
+
     package var hasSavedCredentials: Bool {
         UserDefaults.standard.string(forKey: tokenKey) != nil
     }

@@ -242,7 +242,11 @@ struct MusicHomeView: View {
 
             if let navidrome = facade as? NavidromeMusicFacade,
                let address = navidrome.serverAddress {
-                MusicDeviceAccessSection(serverAddress: address)
+                MusicDeviceAccessSection(
+                    serverAddress: address,
+                    username: navidrome.connectedUsername,
+                    password: navidrome.connectedPassword
+                )
             }
         }
     }
@@ -273,7 +277,11 @@ struct MusicHomeView: View {
 
             if let navidrome = facade as? NavidromeMusicFacade,
                let address = navidrome.serverAddress {
-                MusicDeviceAccessSection(serverAddress: address)
+                MusicDeviceAccessSection(
+                    serverAddress: address,
+                    username: navidrome.connectedUsername,
+                    password: navidrome.connectedPassword
+                )
             }
         }
     }
