@@ -590,6 +590,27 @@ All deliverables implemented:
 	•	Navidrome multi-library API (POST /api/library) could enable adding folders in the future
 
 ⸻
+ROADMAP - update 24.04.26
+
+Phase 14.5 — Capability Platform Hardening
+
+Goal:
+Reduce duplication, enforce backend boundaries, and make the next capability cheaper to build.
+
+Deliverables:
+- Shared capability UI components
+- Shared setup/account/lifecycle helpers
+- BackendAdapter protocols per domain
+- Books backend cleanup: move all Kavita-specific logic behind KavitaBooksAdapter
+- Music backend cleanup: move all Navidrome-specific logic behind NavidromeMusicAdapter
+- Replaceability test with second Books backend stub
+
+Acceptance criteria:
+- BooksHomeView has no Kavita-specific imports or type checks
+- MusicHomeView has no Navidrome-specific imports or type checks
+- Shared UI components are reused by Books and Music
+- A second Books backend can compile and render without changing the UI
+- Backend-specific terms appear only in adapter/advanced UI
 
 📁 Phase 15 — Files
 

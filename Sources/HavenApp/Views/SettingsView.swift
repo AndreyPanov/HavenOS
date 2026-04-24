@@ -9,10 +9,11 @@ struct SettingsView: View {
     @State private var showFolderPicker = false
     @State private var activeSheet: SettingsSheet?
 
-    private enum SettingsSheet: Identifiable {
-        case booksConnect
-        case musicConnect
-        var id: Int { hashValue }
+    private struct SettingsSheet: Identifiable {
+        let id: String
+        let facade: any ConnectableFacade
+        let icon: String
+        let libraryLabel: String
     }
 
     var body: some View {
@@ -83,12 +84,22 @@ struct SettingsView: View {
             }
 
             // Dynamic capability sections
-            if let kavitaFacade = kavitaFacade {
-                booksLibrarySection(kavitaFacade)
+            if let booksFacade = booksFacade {
+                capabilityLibrarySection(
+                    title: "Books Library",
+                    facade: booksFacade,
+                    icon: "books.vertical",
+                    libraryLabel: "book library"
+                )
             }
 
-            if let navidromeFacade = navidromeFacade {
-                musicLibrarySection(navidromeFacade)
+            if let musicFacade = musicFacade {
+                capabilityLibrarySection(
+                    title: "Music Library",
+                    facade: musicFacade,
+                    icon: "music.note.house",
+                    libraryLabel: "music library"
+                )
             }
 
             Section("Advanced") {
@@ -120,16 +131,7 @@ struct SettingsView: View {
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity)
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .booksConnect:
-                if let kavita = kavitaFacade {
-                    BooksConnectSheet(facade: kavita)
-                }
-            case .musicConnect:
-                if let navidrome = navidromeFacade {
-                    MusicConnectSheet(facade: navidrome)
-                }
-            }
+            ConnectSheet(facade: sheet.facade, icon: sheet.icon, libraryLabel: sheet.libraryLabel)
         }
         .fileImporter(
             isPresented: $showFolderPicker,
@@ -142,18 +144,23 @@ struct SettingsView: View {
         }
     }
 
-    /// Returns the Kavita facade if Books is installed.
-    private var kavitaFacade: KavitaBooksFacade? {
-        serviceManager.facade(for: "haven.capability.kavita") as? KavitaBooksFacade
+    /// Returns the Books facade if installed.
+    private var booksFacade: (any BooksFacade)? {
+        serviceManager.facade(for: "haven.capability.kavita") as? any BooksFacade
     }
 
-    /// Returns the Navidrome facade if Music is installed.
-    private var navidromeFacade: NavidromeMusicFacade? {
-        serviceManager.facade(for: "haven.capability.navidrome") as? NavidromeMusicFacade
+    /// Returns the Music facade if installed.
+    private var musicFacade: (any MusicFacade)? {
+        serviceManager.facade(for: "haven.capability.navidrome") as? any MusicFacade
     }
 
-    private func booksLibrarySection(_ facade: KavitaBooksFacade) -> some View {
-        Section("Books Library") {
+    private func capabilityLibrarySection(
+        title: String,
+        facade: any ConnectableFacade,
+        icon: String,
+        libraryLabel: String
+    ) -> some View {
+        Section(title) {
             Toggle("Account managed by Haven", isOn: Binding(
                 get: { facade.isManagedByHaven },
                 set: { newValue in
@@ -173,35 +180,12 @@ struct SettingsView: View {
                     }
                 } else {
                     Button("Sign In") {
-                        activeSheet = .booksConnect
-                    }
-                }
-            }
-        }
-    }
-
-    private func musicLibrarySection(_ facade: NavidromeMusicFacade) -> some View {
-        Section("Music Library") {
-            Toggle("Account managed by Haven", isOn: Binding(
-                get: { facade.isManagedByHaven },
-                set: { newValue in
-                    if newValue {
-                        facade.switchToManaged()
-                    } else {
-                        facade.switchToCustom()
-                    }
-                }
-            ))
-
-            if !facade.isManagedByHaven {
-                if facade.connectionState == .connected, let username = facade.connectedUsername {
-                    LabeledContent("Signed in as") {
-                        Text(username)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Button("Sign In") {
-                        activeSheet = .musicConnect
+                        activeSheet = SettingsSheet(
+                            id: facade.capabilityID,
+                            facade: facade,
+                            icon: icon,
+                            libraryLabel: libraryLabel
+                        )
                     }
                 }
             }

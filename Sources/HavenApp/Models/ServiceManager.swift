@@ -173,6 +173,12 @@ package final class ServiceManager {
         actionStatus = "Installing…"
         lastError = nil
 
+        defer {
+            isPerformingAction = false
+            activeCapabilityID = nil
+            actionStatus = nil
+        }
+
         let executor = self.executor
         let progressBox = Mutex<String?>(nil)
         let resultBox = Mutex<Result<StoredServiceState, Error>?>(nil)
@@ -209,27 +215,53 @@ package final class ServiceManager {
             // Auto-start the service after install
             actionStatus = "Starting…"
             await startService(capabilityID: capabilityID)
-            return
 
         case .failure(let error):
             log.error("Install failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
-
-        isPerformingAction = false
-        activeCapabilityID = nil
-        actionStatus = nil
     }
 
     /// Uninstall a service by capability ID.
     func uninstallService(capabilityID: String) async {
+        // Clear facade credentials before uninstall
+        clearFacadeCredentials(for: capabilityID)
+        facades.removeValue(forKey: capabilityID)
+
         await performAction("Uninstall", capabilityID: capabilityID) { executor in
             try executor.uninstall(capabilityID: capabilityID)
         }
     }
 
-    /// Start an installed service.
+    /// Remove all UserDefaults keys associated with a facade's credentials.
+    private func clearFacadeCredentials(for capabilityID: String) {
+        let prefixes = [
+            "haven.kavita.", "haven.navidrome."
+        ]
+        let defaults = UserDefaults.standard
+        for prefix in prefixes {
+            let keys = [
+                "\(prefix)token.\(capabilityID)",
+                "\(prefix)username.\(capabilityID)",
+                "\(prefix)password.\(capabilityID)",
+                "\(prefix)managedUser.\(capabilityID)",
+                "\(prefix)managedPass.\(capabilityID)",
+                "\(prefix)apiKey.\(capabilityID)",
+                "\(prefix)customAccount.\(capabilityID)",
+                "\(prefix)libraryPath.\(capabilityID)",
+            ]
+            for key in keys {
+                defaults.removeObject(forKey: key)
+            }
+        }
+    }
+
+    /// Start an installed service. No-op if already running.
     func startService(capabilityID: String) async {
+        if let service = installedServices.first(where: { $0.id == capabilityID }),
+           service.status == .running {
+            return
+        }
         await performAsyncAction("Start", capabilityID: capabilityID) { executor in
             try await executor.start(capabilityID: capabilityID)
         }
@@ -427,12 +459,9 @@ package final class ServiceManager {
         for key in facades.keys where !installedCapIDs.contains(key) {
             facades.removeValue(forKey: key)
         }
-        // Refresh existing facades
-        for facade in facades.values {
-            facade.refresh()
-        }
 
-        // Build installed services from persisted state (stable order by capability ID)
+        // Build installed services from persisted state FIRST,
+        // so facade.refresh() reads current status (not stale data).
         installedServices = havenState.services.values.sorted(by: { $0.capability < $1.capability }).map { stored in
             let entry = catalog.first { $0.capability.id == stored.capability }
             let meta = entry?.metadata ?? CatalogEntry.defaultMetadata
@@ -450,6 +479,11 @@ package final class ServiceManager {
                 instructions: entry?.bundle.instructions,
                 onboarding: stored.onboarding
             )
+        }
+
+        // Refresh existing facades (after installedServices is current)
+        for facade in facades.values {
+            facade.refresh()
         }
 
         // Build discoverable plugins from catalog

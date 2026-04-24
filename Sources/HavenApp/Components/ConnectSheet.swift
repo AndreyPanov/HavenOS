@@ -1,11 +1,13 @@
 import SwiftUI
 import HavenFacade
 
-/// Library setup sheet for Kavita-backed books.
+/// Shared library setup sheet for any ConnectableFacade.
 /// User chooses: create a new account (first run) or sign in (returning).
-struct BooksConnectSheet: View {
+struct ConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let facade: KavitaBooksFacade
+    let facade: any ConnectableFacade
+    let icon: String
+    let libraryLabel: String
 
     @State private var mode: Mode = .choose
     @State private var username = ""
@@ -32,7 +34,7 @@ struct BooksConnectSheet: View {
                 accountFormView(
                     icon: "person.crop.circle.badge.plus",
                     title: "Create your account",
-                    subtitle: "Choose a username and password for your book library.",
+                    subtitle: "Choose a username and password for your \(libraryLabel).",
                     actionLabel: "Create Account",
                     action: createAccount
                 )
@@ -65,7 +67,7 @@ struct BooksConnectSheet: View {
     private var chooseView: some View {
         VStack(spacing: 24) {
             VStack(spacing: 8) {
-                Image(systemName: "books.vertical")
+                Image(systemName: icon)
                     .font(.system(size: 40))
                     .foregroundStyle(.secondary)
                 Text("Set up your library")
@@ -207,7 +209,6 @@ struct BooksConnectSheet: View {
                 try await facade.createAccount(username: username, password: password)
                 dismiss()
             } catch {
-                // If registration is blocked, guide user to sign in instead
                 let msg = error.localizedDescription
                 if msg.lowercased().contains("not allowed") || msg.lowercased().contains("already") {
                     errorMessage = "An admin account already exists. Use Sign In instead."

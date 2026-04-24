@@ -1,6 +1,9 @@
 import AppKit
 import SwiftUI
 import HavenFacade
+import os
+
+private let log = Logger(subsystem: "com.haven", category: "BooksHomeView")
 
 /// Native Books capability screen.
 ///
@@ -30,9 +33,11 @@ struct BooksHomeView: View {
             }
         }
         .sheet(isPresented: $showingConnectSheet) {
-            if let kavita = facade as? KavitaBooksFacade {
-                BooksConnectSheet(facade: kavita)
-            }
+            ConnectSheet(
+                facade: facade,
+                icon: "books.vertical",
+                libraryLabel: "book library"
+            )
         }
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
@@ -62,7 +67,7 @@ struct BooksHomeView: View {
                 Text("Books")
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("Powered by Kavita")
+                Text("Powered by \(facade.backendName)")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 HStack(spacing: 6) {
@@ -146,7 +151,15 @@ struct BooksHomeView: View {
                 .multilineTextAlignment(.center)
 
             Button("Start Library") {
-                Task { try? await facade.perform(.start) }
+                log.info("Start Library tapped, isPerformingAction=\(serviceManager.isPerformingAction), facade.state=\(String(describing: facade.state))")
+                Task {
+                    do {
+                        try await facade.perform(.start)
+                        log.info("Start Library action completed")
+                    } catch {
+                        log.error("Start Library action failed: \(error.localizedDescription)")
+                    }
+                }
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
@@ -244,13 +257,7 @@ struct BooksHomeView: View {
 
             accountInfoSection
 
-            if let kavita = facade as? KavitaBooksFacade,
-               let address = kavita.serverAddress {
-                DeviceAccessSection(
-                    serverAddress: address,
-                    opdsURL: kavita.opdsURL
-                )
-            }
+            deviceAccessSection
         }
     }
 
@@ -278,13 +285,7 @@ struct BooksHomeView: View {
 
             accountInfoSection
 
-            if let kavita = facade as? KavitaBooksFacade,
-               let address = kavita.serverAddress {
-                DeviceAccessSection(
-                    serverAddress: address,
-                    opdsURL: kavita.opdsURL
-                )
-            }
+            deviceAccessSection
         }
     }
 
@@ -303,28 +304,26 @@ struct BooksHomeView: View {
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 12) {
-                if let kavita = facade as? KavitaBooksFacade {
-                    if kavita.isManagedByHaven {
-                        Button("Retry") {
-                            Task { await kavita.autoConnect() }
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
-
-                        Button("Sign In") {
-                            kavita.disconnect()
-                            showingConnectSheet = true
-                        }
-                        .buttonStyle(.glass)
-                        .controlSize(.large)
-                    } else {
-                        Button("Sign In") {
-                            kavita.disconnect()
-                            showingConnectSheet = true
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
+                if facade.isManagedByHaven {
+                    Button("Retry") {
+                        Task { await facade.autoConnect() }
                     }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+
+                    Button("Sign In") {
+                        facade.disconnect()
+                        showingConnectSheet = true
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.large)
+                } else {
+                    Button("Sign In") {
+                        facade.disconnect()
+                        showingConnectSheet = true
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
                 }
             }
         }
@@ -359,14 +358,12 @@ struct BooksHomeView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
 
-                        if facade is KavitaBooksFacade {
-                            Button("Change") {
-                                pickLibraryFolder()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.callout)
-                            .foregroundStyle(.tint)
+                        Button("Change") {
+                            pickLibraryFolder()
                         }
+                        .buttonStyle(.plain)
+                        .font(.callout)
+                        .foregroundStyle(.tint)
                     }
 
                     // Actions
@@ -405,11 +402,11 @@ struct BooksHomeView: View {
 
     @ViewBuilder
     private var scanErrorsSection: some View {
-        if let kavita = facade as? KavitaBooksFacade, !kavita.scanErrors.isEmpty {
+        if !facade.scanErrors.isEmpty {
             GroupBox {
                 DisclosureGroup {
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(kavita.scanErrors, id: \.self) { fileName in
+                        ForEach(facade.scanErrors, id: \.self) { fileName in
                             HStack(spacing: 6) {
                                 Image(systemName: "doc.questionmark")
                                     .font(.caption2)
@@ -427,7 +424,7 @@ struct BooksHomeView: View {
                     .padding(.top, 6)
                 } label: {
                     Label(
-                        "\(kavita.scanErrors.count) book\(kavita.scanErrors.count == 1 ? "" : "s") couldn't be added",
+                        "\(facade.scanErrors.count) book\(facade.scanErrors.count == 1 ? "" : "s") couldn't be added",
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .font(.callout)
@@ -441,9 +438,22 @@ struct BooksHomeView: View {
 
     @ViewBuilder
     private var accountInfoSection: some View {
-        if let kavita = facade as? KavitaBooksFacade,
-           let username = kavita.connectedUsername {
+        if let username = facade.connectedUsername {
             AccountInfoSection(username: username)
+        }
+    }
+
+    // MARK: - Device Access
+
+    @ViewBuilder
+    private var deviceAccessSection: some View {
+        if let access = facade.deviceAccessInfo {
+            if let tokenURL = access.tokenURL {
+                DeviceAccessSection(
+                    serverAddress: access.serverAddress,
+                    opdsURL: tokenURL
+                )
+            }
         }
     }
 
@@ -476,12 +486,10 @@ struct BooksHomeView: View {
                 }
             }
 
-            if let kavita = facade as? KavitaBooksFacade,
-               !kavita.isManagedByHaven,
-               kavita.connectedUsername != nil {
+            if !facade.isManagedByHaven, facade.connectedUsername != nil {
                 Divider()
                 Button("Sign Out", systemImage: "person.crop.circle.badge.minus") {
-                    kavita.signOut()
+                    facade.signOut()
                 }
             }
 
@@ -509,14 +517,11 @@ struct BooksHomeView: View {
         case .degraded:
             return .error("Library is running with issues")
         case .ready:
-            if let kavita = facade as? KavitaBooksFacade,
-               kavita.isManagedByHaven,
-               (kavita.isAutoConnecting || kavita.connectionState == .connecting) {
+            if facade.isManagedByHaven,
+               (facade.isAutoConnecting || facade.connectionState == .connecting) {
                 return .settingUp
             }
-            if let kavita = facade as? KavitaBooksFacade,
-               kavita.isManagedByHaven,
-               kavita.autoConnectExhausted {
+            if facade.isManagedByHaven, facade.autoConnectExhausted {
                 return .error("Couldn't connect automatically — try signing in manually")
             }
             switch facade.setupState {
@@ -559,9 +564,8 @@ struct BooksHomeView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let path = url.path
 
-        guard let kavita = facade as? KavitaBooksFacade else { return }
         Task {
-            try? await kavita.changeLibraryFolder(to: path)
+            try? await facade.setLibraryPath(path)
         }
     }
 

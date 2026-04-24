@@ -37,10 +37,6 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Connection State
 
-    package enum ConnectionState: Equatable {
-        case disconnected, connecting, connected, failed(String)
-    }
-
     package private(set) var connectionState: ConnectionState = .disconnected
 
     /// True while auto-connect is in progress.
@@ -67,6 +63,23 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     package var hasSavedCredentials: Bool {
         UserDefaults.standard.string(forKey: tokenKey) != nil
+    }
+
+    // MARK: - ConnectableFacade
+
+    package let backendName = "Navidrome"
+
+    package var scanErrors: [String] { [] }
+
+    package var deviceAccessInfo: DeviceAccessInfo? {
+        guard let p = port, connectionState == .connected else { return nil }
+        let hostname = ProcessInfo.processInfo.hostName
+        let address = "http://\(hostname):\(p)"
+        return DeviceAccessInfo(
+            serverAddress: address,
+            username: connectedUsername,
+            password: connectedPassword
+        )
     }
 
     // MARK: - Device Access
@@ -195,9 +208,7 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     package func autoConnect() async {
         guard let client = apiClient else { return }
-        guard !isAutoConnecting else { return }
-
-        isAutoConnecting = true
+        // isAutoConnecting is set by refresh() before this Task is created
         connectionState = .connecting
         log.info("Auto-connect: waiting for Navidrome API...")
 
@@ -460,6 +471,8 @@ package final class NavidromeMusicFacade: MusicFacade {
         // Auto-connect when service is ready
         if state == .ready && connectionState == .disconnected && !isAutoConnecting && !autoConnectExhausted {
             if isManagedByHaven {
+                autoConnectTask?.cancel()
+                isAutoConnecting = true
                 autoConnectTask = Task { await autoConnect() }
             } else {
                 loadSavedCredentials()

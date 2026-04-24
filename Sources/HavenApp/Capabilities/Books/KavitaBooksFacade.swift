@@ -40,10 +40,6 @@ package final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Connection State
 
-    package enum ConnectionState: Equatable {
-        case disconnected, connecting, connected, failed(String)
-    }
-
     package private(set) var connectionState: ConnectionState = .disconnected
     package private(set) var itemCount: Int?
     package private(set) var apiKey: String?
@@ -73,6 +69,18 @@ package final class KavitaBooksFacade: BooksFacade {
     /// True if Haven has a stored password it can use to re-login.
     package var hasSavedCredentials: Bool {
         UserDefaults.standard.string(forKey: passwordKey) != nil
+    }
+
+    // MARK: - ConnectableFacade
+
+    package let backendName = "Kavita"
+
+    package var deviceAccessInfo: DeviceAccessInfo? {
+        guard let p = port, connectionState == .connected else { return nil }
+        let hostname = ProcessInfo.processInfo.hostName
+        let address = "http://\(hostname):\(p)"
+        let tokenURL: String? = apiKey.map { "http://\(hostname):\(p)/api/opds/\($0)" }
+        return DeviceAccessInfo(serverAddress: address, tokenURL: tokenURL)
     }
 
     // MARK: - Device Access
@@ -239,9 +247,7 @@ package final class KavitaBooksFacade: BooksFacade {
     /// Called automatically when service becomes ready and isManagedByHaven is true.
     package func autoConnect() async {
         guard let client = apiClient else { return }
-        guard !isAutoConnecting else { return }
-
-        isAutoConnecting = true
+        // isAutoConnecting is set by refresh() before this Task is created
         connectionState = .connecting
         log.info("Auto-connect: waiting for Kavita API...")
 
@@ -513,6 +519,8 @@ package final class KavitaBooksFacade: BooksFacade {
         // Auto-connect when service is ready
         if state == .ready && connectionState == .disconnected && !isAutoConnecting && !autoConnectExhausted {
             if isManagedByHaven {
+                autoConnectTask?.cancel()
+                isAutoConnecting = true
                 autoConnectTask = Task { await autoConnect() }
             } else {
                 // Custom mode: just try saved token (no password/register)

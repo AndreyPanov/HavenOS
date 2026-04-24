@@ -39,12 +39,9 @@ public struct MusicLibrary: Sendable, Equatable {
 /// (e.g. Navidrome). The UI programs against this protocol
 /// and never references the backend directly.
 @MainActor
-public protocol MusicFacade: CapabilityFacade {
+public protocol MusicFacade: ConnectableFacade {
     /// Current music library state (nil before first provision).
     var library: MusicLibrary? { get }
-
-    /// Backend setup state (auth, provisioning).
-    var setupState: BackendSetupState { get }
 
     /// Set or change the music library path on disk.
     func setLibraryPath(_ path: String) async throws

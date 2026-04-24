@@ -29,9 +29,11 @@ struct MusicHomeView: View {
             }
         }
         .sheet(isPresented: $showingConnectSheet) {
-            if let navidrome = facade as? NavidromeMusicFacade {
-                MusicConnectSheet(facade: navidrome)
-            }
+            ConnectSheet(
+                facade: facade,
+                icon: "music.note.house",
+                libraryLabel: "music library"
+            )
         }
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
@@ -61,7 +63,7 @@ struct MusicHomeView: View {
                 Text("Music")
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("Powered by Navidrome")
+                Text("Powered by \(facade.backendName)")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 HStack(spacing: 6) {
@@ -215,7 +217,7 @@ struct MusicHomeView: View {
                     .foregroundStyle(.tertiary)
                 Text("Your library is empty")
                     .font(.headline)
-                Text("Add music files to your library folder — Navidrome indexes them automatically.\nSwitch back here and your library will update shortly.")
+                Text("Add music files to your library folder — they'll be indexed automatically.\nSwitch back here and your library will update shortly.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -240,14 +242,7 @@ struct MusicHomeView: View {
 
             accountInfoSection
 
-            if let navidrome = facade as? NavidromeMusicFacade,
-               let address = navidrome.serverAddress {
-                MusicDeviceAccessSection(
-                    serverAddress: address,
-                    username: navidrome.connectedUsername,
-                    password: navidrome.connectedPassword
-                )
-            }
+            deviceAccessSection
         }
     }
 
@@ -275,14 +270,7 @@ struct MusicHomeView: View {
 
             accountInfoSection
 
-            if let navidrome = facade as? NavidromeMusicFacade,
-               let address = navidrome.serverAddress {
-                MusicDeviceAccessSection(
-                    serverAddress: address,
-                    username: navidrome.connectedUsername,
-                    password: navidrome.connectedPassword
-                )
-            }
+            deviceAccessSection
         }
     }
 
@@ -301,28 +289,26 @@ struct MusicHomeView: View {
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 12) {
-                if let navidrome = facade as? NavidromeMusicFacade {
-                    if navidrome.isManagedByHaven {
-                        Button("Retry") {
-                            Task { await navidrome.autoConnect() }
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
-
-                        Button("Sign In") {
-                            navidrome.disconnect()
-                            showingConnectSheet = true
-                        }
-                        .buttonStyle(.glass)
-                        .controlSize(.large)
-                    } else {
-                        Button("Sign In") {
-                            navidrome.disconnect()
-                            showingConnectSheet = true
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.large)
+                if facade.isManagedByHaven {
+                    Button("Retry") {
+                        Task { await facade.autoConnect() }
                     }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+
+                    Button("Sign In") {
+                        facade.disconnect()
+                        showingConnectSheet = true
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.large)
+                } else {
+                    Button("Sign In") {
+                        facade.disconnect()
+                        showingConnectSheet = true
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
                 }
             }
         }
@@ -383,7 +369,7 @@ struct MusicHomeView: View {
                     }
 
                     // Hint
-                    Text("Add your music files to the library folder — Navidrome indexes them automatically.")
+                    Text("Add your music files to the library folder — they'll be indexed automatically.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -407,9 +393,21 @@ struct MusicHomeView: View {
 
     @ViewBuilder
     private var accountInfoSection: some View {
-        if let navidrome = facade as? NavidromeMusicFacade,
-           let username = navidrome.connectedUsername {
+        if let username = facade.connectedUsername {
             AccountInfoSection(username: username)
+        }
+    }
+
+    // MARK: - Device Access
+
+    @ViewBuilder
+    private var deviceAccessSection: some View {
+        if let access = facade.deviceAccessInfo {
+            MusicDeviceAccessSection(
+                serverAddress: access.serverAddress,
+                username: access.username,
+                password: access.password
+            )
         }
     }
 
@@ -442,12 +440,10 @@ struct MusicHomeView: View {
                 }
             }
 
-            if let navidrome = facade as? NavidromeMusicFacade,
-               !navidrome.isManagedByHaven,
-               navidrome.connectedUsername != nil {
+            if !facade.isManagedByHaven, facade.connectedUsername != nil {
                 Divider()
                 Button("Sign Out", systemImage: "person.crop.circle.badge.minus") {
-                    navidrome.signOut()
+                    facade.signOut()
                 }
             }
 
@@ -475,14 +471,11 @@ struct MusicHomeView: View {
         case .degraded:
             return .error("Library is running with issues")
         case .ready:
-            if let navidrome = facade as? NavidromeMusicFacade,
-               navidrome.isManagedByHaven,
-               (navidrome.isAutoConnecting || navidrome.connectionState == .connecting) {
+            if facade.isManagedByHaven,
+               (facade.isAutoConnecting || facade.connectionState == .connecting) {
                 return .settingUp
             }
-            if let navidrome = facade as? NavidromeMusicFacade,
-               navidrome.isManagedByHaven,
-               navidrome.autoConnectExhausted {
+            if facade.isManagedByHaven, facade.autoConnectExhausted {
                 return .error("Couldn't connect automatically — try signing in manually")
             }
             switch facade.setupState {

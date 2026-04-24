@@ -40,16 +40,10 @@ public enum BackendSetupState: Sendable, Equatable {
 /// Implementations map this interface to a specific backend
 /// (e.g. Kavita, Calibre-Web). The UI programs against this
 /// protocol and never references the backend directly.
-///
-/// Auth, connection, and backend-specific config live on the
-/// concrete implementation — not here.
 @MainActor
-public protocol BooksFacade: CapabilityFacade {
+public protocol BooksFacade: ConnectableFacade {
     /// Current library state (nil before first provision).
     var library: BooksLibrary? { get }
-
-    /// Whether the backend needs additional setup (auth, config, etc.).
-    var setupState: BackendSetupState { get }
 
     /// Set or change the library path on disk.
     func setLibraryPath(_ path: String) async throws

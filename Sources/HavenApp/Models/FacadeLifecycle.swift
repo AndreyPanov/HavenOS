@@ -1,5 +1,8 @@
 import Foundation
 import HavenFacade
+import os
+
+private let log = Logger(subsystem: "com.haven", category: "FacadeLifecycle")
 
 /// Shared lifecycle helpers for facade implementations.
 ///
@@ -12,7 +15,10 @@ struct FacadeLifecycle {
     /// Perform a standard lifecycle action (start/stop/restart/remove).
     /// Returns true if the action was handled, false if not recognized.
     func perform(_ action: CapabilityAction, capabilityID: String) async throws -> Bool {
-        guard let sm = serviceManager else { return false }
+        guard let sm = serviceManager else {
+            log.error("serviceManager is nil — cannot perform \(action.id) for \(capabilityID)")
+            return false
+        }
 
         switch action.id {
         case CapabilityAction.start.id:
