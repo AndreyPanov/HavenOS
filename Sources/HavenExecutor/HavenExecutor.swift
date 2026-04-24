@@ -300,14 +300,14 @@ public struct HavenExecutor: Sendable {
                         format: format
                     )
                 }
-                progress?("Downloading artifact…")
+                progress?("Downloading…")
                 log.info("[install] Installing artifact: source=\(String(describing: descriptor.source)), format=\(String(describing: descriptor.format))")
 
                 let installResult: ArtifactInstallResult
                 do {
                     installResult = try installer.install(descriptor: descriptor, downloadProgress: { fraction in
                         if fraction >= 0 {
-                            progress?("Downloading artifact… \(Int(fraction * 100))%")
+                            progress?("Downloading… \(Int(fraction * 100))%")
                         }
                     })
                     log.info("[install] Artifact installed: dir=\(installResult.installDirectory.path), cached=\(installResult.wasCached)")

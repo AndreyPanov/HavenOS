@@ -238,8 +238,6 @@ struct MusicHomeView: View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
 
-            accountInfoSection
-
             if let navidrome = facade as? NavidromeMusicFacade,
                let address = navidrome.serverAddress {
                 MusicDeviceAccessSection(serverAddress: address)
@@ -268,8 +266,6 @@ struct MusicHomeView: View {
             .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
             libraryCard
-
-            accountInfoSection
 
             if let navidrome = facade as? NavidromeMusicFacade,
                let address = navidrome.serverAddress {
@@ -350,6 +346,15 @@ struct MusicHomeView: View {
                             .textSelection(.enabled)
                             .lineLimit(1)
                             .truncationMode(.middle)
+
+                        if facade is NavidromeMusicFacade {
+                            Button("Change") {
+                                pickMusicFolder()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.callout)
+                            .foregroundStyle(.tint)
+                        }
                     }
 
                     // Actions
@@ -390,21 +395,6 @@ struct MusicHomeView: View {
             Text(label)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Account Info
-
-    @ViewBuilder
-    private var accountInfoSection: some View {
-        if let navidrome = facade as? NavidromeMusicFacade,
-           let username = navidrome.connectedUsername {
-            GroupBox {
-                LabeledContent("Signed in as") {
-                    Text(username)
-                        .foregroundStyle(.secondary)
-                }
-            }
         }
     }
 
@@ -502,6 +492,30 @@ struct MusicHomeView: View {
                 }
                 return .empty
             }
+        }
+    }
+
+    // MARK: - Folder Picker
+
+    private func pickMusicFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Music Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        if let lib = facade.library {
+            let expanded = (lib.libraryPath as NSString).expandingTildeInPath
+            panel.directoryURL = URL(fileURLWithPath: expanded)
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let path = url.path
+
+        guard let navidrome = facade as? NavidromeMusicFacade else { return }
+        Task {
+            try? await navidrome.changeMusicFolder(to: path)
         }
     }
 
