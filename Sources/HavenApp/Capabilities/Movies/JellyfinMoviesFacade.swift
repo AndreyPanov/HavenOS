@@ -387,11 +387,18 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         log.info("Auto-connect: Jellyfin API is healthy")
 
         // Step 2: Check if this is a fresh install (setup wizard needed)
+        // If we have saved managed credentials, setup was already done — skip wizard.
+        let hasManagedCreds = UserDefaults.standard.string(forKey: managedUsernameKey) != nil
+            && UserDefaults.standard.string(forKey: managedPasswordKey) != nil
         let isFirstRun: Bool
-        do {
-            isFirstRun = !(try await client.isSetupComplete())
-        } catch {
+        if hasManagedCreds {
             isFirstRun = false
+        } else {
+            do {
+                isFirstRun = !(try await client.isSetupComplete())
+            } catch {
+                isFirstRun = false
+            }
         }
 
         if isFirstRun {

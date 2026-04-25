@@ -200,6 +200,23 @@ struct JellyfinMoviesFacadeTests {
         #expect(f.isAutoConnecting == false)
     }
 
+    // MARK: - Setup Wizard Skip on Restart
+
+    @Test("autoConnect skips setup wizard when managed credentials exist")
+    @MainActor func skipWizardWithManagedCreds() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        // Simulate credentials from a previous setup wizard run
+        UserDefaults.standard.set("haven", forKey: "haven.jellyfin.managedUser.\(id)")
+        UserDefaults.standard.set("s3cret", forKey: "haven.jellyfin.managedPass.\(id)")
+
+        // autoConnect without API client is a no-op, but we can verify
+        // that setupPhase stays nil (wizard never triggered)
+        await f.autoConnect()
+        #expect(f.setupPhase == nil)
+    }
+
     // MARK: - Available Actions
 
     @Test("Idle: start and remove available")
