@@ -42,9 +42,12 @@ public struct DependencyValidator: Sendable {
 
     /// Validate a list of dependencies.
     ///
-    /// - Parameter dependencies: The dependencies to check.
+    /// - Parameters:
+    ///   - dependencies: The dependencies to check.
+    ///   - localBinPath: Optional service-local `bin/` directory to check
+    ///     first (for auto-installed deps from a previous install).
     /// - Returns: A result per dependency, in the same order.
-    public func validate(dependencies: [Dependency]) -> [DependencyResult] {
+    public func validate(dependencies: [Dependency], localBinPath: String? = nil) -> [DependencyResult] {
         // Deduplicate by id (multiple units may declare the same dep)
         var seen = Set<String>()
         var unique: [Dependency] = []
@@ -57,7 +60,7 @@ public struct DependencyValidator: Sendable {
         return unique.map { dep in
             switch dep.kind {
             case .helperBinary:
-                return validateHelperBinary(dep)
+                return validateHelperBinary(dep, localBinPath: localBinPath)
             case .library:
                 return validateLibrary(dep)
             }
@@ -66,7 +69,16 @@ public struct DependencyValidator: Sendable {
 
     // MARK: - Helper Binary
 
-    private func validateHelperBinary(_ dep: Dependency) -> DependencyResult {
+    private func validateHelperBinary(_ dep: Dependency, localBinPath: String? = nil) -> DependencyResult {
+        // 0. Check service-local bin/ first (auto-installed deps)
+        if let localBin = localBinPath {
+            let path = "\(localBin)/\(dep.id)"
+            if fileManager.isExecutableFile(atPath: path) {
+                log.info("[dependency] Found '\(dep.id)' in local bin: \(path)")
+                return DependencyResult(dependency: dep, status: .found(path: path))
+            }
+        }
+
         // 1. Search well-known paths for the binary by id
         for dir in Self.searchPaths {
             let path = "\(dir)/\(dep.id)"

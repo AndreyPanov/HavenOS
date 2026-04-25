@@ -80,6 +80,9 @@ public protocol MoviesFacade: ConnectableFacade {
     /// Set or change the movies library path on disk.
     func setLibraryPath(_ path: String, contentType: LibraryContentType) async throws
 
+    /// Advance the setup wizard from folder selection to content type selection.
+    func confirmLibraryFolder()
+
     /// Trigger a library rescan (metadata refresh).
     func rescan() async throws
 }

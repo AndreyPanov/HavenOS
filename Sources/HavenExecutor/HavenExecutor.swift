@@ -126,12 +126,88 @@ public struct HavenExecutor: Sendable {
             if !allDeps.isEmpty {
                 progress?("Checking dependencies…")
                 log.info("[install] Validating \(allDeps.count) dependencies...")
-                let results = validator.validate(dependencies: allDeps)
+                let localBinPath = serviceLayout.serviceRoot
+                    .appendingPathComponent("bin").path
+                var results = validator.validate(
+                    dependencies: allDeps,
+                    localBinPath: localBinPath
+                )
 
                 for result in results where result.isWarning {
                     let desc = result.dependency.description ?? result.dependency.id
                     log.warning("[install] Optional dependency missing: \(result.dependency.id) — \(desc)")
                     progress?("Optional: \(desc) not found, some features may be limited")
+                }
+
+                // Auto-install missing dependencies that have artifacts
+                let autoInstallable = results.filter {
+                    $0.status == .missing && $0.dependency.artifact != nil
+                }
+                if !autoInstallable.isEmpty, let installer = artifactInstaller {
+                    let binDir = serviceLayout.serviceRoot
+                        .appendingPathComponent("bin")
+                    try? fileManager.createDirectory(
+                        at: binDir,
+                        withIntermediateDirectories: true
+                    )
+
+                    for result in autoInstallable {
+                        let dep = result.dependency
+                        guard let artifact = dep.artifact else { continue }
+
+                        progress?("Installing \(dep.id)…")
+                        log.info("[install] Auto-installing dependency '\(dep.id)' from artifact")
+
+                        do {
+                            let depUnitID = "dep.\(dep.id).\(capabilityID)"
+                            let descriptor = try ArtifactResolver.resolve(
+                                artifact: artifact,
+                                unitID: depUnitID
+                            )
+                            let installResult = try installer.install(
+                                descriptor: descriptor,
+                                downloadProgress: { fraction in
+                                    if fraction >= 0 {
+                                        progress?("Installing \(dep.id)… \(Int(fraction * 100))%")
+                                    }
+                                }
+                            )
+
+                            // Symlink all executables from installed artifact into bin/
+                            if let contents = try? fileManager.contentsOfDirectory(
+                                at: installResult.installDirectory,
+                                includingPropertiesForKeys: nil
+                            ) {
+                                for file in contents {
+                                    var isDir: ObjCBool = false
+                                    guard fileManager.fileExists(
+                                        atPath: file.path, isDirectory: &isDir
+                                    ),
+                                        !isDir.boolValue,
+                                        fileManager.isExecutableFile(atPath: file.path)
+                                    else { continue }
+
+                                    let linkPath = binDir.appendingPathComponent(
+                                        file.lastPathComponent
+                                    )
+                                    try? fileManager.removeItem(at: linkPath)
+                                    try fileManager.createSymbolicLink(
+                                        atPath: linkPath.path,
+                                        withDestinationPath: file.path
+                                    )
+                                    log.info("[install] Symlinked dep binary: \(linkPath.path) → \(file.path)")
+                                }
+                            }
+                        } catch {
+                            log.warning("[install] Failed to auto-install dependency '\(dep.id)': \(error.localizedDescription)")
+                        }
+                    }
+
+                    // Re-validate after auto-install
+                    results = validator.validate(
+                        dependencies: allDeps,
+                        localBinPath: localBinPath
+                    )
                 }
 
                 let blockers = results.filter(\.isBlocker)

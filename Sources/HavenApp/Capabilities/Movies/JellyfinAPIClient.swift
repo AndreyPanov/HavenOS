@@ -51,12 +51,24 @@ package struct JellyfinAPIClient: Sendable {
         try checkHTTPStatus(response, data: data, allowNoContent: true)
     }
 
-    /// Step 2: Create the first user during setup wizard.
+    /// Step 2a: Get the default startup user.
+    /// Jellyfin must be polled until this returns a valid user —
+    /// the user database may not be ready immediately after startup.
     struct SetupUserResponse: Decodable, Sendable {
         let Name: String?
         let Id: String?
     }
 
+    func getStartupUser() async throws -> SetupUserResponse {
+        let url = baseURL.appending(path: "/Startup/User")
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data)
+        return try JSONDecoder().decode(SetupUserResponse.self, from: data)
+    }
+
+    /// Step 2b: Update the startup user with a name and password.
     func createSetupUser(username: String, password: String) async throws {
         var request = URLRequest(url: baseURL.appending(path: "/Startup/User"))
         request.httpMethod = "POST"
@@ -125,8 +137,9 @@ package struct JellyfinAPIClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
         let body: [String: Any] = [
-            "LibraryOptions": [String: Any](),
-            "PathInfos": paths.map { ["Path": $0] },
+            "LibraryOptions": [
+                "PathInfos": paths.map { ["Path": $0] },
+            ],
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -138,6 +151,20 @@ package struct JellyfinAPIClient: Sendable {
         let ItemId: String?
         let CollectionType: String?
         let Locations: [String]?
+    }
+
+    /// Remove a library by name.
+    func removeLibrary(name: String, token: String) async throws {
+        var url = baseURL.appending(path: "/Library/VirtualFolders")
+        url.append(queryItems: [
+            URLQueryItem(name: "name", value: name),
+            URLQueryItem(name: "refreshLibrary", value: "false"),
+        ])
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data, allowNoContent: true)
     }
 
     /// Get all configured libraries.

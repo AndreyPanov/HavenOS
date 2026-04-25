@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import HavenFacade
-import HavenAppKit
+@testable import HavenAppKit
 
 // MARK: - Auth State Machine Tests
 
@@ -288,6 +288,17 @@ struct JellyfinMoviesFacadeTests {
         defer { cleanupDefaults(for: id) }
 
         #expect(f.setupPhase == nil)
+    }
+
+    @Test("confirmLibraryFolder is a no-op (folder confirmation goes through setLibraryPath)")
+    @MainActor func confirmLibraryFolderIsNoOp() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingLibraryPath
+        f.confirmLibraryFolder()
+        // setupPhase unchanged — folder confirmation now goes directly through setLibraryPath
+        #expect(f.setupPhase == .awaitingLibraryPath)
     }
 
     @Test("disconnect clears setupPhase")

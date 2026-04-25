@@ -22,7 +22,7 @@ struct JellyfinSpecTests {
     func capabilityMetadata() {
         let (cap, _, _) = BuiltInCatalog.jellyfin
         #expect(cap.name == "Jellyfin")
-        #expect(cap.version == "10.10.6")
+        #expect(cap.version == "10.10.7")
         #expect(cap.icon == "film")
         #expect(cap.notes == ["Movies", "TV Shows", "Streaming"])
         #expect(cap.fullDescription?.contains("free software media system") == true)
@@ -91,11 +91,10 @@ struct JellyfinSpecTests {
     func artifact() {
         let (_, _, units) = BuiltInCatalog.jellyfin
         let artifact = units[0].artifact
-        #expect(artifact?.type == .githubRelease)
-        #expect(artifact?.repo == "jellyfin/jellyfin")
-        #expect(artifact?.version == "v10.10.6")
-        #expect(artifact?.assets.count == 3)
-        #expect(artifact?.archive?.format == "tar.gz")
+        #expect(artifact?.type == .directURL)
+        #expect(artifact?.version == "v10.10.7")
+        #expect(artifact?.assets.count == 2)
+        #expect(artifact?.archive?.format == "tar.xz")
         #expect(artifact?.archive?.stripFirstDirectory == true)
     }
 
@@ -127,14 +126,18 @@ struct JellyfinSpecTests {
         }
     }
 
-    @Test("Runtime unit has optional ffmpeg dependency")
+    @Test("Runtime unit has required ffmpeg dependency with auto-install artifact")
     func dependencies() {
         let (_, _, units) = BuiltInCatalog.jellyfin
         #expect(units[0].dependencies.count == 1)
         let dep = units[0].dependencies[0]
         #expect(dep.id == "ffmpeg")
         #expect(dep.kind == .helperBinary)
-        #expect(dep.required == false)
+        #expect(dep.required == true)
+        #expect(dep.artifact != nil)
+        #expect(dep.artifact?.type == .directURL)
+        #expect(dep.artifact?.version == "v7.1.3-5")
+        #expect(dep.artifact?.assets.count == 2)
     }
 
     @Test("Runtime unit has HTTP healthcheck")
@@ -251,6 +254,7 @@ struct JellyfinSpecTests {
         #expect(planned.resolvedLaunchArguments.contains("\(serviceRoot)/config"))
         #expect(planned.resolvedLaunchArguments.contains("\(serviceRoot)/cache"))
         #expect(planned.resolvedLaunchArguments.contains("\(serviceRoot)/logs"))
+        #expect(planned.resolvedLaunchArguments.contains("\(serviceRoot)/bin/ffmpeg"))
     }
 
     @Test("Default movies path expands tilde")

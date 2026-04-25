@@ -18,7 +18,7 @@ struct MoviesDeviceAccessSection: View {
         GroupBox("Watch on your devices") {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Use the Jellyfin app on your TV, phone, or tablet. Enter the server address below when adding a new server.")
+                    Text("Stream your movies on any device. Use VLC, Infuse, or the Jellyfin app \u{2014} just enter the server address below.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -111,10 +111,11 @@ struct MoviesDeviceAccessSection: View {
 
                     if showingGuides {
                         VStack(alignment: .leading, spacing: 6) {
-                            guideRow("tv", "TV", "Jellyfin app (Apple TV, Fire TV, Roku, Android TV) \u{2192} add server")
-                            guideRow("iphone", "iPhone / iPad", "Swiftfin \u{2192} add server \u{2192} paste address + sign in")
-                            guideRow("phone", "Android", "Findroid \u{2192} add server \u{2192} paste address + sign in")
-                            guideRow("desktopcomputer", "Desktop", "Open in browser at the server address")
+                            guideRow("tv", "Apple TV", "Infuse (recommended) or Swiftfin \u{2192} add server")
+                            guideRow("tv", "Other TVs", "VLC or Jellyfin app (Fire TV, Roku, Android TV)")
+                            guideRow("iphone", "iPhone / iPad", "VLC, Infuse, or Swiftfin \u{2192} add server")
+                            guideRow("phone", "Android", "VLC or Findroid \u{2192} add server")
+                            guideRow("desktopcomputer", "Desktop", "VLC (Media \u{2192} Open Network Stream) or browser")
                         }
                         .padding(.top, 8)
                         .padding(.leading, 10)
@@ -179,7 +180,7 @@ struct MoviesDeviceAccessSection: View {
 
             QRCodeView(content: link, size: 160)
 
-            Text("Point your device's camera at the code\nto open the server in Jellyfin.")
+            Text("Point your device's camera at the code\nto open the server address.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)

@@ -11,7 +11,7 @@ extension BuiltInCatalog {
         let capability = Capability(
             id: "haven.capability.jellyfin",
             name: "Jellyfin",
-            version: "10.10.6",
+            version: "10.10.7",
             description: "Your personal streaming server for movies and TV shows.",
             icon: "film",
             fullDescription: """
@@ -98,7 +98,7 @@ extension BuiltInCatalog {
                 "--configdir", "${config_dir}",
                 "--cachedir", "${cache_dir}",
                 "--logdir", "${logs_dir}",
-                "--ffmpeg", "/opt/homebrew/bin/ffmpeg",
+                "--ffmpeg", "${service_root}/bin/ffmpeg",
             ],
             healthcheck: Healthcheck(
                 type: .http,
@@ -112,15 +112,21 @@ extension BuiltInCatalog {
             ],
             entrypoint: RuntimeUnit.Entrypoint(command: "jellyfin"),
             artifact: Artifact(
-                type: .githubRelease,
-                repo: "jellyfin/jellyfin",
-                version: "v10.10.6",
+                type: .directURL,
+                version: "v10.10.7",
                 assets: [
-                    ArtifactAsset(os: "macos", arch: "arm64", file: "jellyfin-server_10.10.6_portable_macos-arm64.tar.gz"),
-                    ArtifactAsset(os: "macos", arch: "x86_64", file: "jellyfin-server_10.10.6_portable_macos-amd64.tar.gz"),
-                    ArtifactAsset(os: "linux", arch: "amd64", file: "jellyfin-server_10.10.6_portable_linux-amd64.tar.gz"),
+                    ArtifactAsset(
+                        os: "macos", arch: "arm64",
+                        file: "jellyfin_10.10.7-arm64.tar.xz",
+                        url: "https://repo.jellyfin.org/files/server/macos/stable/v10.10.7/arm64/jellyfin_10.10.7-arm64.tar.xz"
+                    ),
+                    ArtifactAsset(
+                        os: "macos", arch: "x86_64",
+                        file: "jellyfin_10.10.7-amd64.tar.xz",
+                        url: "https://repo.jellyfin.org/files/server/macos/stable/v10.10.7/amd64/jellyfin_10.10.7-amd64.tar.xz"
+                    ),
                 ],
-                archive: ArtifactArchive(format: "tar.gz", stripFirstDirectory: true)
+                archive: ArtifactArchive(format: "tar.xz", stripFirstDirectory: true)
             ),
             directories: [
                 "data":    "data",
@@ -140,9 +146,26 @@ extension BuiltInCatalog {
                 Dependency(
                     id: "ffmpeg",
                     kind: .helperBinary,
-                    required: false,
-                    validateCommand: "/opt/homebrew/bin/ffmpeg -version",
-                    description: "Enables video transcoding to different formats and resolutions."
+                    required: true,
+                    validateCommand: "ffmpeg -version",
+                    description: "Required for media playback and transcoding.",
+                    artifact: Artifact(
+                        type: .directURL,
+                        version: "v7.1.3-5",
+                        assets: [
+                            ArtifactAsset(
+                                os: "macos", arch: "arm64",
+                                file: "jellyfin-ffmpeg_7.1.3-5_portable_macarm64-gpl.tar.xz",
+                                url: "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v7.1.3-5/jellyfin-ffmpeg_7.1.3-5_portable_macarm64-gpl.tar.xz"
+                            ),
+                            ArtifactAsset(
+                                os: "macos", arch: "x86_64",
+                                file: "jellyfin-ffmpeg_7.1.3-5_portable_macamd64-gpl.tar.xz",
+                                url: "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v7.1.3-5/jellyfin-ffmpeg_7.1.3-5_portable_macamd64-gpl.tar.xz"
+                            ),
+                        ],
+                        archive: ArtifactArchive(format: "tar.xz")
+                    )
                 ),
             ]
         )

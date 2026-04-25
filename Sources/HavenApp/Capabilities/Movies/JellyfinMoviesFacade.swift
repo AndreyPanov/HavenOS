@@ -29,7 +29,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
     // MARK: - MoviesFacade
 
     package private(set) var library: MoviesLibrary?
-    package private(set) var setupPhase: SetupPhase?
+    package var setupPhase: SetupPhase?
 
     package var setupState: BackendSetupState {
         if setupPhase != nil { return .settingUp }
@@ -134,26 +134,51 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
     // MARK: - MoviesFacade Methods
 
+    package func confirmLibraryFolder() {
+        // No-op: kept for protocol conformance but folder confirmation
+        // now goes directly through setLibraryPath
+    }
+
     package func setLibraryPath(_ path: String, contentType: LibraryContentType) async throws {
         guard let client = apiClient, let token = authToken else {
             throw FacadeError.adapterError("Not connected")
         }
 
         let expandedPath = (path as NSString).expandingTildeInPath
+        log.info("setLibraryPath: path=\(path), expanded=\(expandedPath)")
+
+        setupPhase = .creatingLibrary
+
         let fm = FileManager.default
         if !fm.fileExists(atPath: expandedPath) {
             try fm.createDirectory(atPath: expandedPath, withIntermediateDirectories: true)
+            log.info("setLibraryPath: created directory at \(expandedPath)")
         }
 
-        // Create libraries based on content type
-        switch contentType {
-        case .moviesAndShows:
-            try await client.createLibrary(name: "Movies", collectionType: "movies", paths: [expandedPath], token: token)
-            try await client.createLibrary(name: "TV Shows", collectionType: "tvshows", paths: [expandedPath], token: token)
-        case .moviesOnly:
-            try await client.createLibrary(name: "Movies", collectionType: "movies", paths: [expandedPath], token: token)
-        case .showsOnly:
-            try await client.createLibrary(name: "TV Shows", collectionType: "tvshows", paths: [expandedPath], token: token)
+        // List folder contents for debugging
+        if let contents = try? fm.contentsOfDirectory(atPath: expandedPath) {
+            log.info("setLibraryPath: folder has \(contents.count) items: \(contents.prefix(10).joined(separator: ", "))")
+        }
+
+        // Remove existing libraries first (avoids duplicates on folder change)
+        do {
+            let existing = try await client.getLibraries(token: token)
+            for lib in existing {
+                try await client.removeLibrary(name: lib.Name, token: token)
+                log.info("setLibraryPath: removed existing library '\(lib.Name)'")
+            }
+        } catch {
+            log.warning("setLibraryPath: cleanup failed: \(error.localizedDescription)")
+        }
+
+        // Always create a single mixed library (handles both movies and TV shows)
+        do {
+            try await client.createLibrary(name: "Media", collectionType: "mixed", paths: [expandedPath], token: token)
+            log.info("setLibraryPath: created Media library at \(expandedPath)")
+        } catch {
+            log.error("setLibraryPath: library creation failed: \(error.localizedDescription)")
+            setupPhase = .awaitingLibraryPath
+            throw error
         }
 
         UserDefaults.standard.set(path, forKey: libraryPathKey)
@@ -188,37 +213,55 @@ package final class JellyfinMoviesFacade: MoviesFacade {
     private func startScanPolling() {
         scanPollTask?.cancel()
         scanPollTask = Task {
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(5))
 
-            // Jellyfin scans can take much longer than Books/Music (metadata downloads)
-            for i in 1...120 {
+            // Jellyfin's "Scan Media Library" task finishes quickly (file discovery),
+            // but metadata processing continues in background without a visible task.
+            // Poll item counts and wait until they stabilize.
+            var lastCount = 0
+            var stableRounds = 0
+            let stableThreshold = 3  // 3 consecutive polls with same count = done
+
+            for i in 1...60 {
                 guard !Task.isCancelled else { return }
-                do {
-                    guard let client = self.apiClient, let token = self.authToken else { return }
-                    let tasks = try await client.getScheduledTasks(token: token)
-                    let scanTask = tasks.first { $0.Key == "RefreshGuideTask" || ($0.State == "Running" && ($0.Name?.contains("scan") == true || $0.Name?.contains("Refresh") == true || $0.Name?.contains("library") == true)) }
-                    if let scanTask, scanTask.State == "Running" {
-                        let progress = scanTask.CurrentProgressPercentage
+                guard let client = self.apiClient, let token = self.authToken else { return }
+
+                // Check scheduled tasks for progress info
+                if let tasks = try? await client.getScheduledTasks(token: token) {
+                    let scanTask = tasks.first { $0.State == "Running" && ($0.Name?.contains("scan") == true || $0.Name?.contains("Refresh") == true || $0.Name?.contains("library") == true) }
+                    if let scanTask, let progress = scanTask.CurrentProgressPercentage {
                         self.setupPhase = .scanning(progress: progress)
-                        log.debug("Scan poll \(i)/120: running (\(progress ?? 0)%)")
-                    } else if i > 5 {
-                        // After initial delay, if no scan task is running, consider complete
-                        log.info("Scan appears complete")
-                        break
                     }
-                } catch {
-                    log.warning("Scan poll failed: \(error.localizedDescription)")
-                    break
                 }
-                try? await Task.sleep(for: .seconds(3))
+
+                // Poll item counts to detect when processing stabilizes
+                if let counts = try? await client.getItemCounts(token: token) {
+                    let total = counts.MovieCount + counts.SeriesCount
+                    self.movieCount = counts.MovieCount
+                    self.showCount = counts.SeriesCount
+                    self.updateLibrary()
+                    log.debug("Scan poll \(i)/60: \(counts.MovieCount) movies, \(counts.SeriesCount) shows")
+
+                    if total == lastCount && total > 0 {
+                        stableRounds += 1
+                        if stableRounds >= stableThreshold {
+                            log.info("Scan complete: counts stable at \(total) items")
+                            break
+                        }
+                    } else {
+                        stableRounds = 0
+                        lastCount = total
+                    }
+                }
+
+                try? await Task.sleep(for: .seconds(5))
             }
 
-            try? await Task.sleep(for: .seconds(1))
             await self.fetchItemCounts()
             self.currentScanStatus = .idle
             self.setupPhase = nil
             self.updateLibrary()
-            log.info("Scan finished")
+            log.info("Scan finished: \(self.movieCount ?? 0) movies, \(self.showCount ?? 0) shows")
         }
     }
 
@@ -250,14 +293,29 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             // Non-fatal — may already be configured
         }
 
-        // Step 2: Create admin user
+        // Step 2: Wait for user database to be ready, then create admin user.
+        // Jellyfin's user DB may not be initialized when /System/Ping first succeeds.
+        // Poll GET /Startup/User until it returns a valid response.
         let username = "haven"
         let password = generatePassword()
-        do {
-            try await client.createSetupUser(username: username, password: password)
-            log.info("Setup wizard: user created")
-        } catch {
-            log.warning("Setup wizard: user creation failed: \(error.localizedDescription)")
+        var userCreated = false
+        for attempt in 1...10 {
+            do {
+                // Poll until the user database is ready
+                let _ = try await client.getStartupUser()
+                // DB is ready — now update the user
+                try await client.createSetupUser(username: username, password: password)
+                log.info("Setup wizard: user created")
+                userCreated = true
+                break
+            } catch {
+                log.warning("Setup wizard: user creation attempt \(attempt)/10: \(error.localizedDescription)")
+                if attempt < 10 {
+                    try? await Task.sleep(for: .seconds(2))
+                }
+            }
+        }
+        guard userCreated else {
             setupPhase = nil
             return false
         }

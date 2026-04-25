@@ -13,7 +13,6 @@ struct MoviesHomeView: View {
     @State private var showingConnectSheet = false
     @State private var pendingRescanOnFocus = false
     @State private var selectedLibraryPath = "~/Movies"
-    @State private var selectedContentType: LibraryContentType = .moviesAndShows
 
     var body: some View {
         ScrollView {
@@ -266,7 +265,7 @@ struct MoviesHomeView: View {
                 }
 
                 // Step 3: Choose library folder
-                if phase == .awaitingLibraryPath || phase == .awaitingLibraryType || phase == .creatingLibrary || phase == .scanning(progress: nil) || phase == .complete {
+                if phase == .awaitingLibraryPath || phase == .creatingLibrary || isScanning(phase) || phase == .complete {
                     wizardStepCard(
                         icon: phase == .awaitingLibraryPath ? "folder.badge.questionmark" : "checkmark.circle.fill",
                         iconColor: phase == .awaitingLibraryPath ? .blue : .green,
@@ -275,7 +274,7 @@ struct MoviesHomeView: View {
                     ) {
                         if phase == .awaitingLibraryPath {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Haven will organize and stream everything in this folder.")
+                                Text("Choose the folder with your movies and TV shows. Haven will organize and stream everything in it.")
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -297,15 +296,13 @@ struct MoviesHomeView: View {
                                 }
 
                                 Button("Continue") {
-                                    // Advance to content type selection
-                                    // The facade will handle this when we call setLibraryPath
+                                    Task {
+                                        try? await facade.setLibraryPath(selectedLibraryPath, contentType: .moviesAndShows)
+                                    }
                                 }
                                 .buttonStyle(.glassProminent)
                                 .controlSize(.regular)
                                 .disabled(selectedLibraryPath.isEmpty)
-                                .onTapGesture {
-                                    advanceToContentType()
-                                }
                             }
                         } else {
                             Text(selectedLibraryPath)
@@ -316,45 +313,7 @@ struct MoviesHomeView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                // Step 4: Choose content type
-                if phase == .awaitingLibraryType || phase == .creatingLibrary || isScanning(phase) || phase == .complete {
-                    wizardStepCard(
-                        icon: phase == .awaitingLibraryType ? "film.stack" : "checkmark.circle.fill",
-                        iconColor: phase == .awaitingLibraryType ? .blue : .green,
-                        title: "What\u{2019}s in your library?",
-                        completed: phase != .awaitingLibraryType
-                    ) {
-                        if phase == .awaitingLibraryType {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("This helps organize metadata and artwork automatically.")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                VStack(alignment: .leading, spacing: 8) {
-                                    ForEach(LibraryContentType.allCases, id: \.rawValue) { type in
-                                        contentTypeRow(type)
-                                    }
-                                }
-
-                                Button("Continue") {
-                                    Task {
-                                        try? await facade.setLibraryPath(selectedLibraryPath, contentType: selectedContentType)
-                                    }
-                                }
-                                .buttonStyle(.glassProminent)
-                                .controlSize(.regular)
-                            }
-                        } else {
-                            Text(selectedContentType.label)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                // Step 5: Scanning
+                // Step 4: Scanning
                 if isScanning(phase) || phase == .creatingLibrary {
                     wizardStepCard(
                         icon: "magnifyingglass",
@@ -383,27 +342,6 @@ struct MoviesHomeView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: wizardPhaseKey(phase))
         }
-    }
-
-    private func contentTypeRow(_ type: LibraryContentType) -> some View {
-        Button {
-            selectedContentType = type
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: selectedContentType == type ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(selectedContentType == type ? .blue : .secondary)
-                Text(type.label)
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(
-                selectedContentType == type ? Color.blue.opacity(0.06) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8)
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     private func wizardStepCard<Content: View>(
@@ -447,14 +385,6 @@ struct MoviesHomeView: View {
         if panel.runModal() == .OK, let url = panel.url {
             selectedLibraryPath = url.path
         }
-    }
-
-    private func advanceToContentType() {
-        // Move facade to awaitingLibraryType phase — this is handled by the facade
-        // For now, the transition happens when user taps Continue in the folder step
-        // The facade transitions from awaitingLibraryPath to awaitingLibraryType
-        // Since we need to tell the facade, we do it through setLibraryPath
-        // But first we just change the local phase indicator
     }
 
     private func isScanning(_ phase: SetupPhase) -> Bool {

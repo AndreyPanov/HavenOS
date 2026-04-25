@@ -2,8 +2,10 @@ import Foundation
 
 /// An external helper that a runtime unit needs to function.
 ///
-/// Haven validates presence but never installs dependencies directly —
-/// the user must never see brew, apt, or any package manager.
+/// Haven validates presence on the system first. If not found but an
+/// ``artifact`` is provided, Haven downloads and installs the dependency
+/// into the service's local `bin/` directory automatically — the user
+/// never sees brew, apt, or any package manager.
 public struct Dependency: Codable, Equatable, Sendable {
 
     /// The category of dependency.
@@ -20,7 +22,8 @@ public struct Dependency: Codable, Equatable, Sendable {
     /// What type of dependency this is.
     public let kind: Kind
 
-    /// If `true`, installation fails when the dependency is missing.
+    /// If `true`, installation fails when the dependency is missing
+    /// and no ``artifact`` is available for auto-install.
     /// If `false`, Haven warns but allows installation to proceed.
     public let required: Bool
 
@@ -31,18 +34,25 @@ public struct Dependency: Codable, Equatable, Sendable {
     /// User-facing explanation of what this dependency enables.
     public let description: String?
 
+    /// Optional artifact for auto-installing this dependency.
+    /// When present and the dependency is not found on the system,
+    /// Haven downloads and extracts this to the service's `bin/` directory.
+    public let artifact: Artifact?
+
     public init(
         id: String,
         kind: Kind,
         required: Bool = false,
         validateCommand: String? = nil,
-        description: String? = nil
+        description: String? = nil,
+        artifact: Artifact? = nil
     ) {
         self.id = id
         self.kind = kind
         self.required = required
         self.validateCommand = validateCommand
         self.description = description
+        self.artifact = artifact
     }
 
     public init(from decoder: Decoder) throws {
@@ -52,6 +62,7 @@ public struct Dependency: Codable, Equatable, Sendable {
         required = try c.decodeIfPresent(Bool.self, forKey: .required) ?? false
         validateCommand = try c.decodeIfPresent(String.self, forKey: .validateCommand)
         description = try c.decodeIfPresent(String.self, forKey: .description)
+        artifact = try c.decodeIfPresent(Artifact.self, forKey: .artifact)
     }
 
     /// Validates that the dependency is well-formed.

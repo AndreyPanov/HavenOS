@@ -248,6 +248,10 @@ public struct ArtifactInstaller: Sendable {
                 }
             }
 
+            // Ad-hoc sign Mach-O binaries on macOS.
+            // Unsigned binaries from tar archives are killed by Gatekeeper.
+            adHocSignMachOFiles(in: directory)
+
         case .executable:
             do {
                 let destFile = directory.appendingPathComponent(
@@ -431,6 +435,53 @@ public struct ArtifactInstaller: Sendable {
 
         // Remove the now-empty temp directory
         try fileManager.removeItem(at: tempDir)
+    }
+
+    // MARK: - Ad-hoc code signing
+
+    /// Ad-hoc sign Mach-O executables and dylibs in a directory.
+    ///
+    /// macOS Gatekeeper kills unsigned binaries extracted from tar archives.
+    /// This runs `codesign --force --sign -` on the main executable and all
+    /// `.dylib` files. Non-fatal — if signing fails the binary may still work
+    /// on permissive security settings.
+    private func adHocSignMachOFiles(in directory: URL) {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else { return }
+
+        var filesToSign: [URL] = []
+
+        for url in contents {
+            let name = url.lastPathComponent
+            if name.hasSuffix(".dylib") || name.hasSuffix(".so") {
+                filesToSign.append(url)
+            } else if fileManager.isExecutableFile(atPath: url.path) {
+                var isDir: ObjCBool = false
+                fileManager.fileExists(atPath: url.path, isDirectory: &isDir)
+                if !isDir.boolValue {
+                    filesToSign.append(url)
+                }
+            }
+        }
+
+        guard !filesToSign.isEmpty else { return }
+        log.info("[install] Ad-hoc signing \(filesToSign.count) Mach-O files")
+
+        for file in filesToSign {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            process.arguments = ["--force", "--sign", "-", file.path]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                log.warning("[install] Failed to sign \(file.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Uninstall
