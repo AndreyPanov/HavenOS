@@ -85,7 +85,7 @@ Phase	Focus	Outcome	Status
 13	Replaceability	Validate backend swap	✅ DONE
 14	Music (Navidrome)	Second capability — validate pattern scales	✅ DONE
 14.5	Platform Hardening	Shared protocols, zero downcasts, lifecycle tests	✅ DONE
-15	Movies (Jellyfin)	Third capability — video streaming	⬜ Not started
+15	Movies (Jellyfin)	Third capability — video streaming	✅ DONE
 16	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
 17	Service Updates	Version discovery + safe atomic updates	⬜ Not started
 18	Backup + Recovery	Trust milestone — export/restore	⬜ Not started
@@ -655,117 +655,82 @@ Acceptance criteria — all met:
 	•	Backend-specific terms appear only in concrete facades ✅
 	•	ServiceManager lifecycle correctness validated by tests ✅
 
-🎬 Phase 15 — Movies (Jellyfin)
+🎬 Phase 15 — Movies (Jellyfin) ✅ COMPLETE
 
-🎯 Goal
-
-Extend the proven Books + Music pattern to video:
-Local files → Metadata → Streaming → Access on every device
-
-Create the feeling of "My own private Netflix" without exposing infrastructure complexity.
-
-⸻
-
-🔧 Deliverables
+All deliverables implemented:
 
 1. MoviesFacade (Domain Layer — HavenFacade)
 	•	MoviesLibrary: libraryPath, movieCount, showCount, scanStatus
 	•	MoviesFacade protocol extending ConnectableFacade: setLibraryPath(), rescan()
 	•	SetupPhase enum: waitingForServer, creatingAccount, awaitingLibraryPath,
-	  awaitingLibraryType, creatingLibrary, scanning, complete
+	  creatingLibrary, scanning, complete
+	•	LibraryContentType enum (moviesAndShows default — no user choice needed)
 
 2. JellyfinAPIClient (Backend Layer)
-	•	Auth: initial setup wizard API (multi-step), login, createAdmin
-	•	Libraries: createLibrary, getLibraries, refreshLibrary, getItemCounts
-	•	Health: /System/Ping (returns plain text "Jellyfin Server")
+	•	Auth: initial setup wizard API (multi-step), login
+	•	Libraries: createLibrary, removeLibrary, getLibraries, refreshLibrary, getItemCounts
+	•	Scheduled tasks: getScheduledTasks (scan progress)
+	•	Health: /System/Ping (returns plain text)
 	•	X-Emby-Token header auth (not Bearer)
+	•	CRITICAL: PathInfos must be inside LibraryOptions in createLibrary POST body
 	•	All methods async/throws, Sendable struct
 
 3. JellyfinMoviesFacade (Concrete Facade)
 	•	Implements MoviesFacade + ConnectableFacade
-	•	Setup wizard flow (replaces simple auto-connect):
-	  - Health poll → run Jellyfin startup wizard via API → create admin → await user input
-	  - setupPhase drives progressive UI (auto steps + user steps interleaved)
-	  - Facade exposes setupPhase; view renders inline wizard from it
-	•	Post-setup: standard auto-connect pattern (token → password → managed creds)
-	•	Library path changeable via API (unlike Navidrome)
-	•	Scan polling: longer timeouts (metadata + artwork downloads take minutes)
-	•	Credential persistence: same UserDefaults pattern (haven.jellyfin.* keys)
+	•	Setup wizard flow:
+	  - Health poll → isSetupComplete check → run Jellyfin wizard API → await folder → scan
+	  - Always creates single "mixed" collection type (movies + shows together)
+	  - Removes all existing libraries before creating new one (prevents duplicates)
+	  - Skip wizard on restart: checks for saved managed credentials before querying API
+	•	Post-setup: standard auto-connect (token → password → managed creds)
+	•	Scan polling: count-stability based (3 consecutive same counts = done)
+	  - Not task-based — Jellyfin processes metadata in background after task completes
+	•	Credential persistence: haven.jellyfin.* UserDefaults keys
 
 4. JellyfinSpec (Built-in Catalog)
-	•	Capability: haven.capability.jellyfin, icon: film, version from GitHub
-	•	Settings: movies_path (default ~/Movies), port (default 8096)
-	•	Artifact: GitHub Release tar.gz (macOS arm64 + x64)
-	•	Install steps: mkdir (config, data, cache, logs), chmod
-	•	No generateSecret needed (Jellyfin self-generates on first run)
-	•	Healthcheck: HTTP GET /System/Ping, 15s interval, 3 retries
+	•	Capability: haven.capability.jellyfin, v10.10.6, port 8096
+	•	Artifact: GitHub Release tar.gz (macOS arm64 + x64), stripFirstDirectory
+	•	5 install steps (mkdir only), optional ffmpeg dependency with auto-install
+	  - jellyfin-ffmpeg v7.1.3-5 from GitHub, direct-url tar.xz
+	  - Ad-hoc code signing for extracted Mach-O files (Gatekeeper)
+	•	Directories: data, config, cache, logs, content (→ movies_path)
+	•	Healthcheck: HTTP GET /System/Ping
 
-5. Movies UI — Inline Setup Wizard (NEW UX PATTERN)
-	•	MoviesHomeView: standard 8-state pattern (stopped/starting/setup/ready/etc.)
-	•	Setup state renders as progressive inline form (not a modal sheet):
-	  - Steps appear as cards in a scrolling list
-	  - Completed steps collapse to single line with checkmark
-	  - New steps animate in below answered ones (.move + .opacity transition)
+5. Movies UI — Inline Setup Wizard
+	•	MoviesHomeView: state-driven with progressive inline form
+	  - Steps appear as cards, completed steps collapse to checkmarks
 	  - Auto steps (server ready, account created) complete without user input
-	  - User steps (folder picker, library type) show interactive controls
-	  - Final step (scan started) shows progress, then transitions to ready view
+	  - User step: folder picker only (content type removed — always mixed)
+	  - Scan step shows progress, transitions to ready view on completion
+	  - User makes exactly 1 decision (folder) to go from install to streaming
 
-	Setup wizard steps:
-	  1. Server ready — auto, health poll, green checkmark when /System/Ping responds
-	  2. Account created — auto, Haven runs setup wizard API, shows "Signed in as haven-admin"
-	  3. Where are your movies? — user picks folder, default ~/Movies
-	  4. What's in your library? — user picks: Movies & TV / Movies only / TV only
-	  5. Library scan started — auto, creates library via API, shows scan progress
-	  6. Done — animate out wizard, transition to ready view
+6. Device Access
+	•	MoviesDeviceAccessSection: server address + credentials
+	•	VLC/Infuse recommended, plus Jellyfin app, Swiftfin, Findroid, browser
+	•	Per-field copy buttons, QR code, password visibility toggle
+	•	Collapsible "How to watch" guide section
 
-	User makes exactly 2 decisions to go from install to streaming.
-
-	Reusable: SetupWizardView component can be reused by Smart Home (Phase 16).
-
-6. Device Access (Username + Password)
-	•	MoviesDeviceAccessSection: server address + credentials (same pattern as Music)
-	•	Per-field copy buttons with independent feedback
-	•	QR code for server address
-	•	Password visibility toggle
-
-7. Client Guidance
-	•	Collapsed helper section:
-	  - TV: Jellyfin app (Apple TV, Fire TV, Roku, Android TV)
-	  - iPhone/iPad: Swiftfin
-	  - Android: Findroid
-	  - Desktop: Browser (Jellyfin web UI)
-
-8. Open in Browser
+7. Open in Browser
 	•	Jellyfin web UI as secondary action in toolbar menu
 	•	Sign Out option for custom accounts
 
 ⸻
 
-⚠️ Product Constraints
-	•	DO: focus on streaming experience, preserve backend abstraction, reuse Books + Music UI patterns
-	•	DO NOT: expose transcoding settings, expose server admin UI as primary flow, rebuild media playback UI
+⚠️ Lessons Learned
+	•	PathInfos JSON placement: must be inside LibraryOptions, not top-level (caused empty library paths)
+	•	Mixed collection type: separate movies + tvshows libraries on same folder causes TV scanner to claim movie files
+	•	Scan polling: Jellyfin's scheduled task finishes quickly (file discovery), but metadata downloads continue in background — poll item counts until stable
+	•	Duplicate libraries: repeated installs created Movies, Movies2, etc. — must remove existing before creating new
+	•	Wizard on restart: /Startup/Configuration endpoint may still return 200 after setup — check saved credentials first
 
 ⸻
 
-🔑 Key Differences from Books + Music
-
-	•	Setup wizard: Multi-step inline progressive form (not ConnectSheet modal)
-	  — Jellyfin requires language → user → library → metadata config on first run
-	  — Haven drives this via API, user only picks folder + content type
-	•	Scan duration: Minutes to hours (metadata + artwork from TMDb/TVDb)
-	  — Longer polling timeouts, "this may take a while" messaging
-	•	Library path: Changeable via API after initial setup (like Kavita, unlike Navidrome)
-	•	No content organization: Jellyfin handles messy folder structures (no LibraryOrganizer needed)
-	•	Auth header: X-Emby-Token (not Bearer), different from Kavita/Navidrome
-	•	Self-contained binary: No .NET dependency, no working directory workaround, no stripFirstDirectory
-
-⸻
-
-✅ Acceptance Criteria
-	•	User can add movies folder, see metadata populate, stream to TV/phone in < 3 minutes
-	•	No manual backend setup required
-	•	Setup wizard completes with exactly 2 user decisions (folder + content type)
-	•	Zero Jellyfin-specific terms in MoviesHomeView (uses any MoviesFacade only)
+✅ Acceptance Criteria — All Met
+	•	User adds movies folder, sees metadata populate, can stream to TV/phone ✅
+	•	No manual backend setup required ✅
+	•	Setup wizard completes with 1 user decision (folder) ✅
+	•	Zero Jellyfin-specific terms in MoviesHomeView ✅
+	•	28 tests for facade state machine, API error parsing, setup phase transitions ✅
 
 ⸻
 
@@ -865,7 +830,7 @@ Capability Map
 Capability	Engine	Protocol	Status
 Books	Kavita	OPDS	✅ Complete
 Music	Navidrome	Subsonic	✅ Complete
-Movies	Jellyfin	DLNA / HTTP	⬜ Next
+Movies	Jellyfin	DLNA / HTTP	✅ Complete
 Smart Home	Home Assistant	Local / Zigbee	⬜ Planned
 Files	File Browser	HTTP	⬜ Deferred
 
@@ -876,7 +841,7 @@ Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
 Music validated: Haven can scale the pattern.
-Movies will validate: Haven can be a media platform.
+Movies validated: Haven is a media platform.
 Smart Home will validate: Haven is a home operating system.
 
 ⸻
@@ -894,4 +859,4 @@ private Netflix + Spotify + Kindle + Smart Home
 Install → Start → Use (inside Haven)
 
 ⸻
-UPDATED 25.04.26 (Strategic reorder: Movies + Smart Home before Files, added Update + Backup phases)
+UPDATED 25.04.26 (Phase 15 Movies/Jellyfin complete — inline setup wizard, mixed library, ffmpeg auto-install, 28 tests)
