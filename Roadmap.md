@@ -85,8 +85,11 @@ Phase	Focus	Outcome	Status
 13	Replaceability	Validate backend swap	✅ DONE
 14	Music (Navidrome)	Second capability — validate pattern scales	✅ DONE
 14.5	Platform Hardening	Shared protocols, zero downcasts, lifecycle tests	✅ DONE
-15	Files	Third capability — basic file access	⬜ Not started
-16	Movies (Jellyfin)	Fourth capability — video streaming	⬜ Future
+15	Movies (Jellyfin)	Third capability — video streaming	⬜ Not started
+16	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
+17	Service Updates	Version discovery + safe atomic updates	⬜ Not started
+18	Backup + Recovery	Trust milestone — export/restore	⬜ Not started
+19	Files	Basic file access (deferred)	⬜ Not started
 
 
 ⸻
@@ -652,32 +655,142 @@ Acceptance criteria — all met:
 	•	Backend-specific terms appear only in concrete facades ✅
 	•	ServiceManager lifecycle correctness validated by tests ✅
 
-📁 Phase 15 — Files
+🎬 Phase 15 — Movies (Jellyfin)
 
 🎯 Goal
 
-Provide basic local file access capability.
+Extend the proven Books + Music pattern to video:
+Local files → Metadata → Streaming → Access on every device
+
+Create the feeling of "My own private Netflix" without exposing infrastructure complexity.
+
+⸻
+
+🔧 Deliverables
+
+1. MoviesFacade (Domain Layer)
+	•	MoviesLibrary: libraryPath, movieCount, showCount, scanStatus, lastScanDate, baseURL
+	•	MoviesFacade protocol: setLibraryPath(), rescan()
+
+2. JellyfinAdapter (Backend Layer)
+	•	Config generation, media path wiring, healthcheck integration
+	•	Managed account creation, metadata refresh, streaming availability checks
+	•	All Jellyfin-specific behavior stays here
+
+3. Movies UI (State-driven)
+	•	Reuse existing capability platform states: starting, needsSetup, empty, ready, scanning, error
+	•	No backend-specific UI allowed
+
+4. Library Management
+	•	User can: choose Movies folder, validate path, change later, trigger metadata refresh
+	•	Show: movie count, show count, recently added (optional)
+
+5. Device Access
+	•	Server address with Copy + QR Code
+	•	Watch on any device flow
+
+6. Client Guidance
+	•	Collapsed helper: TV → Jellyfin app, iPhone/iPad → Swiftfin, Android → Findroid, Desktop → Browser
+
+7. Open in Browser
+	•	Jellyfin web UI as fallback/advanced path (secondary action only)
+
+⸻
+
+⚠️ Product Constraints
+	•	DO: focus on streaming experience, preserve backend abstraction, reuse Books + Music UI patterns
+	•	DO NOT: expose transcoding settings, expose server admin UI as primary flow, rebuild media playback UI yet
+
+⸻
+
+✅ Acceptance Criteria
+	•	User can add movies folder, see metadata populate, stream to TV/phone in < 3 minutes
+	•	No manual backend setup required
+
+⸻
+
+🏠 Phase 16 — Smart Home (Home Assistant)
+
+🎯 Goal
+
+Expand Haven from "media operating system" to "home operating system."
+Create simple private smart home setup without cloud dependency.
+
+Strategic principle: Do NOT build "Home Assistant UI wrapper." Build "Add smart home to your home." Simple, guided, native.
+
+⸻
+
+🔧 Deliverables
+
+1. SmartHomeFacade
+	•	Core supported concepts only: Lights, Sensors, Presence, Scenes, Remote access
+	•	Not full Home Assistant parity
+
+2. HomeAssistantAdapter
+	•	Install + runtime, onboarding, device discovery, secure local access, remote access guidance
+
+3. Guided Onboarding UX
+	•	Device-first: "Add your first device" → Choose: Lights / Sensors / Cameras / Presence
+	•	Not dashboard-first
+
+4. Scene-first UX
+	•	Examples: Good Morning, Away Mode, Night Mode
+	•	Focus on outcomes, not entities
+
+⸻
+
+⚠️ Scope Control
+	•	DO NOT: expose HA complexity, expose YAML, expose integrations list explosion
+	•	Keep v1 intentionally narrow
+
+⸻
+
+🔄 Phase 17 — Service Update System
+
+🎯 Goal
+
+Move Haven from "installer" to "trusted long-term manager."
+
+🔧 Deliverables
+
+1. Version Discovery
+	•	GitHub releases detection, stable version tracking
+
+2. Safe Atomic Update Flow
+	•	Download → Validate → Stop → Replace → Restart → Healthcheck → Rollback on failure
+
+3. Update UI
+	•	"Update Available" badges, update progress, recovery path
+
+Critical rule: Never leave partial state.
+
+⸻
+
+💾 Phase 18 — Backup + Recovery Confidence
+
+🎯 Goal
+
+Answer the question: "What happens if my Mac mini dies?" — Trust milestone.
+
+🔧 Deliverables
+	•	Backup visibility
+	•	Export settings
+	•	Restore flow
+	•	Recovery confidence UI
+
+⸻
+
+📁 Phase 19 — Files
+
+🎯 Goal
+
+Only build Files after a clear answer exists to: "Why Haven instead of Finder + iCloud?"
+Until then: keep scope intentionally small.
 
 🔧 Deliverables
 	•	FilesFacade: root management, file listing, basic actions
 	•	FileBrowserAdapter: config mapping, CLI/start control
 	•	Native file browsing UI, folder selection
-	•	Basic preview (optional)
-
-⚠️ Note: Files is simpler technically but weaker in differentiation. Keep scope minimal.
-
-⸻
-
-🎬 Phase 16 — Movies (Future)
-
-🎯 Goal
-
-Extend pattern to video streaming.
-
-Candidate backend: Jellyfin (preferred). Plex optional (licensing concerns).
-
-⚠️ Complexity: transcoding, metadata scraping, performance tuning.
-Only after Music is stable.
 
 ⸻
 
@@ -685,31 +798,40 @@ Only after Music is stable.
 
 Proven Pattern
 
-Raw files → Haven cleanup → Backend engine → Device access
+Raw files → Haven cleanup → Backend engine → Cross-device access → Trust
 
 Capability Map
 
-Capability	Engine	Protocol
-Books	Kavita	OPDS
-Music	Navidrome	Subsonic
-Files	File Browser	HTTP
-Movies	Jellyfin	DLNA / HTTP
+Capability	Engine	Protocol	Status
+Books	Kavita	OPDS	✅ Complete
+Music	Navidrome	Subsonic	✅ Complete
+Movies	Jellyfin	DLNA / HTTP	⬜ Next
+Smart Home	Home Assistant	Local / Zigbee	⬜ Planned
+Files	File Browser	HTTP	⬜ Deferred
 
 Execution Strategy
 
-Books → Music → Files → Movies
-Each: full vertical slice, real usability, cross-device flow.
+Books → Music → Movies → Smart Home → Updates → Backup → Files
+Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
-Music validates: Haven can scale the pattern.
+Music validated: Haven can scale the pattern.
+Movies will validate: Haven can be a media platform.
+Smart Home will validate: Haven is a home operating system.
+
+⸻
+
+🔥 Product Direction
+
+Haven is becoming:
+
+private Netflix + Spotify + Kindle + Smart Home
+
+—not a service manager.
 
 ⸻
 
 Install → Start → Use (inside Haven)
 
-💬 One-liner
-
-Music is the second proof that Haven is a system, not a one-off.
-
 ⸻
-UPDATED 24.04.26 (Phase 14 Music complete, device access credentials, shared components)
+UPDATED 25.04.26 (Strategic reorder: Movies + Smart Home before Files, added Update + Backup phases)
