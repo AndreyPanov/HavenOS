@@ -94,6 +94,10 @@ package struct ContentView: View {
            serviceManager.facade(for: service.id) is any MusicFacade {
             return "Music"
         }
+        if serviceManager.hasNativeUI(for: service.id),
+           serviceManager.facade(for: service.id) is any MoviesFacade {
+            return "Movies"
+        }
         return service.name
     }
 
@@ -103,6 +107,8 @@ package struct ContentView: View {
             BooksHomeView(facade: facade)
         } else if let facade = serviceManager.facade(for: id) as? any MusicFacade {
             MusicHomeView(facade: facade)
+        } else if let facade = serviceManager.facade(for: id) as? any MoviesFacade {
+            MoviesHomeView(facade: facade)
         } else if serviceManager.facade(for: id) != nil {
             ServiceDetailView(serviceID: id)
         } else {

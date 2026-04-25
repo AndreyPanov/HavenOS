@@ -668,44 +668,104 @@ Create the feeling of "My own private Netflix" without exposing infrastructure c
 
 🔧 Deliverables
 
-1. MoviesFacade (Domain Layer)
-	•	MoviesLibrary: libraryPath, movieCount, showCount, scanStatus, lastScanDate, baseURL
-	•	MoviesFacade protocol: setLibraryPath(), rescan()
+1. MoviesFacade (Domain Layer — HavenFacade)
+	•	MoviesLibrary: libraryPath, movieCount, showCount, scanStatus
+	•	MoviesFacade protocol extending ConnectableFacade: setLibraryPath(), rescan()
+	•	SetupPhase enum: waitingForServer, creatingAccount, awaitingLibraryPath,
+	  awaitingLibraryType, creatingLibrary, scanning, complete
 
-2. JellyfinAdapter (Backend Layer)
-	•	Config generation, media path wiring, healthcheck integration
-	•	Managed account creation, metadata refresh, streaming availability checks
-	•	All Jellyfin-specific behavior stays here
+2. JellyfinAPIClient (Backend Layer)
+	•	Auth: initial setup wizard API (multi-step), login, createAdmin
+	•	Libraries: createLibrary, getLibraries, refreshLibrary, getItemCounts
+	•	Health: /System/Ping (returns plain text "Jellyfin Server")
+	•	X-Emby-Token header auth (not Bearer)
+	•	All methods async/throws, Sendable struct
 
-3. Movies UI (State-driven)
-	•	Reuse existing capability platform states: starting, needsSetup, empty, ready, scanning, error
-	•	No backend-specific UI allowed
+3. JellyfinMoviesFacade (Concrete Facade)
+	•	Implements MoviesFacade + ConnectableFacade
+	•	Setup wizard flow (replaces simple auto-connect):
+	  - Health poll → run Jellyfin startup wizard via API → create admin → await user input
+	  - setupPhase drives progressive UI (auto steps + user steps interleaved)
+	  - Facade exposes setupPhase; view renders inline wizard from it
+	•	Post-setup: standard auto-connect pattern (token → password → managed creds)
+	•	Library path changeable via API (unlike Navidrome)
+	•	Scan polling: longer timeouts (metadata + artwork downloads take minutes)
+	•	Credential persistence: same UserDefaults pattern (haven.jellyfin.* keys)
 
-4. Library Management
-	•	User can: choose Movies folder, validate path, change later, trigger metadata refresh
-	•	Show: movie count, show count, recently added (optional)
+4. JellyfinSpec (Built-in Catalog)
+	•	Capability: haven.capability.jellyfin, icon: film, version from GitHub
+	•	Settings: movies_path (default ~/Movies), port (default 8096)
+	•	Artifact: GitHub Release tar.gz (macOS arm64 + x64)
+	•	Install steps: mkdir (config, data, cache, logs), chmod
+	•	No generateSecret needed (Jellyfin self-generates on first run)
+	•	Healthcheck: HTTP GET /System/Ping, 15s interval, 3 retries
 
-5. Device Access
-	•	Server address with Copy + QR Code
-	•	Watch on any device flow
+5. Movies UI — Inline Setup Wizard (NEW UX PATTERN)
+	•	MoviesHomeView: standard 8-state pattern (stopped/starting/setup/ready/etc.)
+	•	Setup state renders as progressive inline form (not a modal sheet):
+	  - Steps appear as cards in a scrolling list
+	  - Completed steps collapse to single line with checkmark
+	  - New steps animate in below answered ones (.move + .opacity transition)
+	  - Auto steps (server ready, account created) complete without user input
+	  - User steps (folder picker, library type) show interactive controls
+	  - Final step (scan started) shows progress, then transitions to ready view
 
-6. Client Guidance
-	•	Collapsed helper: TV → Jellyfin app, iPhone/iPad → Swiftfin, Android → Findroid, Desktop → Browser
+	Setup wizard steps:
+	  1. Server ready — auto, health poll, green checkmark when /System/Ping responds
+	  2. Account created — auto, Haven runs setup wizard API, shows "Signed in as haven-admin"
+	  3. Where are your movies? — user picks folder, default ~/Movies
+	  4. What's in your library? — user picks: Movies & TV / Movies only / TV only
+	  5. Library scan started — auto, creates library via API, shows scan progress
+	  6. Done — animate out wizard, transition to ready view
 
-7. Open in Browser
-	•	Jellyfin web UI as fallback/advanced path (secondary action only)
+	User makes exactly 2 decisions to go from install to streaming.
+
+	Reusable: SetupWizardView component can be reused by Smart Home (Phase 16).
+
+6. Device Access (Username + Password)
+	•	MoviesDeviceAccessSection: server address + credentials (same pattern as Music)
+	•	Per-field copy buttons with independent feedback
+	•	QR code for server address
+	•	Password visibility toggle
+
+7. Client Guidance
+	•	Collapsed helper section:
+	  - TV: Jellyfin app (Apple TV, Fire TV, Roku, Android TV)
+	  - iPhone/iPad: Swiftfin
+	  - Android: Findroid
+	  - Desktop: Browser (Jellyfin web UI)
+
+8. Open in Browser
+	•	Jellyfin web UI as secondary action in toolbar menu
+	•	Sign Out option for custom accounts
 
 ⸻
 
 ⚠️ Product Constraints
 	•	DO: focus on streaming experience, preserve backend abstraction, reuse Books + Music UI patterns
-	•	DO NOT: expose transcoding settings, expose server admin UI as primary flow, rebuild media playback UI yet
+	•	DO NOT: expose transcoding settings, expose server admin UI as primary flow, rebuild media playback UI
+
+⸻
+
+🔑 Key Differences from Books + Music
+
+	•	Setup wizard: Multi-step inline progressive form (not ConnectSheet modal)
+	  — Jellyfin requires language → user → library → metadata config on first run
+	  — Haven drives this via API, user only picks folder + content type
+	•	Scan duration: Minutes to hours (metadata + artwork from TMDb/TVDb)
+	  — Longer polling timeouts, "this may take a while" messaging
+	•	Library path: Changeable via API after initial setup (like Kavita, unlike Navidrome)
+	•	No content organization: Jellyfin handles messy folder structures (no LibraryOrganizer needed)
+	•	Auth header: X-Emby-Token (not Bearer), different from Kavita/Navidrome
+	•	Self-contained binary: No .NET dependency, no working directory workaround, no stripFirstDirectory
 
 ⸻
 
 ✅ Acceptance Criteria
 	•	User can add movies folder, see metadata populate, stream to TV/phone in < 3 minutes
 	•	No manual backend setup required
+	•	Setup wizard completes with exactly 2 user decisions (folder + content type)
+	•	Zero Jellyfin-specific terms in MoviesHomeView (uses any MoviesFacade only)
 
 ⸻
 

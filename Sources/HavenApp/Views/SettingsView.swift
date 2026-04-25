@@ -102,6 +102,15 @@ struct SettingsView: View {
                 )
             }
 
+            if let moviesFacade = moviesFacade {
+                capabilityLibrarySection(
+                    title: "Movies Library",
+                    facade: moviesFacade,
+                    icon: "film",
+                    libraryLabel: "movie library"
+                )
+            }
+
             Section("Advanced") {
                 Toggle("Show Internal Details", isOn: $settings.showInternalDetails)
                 LabeledContent("Logs") {
@@ -152,6 +161,11 @@ struct SettingsView: View {
     /// Returns the Music facade if installed.
     private var musicFacade: (any MusicFacade)? {
         serviceManager.facade(for: "haven.capability.navidrome") as? any MusicFacade
+    }
+
+    /// Returns the Movies facade if installed.
+    private var moviesFacade: (any MoviesFacade)? {
+        serviceManager.facade(for: "haven.capability.jellyfin") as? any MoviesFacade
     }
 
     private func capabilityLibrarySection(

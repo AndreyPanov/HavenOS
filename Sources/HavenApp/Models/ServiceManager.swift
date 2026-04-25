@@ -131,6 +131,9 @@ package final class ServiceManager {
         adapterRegistry.register(capabilityID: "haven.capability.navidrome") { capID, sm in
             NavidromeMusicFacade(capabilityID: capID, serviceManager: sm)
         }
+        adapterRegistry.register(capabilityID: "haven.capability.jellyfin") { capID, sm in
+            JellyfinMoviesFacade(capabilityID: capID, serviceManager: sm)
+        }
 
         log.info("Initialized with base path: \(basePath.path)")
     }
@@ -236,7 +239,7 @@ package final class ServiceManager {
     /// Remove all UserDefaults keys associated with a facade's credentials.
     private func clearFacadeCredentials(for capabilityID: String) {
         let prefixes = [
-            "haven.kavita.", "haven.navidrome."
+            "haven.kavita.", "haven.navidrome.", "haven.jellyfin."
         ]
         let defaults = UserDefaults.standard
         for prefix in prefixes {
@@ -249,6 +252,7 @@ package final class ServiceManager {
                 "\(prefix)apiKey.\(capabilityID)",
                 "\(prefix)customAccount.\(capabilityID)",
                 "\(prefix)libraryPath.\(capabilityID)",
+                "\(prefix)setupComplete.\(capabilityID)",
             ]
             for key in keys {
                 defaults.removeObject(forKey: key)

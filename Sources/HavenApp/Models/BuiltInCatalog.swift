@@ -11,6 +11,7 @@ enum BuiltInCatalog {
     static let entries: [(Capability, HavenCore.Bundle, [RuntimeUnit])] = [
         kavita,
         navidrome,
+        jellyfin,
     ]
 
     /// Build a SpecRegistry from built-in entries alone.
