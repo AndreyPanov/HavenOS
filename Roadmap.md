@@ -86,9 +86,9 @@ Phase	Focus	Outcome	Status
 14	Music (Navidrome)	Second capability — validate pattern scales	✅ DONE
 14.5	Platform Hardening	Shared protocols, zero downcasts, lifecycle tests	✅ DONE
 15	Movies (Jellyfin)	Third capability — video streaming	✅ DONE
-16	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
-17	Service Updates	Version discovery + safe atomic updates	⬜ Not started
-18	Backup + Recovery	Trust milestone — export/restore	⬜ Not started
+16	Backup & Sync	Trust milestone — capability-aware backup/restore	⬜ Not started
+17	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
+18	Service Updates	Version discovery + safe atomic updates	⬜ Not started
 19	Files	Basic file access (deferred)	⬜ Not started
 
 
@@ -734,7 +734,102 @@ All deliverables implemented:
 
 ⸻
 
-🏠 Phase 16 — Smart Home (Home Assistant)
+💾 Phase 16 — Backup & Sync System
+
+🎯 Goal
+
+Move Haven from "local services manager" to "trusted personal cloud."
+
+Answer the most important long-term user question:
+
+"If my Mac mini dies, do I lose everything?"
+
+→ No — your data, settings, and service state are protected automatically.
+
+This is a capability-aware backup system designed specifically for Haven.
+
+Think: Time Machine for your personal cloud — not a manual sysadmin backup workflow.
+
+⸻
+
+🔧 Deliverables
+
+1. Backup Settings UI
+	•	Dedicated Backup section in Settings
+	•	Backup destination via macOS-native folder picker only
+	•	Supported: External Drive, NAS Folder, Mounted Network Share (SMB/NFS), Custom Path
+	•	No terminal setup, no manual scripting
+
+2. Per-Capability Backup Mapping
+	•	User sees backup by capability, not by system folders
+	•	Example: Books → /Backups/Books, Music → /Backups/Music, Movies → /Backups/Movies
+	•	Each capability section appears only when that capability is installed — no empty/placeholder rows
+	•	Haven manages the real filesystem details internally
+
+3. Backup Schedule
+	•	Options: Daily, Every 3 Days, Weekly, Manual Only
+	•	Future extension: backup after major changes (large scan, new import, config changes)
+
+4. Capability-Aware Backup Scope
+	•	BACK UP: user content (books, music, movies, smart home configs), service state (config files, managed credentials, metadata databases, indexes, library state, user preferences, automation settings)
+	•	DO NOT BACK UP: binaries, downloaded artifacts, temporary caches, generated runtime files, re-installable dependencies — those are recreated automatically
+	•	This is the core product differentiator
+
+5. Restore Flow
+	•	"Restore from Backup" — simple guided flow:
+	  Choose backup location → Haven detects available capabilities → Select what to restore → Done
+	•	No manual recovery steps, no reading documentation
+	•	Must feel like: "Move my personal cloud to a new machine"
+
+6. Backup Health Visibility
+	•	Clear backup status always visible: last backup date, status (Healthy/Warning/Failed), destination
+	•	Users need confidence, not hidden background jobs
+
+7. Failure Visibility
+	•	If backup fails: show reason + suggested fix
+	•	Example: "Backup hasn't run for 7 days — NAS unavailable"
+	•	Silent backup failure is unacceptable
+
+8. Protection Status (Product Feature)
+	•	Protection Score (e.g. "Protection Status: 82%")
+	•	Per-capability breakdown: Books protected ✅, Music protected ✅, Smart Home not protected ⚠️
+	•	Encourages setup completion, creates strong product experience
+
+9. Future Extension — Snapshot Recovery (not MVP)
+	•	Last 7 days, accidental deletion rollback, previous-state recovery
+	•	Versioned restore — not required for v1
+
+⸻
+
+⚠️ Product Constraints
+	•	DO: capability-aware backup, user-facing language, simple guided restore, visible trust indicators
+	•	DO NOT: expose rsync, expose cron, expose shell scripts, expose Docker backup docs, expose backend-specific backup mechanics
+	•	Never make users think like sysadmins
+
+⸻
+
+✅ Acceptance Criteria
+	•	User can choose a backup destination in < 1 minute
+	•	User can understand what is protected without technical knowledge
+	•	User can restore Books/Music/Movies to a new machine without manual steps
+	•	User can trust Haven as their long-term personal cloud platform
+	•	Backup status is always visible
+	•	Failure is never silent
+
+⸻
+
+🧠 Strategic Impact
+
+Books + Music + Movies prove: Haven can manage personal services.
+Backup proves: Haven can be trusted with them.
+
+This is the trust milestone before Files.
+
+🔥 One-liner: If Install → Start → Use made Haven useful, Backup → Restore → Trust makes Haven permanent.
+
+⸻
+
+🏠 Phase 17 — Smart Home (Home Assistant)
 
 🎯 Goal
 
@@ -770,7 +865,7 @@ Strategic principle: Do NOT build "Home Assistant UI wrapper." Build "Add smart 
 
 ⸻
 
-🔄 Phase 17 — Service Update System
+🔄 Phase 18 — Service Update System
 
 🎯 Goal
 
@@ -788,20 +883,6 @@ Move Haven from "installer" to "trusted long-term manager."
 	•	"Update Available" badges, update progress, recovery path
 
 Critical rule: Never leave partial state.
-
-⸻
-
-💾 Phase 18 — Backup + Recovery Confidence
-
-🎯 Goal
-
-Answer the question: "What happens if my Mac mini dies?" — Trust milestone.
-
-🔧 Deliverables
-	•	Backup visibility
-	•	Export settings
-	•	Restore flow
-	•	Recovery confidence UI
 
 ⸻
 
@@ -836,12 +917,13 @@ Files	File Browser	HTTP	⬜ Deferred
 
 Execution Strategy
 
-Books → Music → Movies → Smart Home → Updates → Backup → Files
+Books → Music → Movies → Backup → Smart Home → Updates → Files
 Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
 Music validated: Haven can scale the pattern.
 Movies validated: Haven is a media platform.
+Backup will validate: Haven can be trusted long-term.
 Smart Home will validate: Haven is a home operating system.
 
 ⸻
@@ -859,4 +941,4 @@ private Netflix + Spotify + Kindle + Smart Home
 Install → Start → Use (inside Haven)
 
 ⸻
-UPDATED 25.04.26 (Phase 15 Movies/Jellyfin complete — inline setup wizard, mixed library, ffmpeg auto-install, 28 tests)
+UPDATED 26.04.26 (Phase 16 Backup & Sync added — trust milestone before Files; Smart Home → 17, Updates → 18)
