@@ -4,6 +4,7 @@ import HavenFacade
 enum SidebarItem: Hashable {
     case home
     case capability(String) // capability ID
+    case backup
     case settings
 }
 
@@ -38,6 +39,8 @@ package struct ContentView: View {
                 }
 
                 Section("Preferences") {
+                    Label("Backup", systemImage: "externaldrive")
+                        .tag(SidebarItem.backup)
                     Label("Settings", systemImage: "gearshape")
                         .tag(SidebarItem.settings)
                 }
@@ -52,6 +55,8 @@ package struct ContentView: View {
                     HomeView()
                 case .capability(let id):
                     capabilityView(for: id)
+                case .backup:
+                    BackupView()
                 case .settings:
                     SettingsView()
                 case nil:
@@ -86,19 +91,7 @@ package struct ContentView: View {
 
     /// User-facing tab label — capability type, not backend name.
     private func capabilityLabel(for service: InstalledService) -> String {
-        if serviceManager.hasNativeUI(for: service.id),
-           serviceManager.facade(for: service.id) is any BooksFacade {
-            return "Books"
-        }
-        if serviceManager.hasNativeUI(for: service.id),
-           serviceManager.facade(for: service.id) is any MusicFacade {
-            return "Music"
-        }
-        if serviceManager.hasNativeUI(for: service.id),
-           serviceManager.facade(for: service.id) is any MoviesFacade {
-            return "Movies"
-        }
-        return service.name
+        serviceManager.userFacingName(for: service)
     }
 
     @ViewBuilder

@@ -8,40 +8,70 @@ struct BackupSettingsTests {
     @Test("Default settings are unconfigured with weekly schedule")
     func defaults() {
         let settings = BackupSettings()
-        #expect(settings.destinationPath == nil)
+        #expect(settings.capabilityDestinations.isEmpty)
         #expect(settings.schedule == .weekly)
-        #expect(settings.enabledCapabilities.isEmpty)
         #expect(settings.lastBackupDate == nil)
         #expect(settings.lastBackupResult == nil)
         #expect(!settings.isConfigured)
-        #expect(settings.destinationURL == nil)
+        #expect(settings.configuredCapabilities.isEmpty)
     }
 
-    @Test("isConfigured is true when destination is set")
+    @Test("isConfigured is true when at least one capability has a destination")
     func isConfigured() {
-        let settings = BackupSettings(destinationPath: "/Volumes/Backup/Haven")
+        var settings = BackupSettings()
+        settings.setDestination("/Volumes/NAS/Books", for: "haven.capability.kavita")
         #expect(settings.isConfigured)
-        #expect(settings.destinationURL != nil)
+        #expect(settings.configuredCapabilities.count == 1)
     }
 
-    @Test("destinationURL expands tilde")
+    @Test("destinationURL expands tilde for capability")
     func tildeExpansion() {
-        let settings = BackupSettings(destinationPath: "~/Backups/Haven")
-        let url = settings.destinationURL
+        var settings = BackupSettings()
+        settings.setDestination("~/Backups/Books", for: "haven.capability.kavita")
+        let url = settings.destinationURL(for: "haven.capability.kavita")
         #expect(url != nil)
         #expect(!url!.path.contains("~"))
-        #expect(url!.path.hasSuffix("/Backups/Haven"))
+        #expect(url!.path.hasSuffix("/Backups/Books"))
     }
 
-    @Test("isOverdue returns true when never backed up and schedule is not manual")
+    @Test("destinationURL returns nil for unconfigured capability")
+    func destinationNil() {
+        let settings = BackupSettings()
+        #expect(settings.destinationURL(for: "haven.capability.kavita") == nil)
+    }
+
+    @Test("setDestination and removeDestination work")
+    func setAndRemove() {
+        var settings = BackupSettings()
+        settings.setDestination("/backup/books", for: "haven.capability.kavita")
+        #expect(settings.capabilityDestinations["haven.capability.kavita"] == "/backup/books")
+
+        settings.removeDestination(for: "haven.capability.kavita")
+        #expect(settings.capabilityDestinations["haven.capability.kavita"] == nil)
+        #expect(!settings.isConfigured)
+    }
+
+    @Test("isOverdue returns false when not configured")
+    func overdueNotConfigured() {
+        let settings = BackupSettings(schedule: .daily)
+        #expect(!settings.isOverdue())
+    }
+
+    @Test("isOverdue returns true when configured and never backed up")
     func overdueNeverBackedUp() {
-        let settings = BackupSettings(destinationPath: "/backup", schedule: .daily)
+        let settings = BackupSettings(
+            capabilityDestinations: ["cap": "/backup"],
+            schedule: .daily
+        )
         #expect(settings.isOverdue())
     }
 
     @Test("isOverdue returns false for manual schedule even if never backed up")
     func manualNeverOverdue() {
-        let settings = BackupSettings(destinationPath: "/backup", schedule: .manual)
+        let settings = BackupSettings(
+            capabilityDestinations: ["cap": "/backup"],
+            schedule: .manual
+        )
         #expect(!settings.isOverdue())
     }
 
@@ -49,7 +79,7 @@ struct BackupSettingsTests {
     func overdueDailyBackup() {
         let twoDaysAgo = Date().addingTimeInterval(-2 * 24 * 60 * 60)
         let settings = BackupSettings(
-            destinationPath: "/backup",
+            capabilityDestinations: ["cap": "/backup"],
             schedule: .daily,
             lastBackupDate: twoDaysAgo
         )
@@ -60,7 +90,7 @@ struct BackupSettingsTests {
     func notOverdueDailyBackup() {
         let oneHourAgo = Date().addingTimeInterval(-60 * 60)
         let settings = BackupSettings(
-            destinationPath: "/backup",
+            capabilityDestinations: ["cap": "/backup"],
             schedule: .daily,
             lastBackupDate: oneHourAgo
         )
@@ -71,7 +101,7 @@ struct BackupSettingsTests {
     func overdueEvery3Days() {
         let fourDaysAgo = Date().addingTimeInterval(-4 * 24 * 60 * 60)
         let settings = BackupSettings(
-            destinationPath: "/backup",
+            capabilityDestinations: ["cap": "/backup"],
             schedule: .every3Days,
             lastBackupDate: fourDaysAgo
         )
@@ -82,7 +112,7 @@ struct BackupSettingsTests {
     func notOverdueWeekly() {
         let threeDaysAgo = Date().addingTimeInterval(-3 * 24 * 60 * 60)
         let settings = BackupSettings(
-            destinationPath: "/backup",
+            capabilityDestinations: ["cap": "/backup"],
             schedule: .weekly,
             lastBackupDate: threeDaysAgo
         )
@@ -98,9 +128,11 @@ struct BackupSettingsTests {
     @Test("JSON round-trip preserves all fields")
     func jsonRoundTrip() throws {
         let original = BackupSettings(
-            destinationPath: "/Volumes/NAS/Haven",
+            capabilityDestinations: [
+                "haven.capability.kavita": "/Volumes/NAS/Books",
+                "haven.capability.navidrome": "/Volumes/NAS/Music",
+            ],
             schedule: .every3Days,
-            enabledCapabilities: ["haven.capability.kavita", "haven.capability.navidrome"],
             lastBackupDate: Date(timeIntervalSince1970: 1700000000),
             lastBackupResult: .partial(
                 failedCapabilities: ["haven.capability.jellyfin"],
@@ -136,18 +168,29 @@ struct BackupSettingsTests {
         defer { defaults.removePersistentDomain(forName: "BackupSettingsTest") }
 
         let original = BackupSettings(
-            destinationPath: "/backup",
+            capabilityDestinations: ["haven.capability.kavita": "/backup/books"],
             schedule: .daily,
-            enabledCapabilities: ["haven.capability.kavita"],
             lastBackupDate: Date(timeIntervalSince1970: 1700000000),
             lastBackupResult: .success
         )
         original.save(to: defaults)
 
         let loaded = BackupSettings.load(from: defaults)
-        #expect(loaded.destinationPath == original.destinationPath)
+        #expect(loaded.capabilityDestinations == original.capabilityDestinations)
         #expect(loaded.schedule == original.schedule)
-        #expect(loaded.enabledCapabilities == original.enabledCapabilities)
         #expect(loaded.lastBackupResult == .success)
+    }
+
+    @Test("Multiple capabilities can have different destinations")
+    func multipleDestinations() {
+        var settings = BackupSettings()
+        settings.setDestination("/nas/books", for: "haven.capability.kavita")
+        settings.setDestination("/nas/music", for: "haven.capability.navidrome")
+        settings.setDestination("/nas/movies", for: "haven.capability.jellyfin")
+
+        #expect(settings.configuredCapabilities.count == 3)
+        #expect(settings.destinationURL(for: "haven.capability.kavita")?.path == "/nas/books")
+        #expect(settings.destinationURL(for: "haven.capability.navidrome")?.path == "/nas/music")
+        #expect(settings.destinationURL(for: "haven.capability.jellyfin")?.path == "/nas/movies")
     }
 }

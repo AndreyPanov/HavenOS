@@ -1,4 +1,5 @@
 import SwiftUI
+import HavenBackup
 import os
 
 private let log = Logger(subsystem: "com.haven", category: "Settings")
@@ -35,8 +36,19 @@ package class HavenSettingsModel {
 
     static let defaultCatalogFolder = "~/.haven/Catalog"
 
+    // MARK: - Backup
+
+    /// Backup configuration, persisted in UserDefaults.
+    package var backupSettings: BackupSettings {
+        didSet {
+            backupSettings.save()
+            log.info("Backup settings updated")
+        }
+    }
+
     package init() {
         self.catalogFolder = UserDefaults.standard.string(forKey: "catalogFolderPath")
             ?? Self.defaultCatalogFolder
+        self.backupSettings = BackupSettings.load()
     }
 }

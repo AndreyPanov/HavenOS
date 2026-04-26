@@ -22,6 +22,8 @@ public struct CapabilityProtection: Sendable, Equatable, Identifiable {
     public let displayName: String
     public let isProtected: Bool
     public let lastBackedUp: Date?
+    /// The configured backup destination path for this capability, if any.
+    public let destinationPath: String?
 
     public var id: String { capabilityID }
 
@@ -29,12 +31,14 @@ public struct CapabilityProtection: Sendable, Equatable, Identifiable {
         capabilityID: String,
         displayName: String,
         isProtected: Bool,
-        lastBackedUp: Date?
+        lastBackedUp: Date?,
+        destinationPath: String? = nil
     ) {
         self.capabilityID = capabilityID
         self.displayName = displayName
         self.isProtected = isProtected
         self.lastBackedUp = lastBackedUp
+        self.destinationPath = destinationPath
     }
 }
 
@@ -50,9 +54,6 @@ public struct BackupHealth: Sendable, Equatable {
     /// When the last successful backup completed.
     public let lastBackupDate: Date?
 
-    /// The configured backup destination (display path).
-    public let destination: String?
-
     /// Per-capability protection breakdown.
     public let capabilities: [CapabilityProtection]
 
@@ -60,16 +61,19 @@ public struct BackupHealth: Sendable, Equatable {
     /// Based on the percentage of installed capabilities that have a recent backup.
     public let protectionScore: Int
 
+    /// Number of capabilities with backup configured.
+    public var configuredCount: Int {
+        capabilities.filter { $0.destinationPath != nil }.count
+    }
+
     public init(
         status: BackupStatus,
         lastBackupDate: Date?,
-        destination: String?,
         capabilities: [CapabilityProtection],
         protectionScore: Int
     ) {
         self.status = status
         self.lastBackupDate = lastBackupDate
-        self.destination = destination
         self.capabilities = capabilities
         self.protectionScore = protectionScore
     }
@@ -79,39 +83,33 @@ public struct BackupHealth: Sendable, Equatable {
     /// - Parameters:
     ///   - settings: Current backup settings.
     ///   - installedCapabilities: Tuples of (capabilityID, displayName) for installed services.
-    ///   - manifest: The last backup manifest, if one exists.
+    ///   - manifests: Per-capability manifests read from backup destinations.
     public static func compute(
         settings: BackupSettings,
         installedCapabilities: [(id: String, name: String)],
-        manifest: BackupManifest? = nil
+        manifests: [String: BackupManifest] = [:]
     ) -> BackupHealth {
+        // Build per-capability protection
+        let capProtections = installedCapabilities.map { cap in
+            let destPath = settings.capabilityDestinations[cap.id]
+            let manifest = manifests[cap.id]
+            let backedUp = manifest?.capabilities.first?.status == .complete
+
+            return CapabilityProtection(
+                capabilityID: cap.id,
+                displayName: cap.name,
+                isProtected: backedUp,
+                lastBackedUp: backedUp ? manifest?.createdAt : nil,
+                destinationPath: destPath
+            )
+        }
+
         guard settings.isConfigured else {
             return BackupHealth(
                 status: .notConfigured,
                 lastBackupDate: nil,
-                destination: nil,
-                capabilities: installedCapabilities.map {
-                    CapabilityProtection(
-                        capabilityID: $0.id,
-                        displayName: $0.name,
-                        isProtected: false,
-                        lastBackedUp: nil
-                    )
-                },
+                capabilities: capProtections,
                 protectionScore: 0
-            )
-        }
-
-        // Build per-capability protection from manifest
-        let backedUpIDs = Set(manifest?.capabilities.filter { $0.status == .complete }.map(\.capabilityID) ?? [])
-        let backupDate = manifest?.createdAt ?? settings.lastBackupDate
-
-        let capProtections = installedCapabilities.map { cap in
-            CapabilityProtection(
-                capabilityID: cap.id,
-                displayName: cap.name,
-                isProtected: backedUpIDs.contains(cap.id),
-                lastBackedUp: backedUpIDs.contains(cap.id) ? backupDate : nil
             )
         }
 
@@ -121,7 +119,7 @@ public struct BackupHealth: Sendable, Equatable {
 
         // Determine overall status
         let status: BackupStatus
-        if settings.lastBackupDate == nil && backupDate == nil {
+        if settings.lastBackupDate == nil {
             status = .neverRun
         } else if let result = settings.lastBackupResult {
             switch result {
@@ -144,8 +142,7 @@ public struct BackupHealth: Sendable, Equatable {
 
         return BackupHealth(
             status: status,
-            lastBackupDate: backupDate ?? settings.lastBackupDate,
-            destination: settings.destinationPath,
+            lastBackupDate: settings.lastBackupDate,
             capabilities: capProtections,
             protectionScore: score
         )

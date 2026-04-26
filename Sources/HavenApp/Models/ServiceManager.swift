@@ -5,6 +5,7 @@ import HavenExecutor
 import HavenRuntimes
 import HavenLaunchd
 import HavenInstaller
+import HavenBackup
 import SwiftUI
 import Synchronization
 import os
@@ -107,6 +108,152 @@ package final class ServiceManager {
         havenState.services[capabilityID]
     }
 
+    /// User-facing name for a service (e.g. "Books" instead of "Kavita").
+    func userFacingName(for service: InstalledService) -> String {
+        if let f = facade(for: service.id) {
+            if f is any BooksFacade { return "Books" }
+            if f is any MusicFacade { return "Music" }
+            if f is any MoviesFacade { return "Movies" }
+        }
+        return service.name
+    }
+
+    // MARK: - Backup
+
+    /// Current backup health, recomputed on refresh.
+    private(set) var backupHealth: BackupHealth = BackupHealth(
+        status: .notConfigured, lastBackupDate: nil,
+        capabilities: [], protectionScore: 0
+    )
+
+    /// Whether a backup is currently in progress.
+    private(set) var isBackingUp = false
+
+    /// Status message during backup.
+    private(set) var backupStatus: String?
+
+    private let backupEngine = BackupEngine()
+
+    /// Perform a backup of all configured capabilities.
+    func performBackup(settings: BackupSettings) async {
+        guard settings.isConfigured else { return }
+
+        isBackingUp = true
+        backupStatus = "Preparing backup…"
+
+        let scopes = BackupScope().scopeAll(
+            services: havenState.services,
+            bundles: registry?.bundlesByID ?? [:]
+        )
+
+        // Only back up capabilities that have a destination configured
+        let configuredScopes = scopes.filter {
+            settings.capabilityDestinations[$0.capabilityID] != nil
+        }
+
+        let destinations = Dictionary(uniqueKeysWithValues:
+            settings.capabilityDestinations.compactMap { (capID, path) -> (String, URL)? in
+                let expanded = NSString(string: path).expandingTildeInPath
+                return (capID, URL(fileURLWithPath: expanded))
+            }
+        )
+
+        let displayNames = Dictionary(
+            uniqueKeysWithValues: installedServices.map { ($0.id, $0.name) }
+        )
+
+        let credentialKeys = BackupEngine.discoverCredentialKeys()
+        let states = havenState.services
+        let engine = self.backupEngine
+        let statusBox = Mutex<String?>(nil)
+        let resultBox = Mutex<Result<[CapabilityBackupEntry], Error>?>(nil)
+
+        Task.detached {
+            do {
+                let entries = try engine.backupAll(
+                    scopes: configuredScopes,
+                    destinations: destinations,
+                    serviceStates: states,
+                    credentialKeys: credentialKeys,
+                    displayNames: displayNames,
+                    progress: { msg in statusBox.withLock { $0 = msg } }
+                )
+                resultBox.withLock { $0 = .success(entries) }
+            } catch {
+                resultBox.withLock { $0 = .failure(error) }
+            }
+        }
+
+        // Poll for progress
+        while resultBox.withLock({ $0 }) == nil {
+            if let msg = statusBox.withLock({ $0 }) {
+                backupStatus = msg
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        // Handle result
+        switch resultBox.withLock({ $0 })! {
+        case .success(let entries):
+            log.info("Backup complete: \(entries.count) capabilities")
+            let allComplete = entries.allSatisfy { $0.status == .complete }
+            let failedIDs = entries.filter { $0.status != .complete }.map(\.capabilityID)
+
+            if allComplete {
+                backupStatus = "Backup complete"
+            } else {
+                backupStatus = "Backup completed with issues"
+                lastError = "Some capabilities could not be fully backed up"
+            }
+
+            var updated = settings
+            updated.lastBackupDate = Date()
+            if allComplete {
+                updated.lastBackupResult = .success
+            } else {
+                updated.lastBackupResult = .partial(
+                    failedCapabilities: failedIDs,
+                    reason: "\(failedIDs.count) capability(s) had issues"
+                )
+            }
+            updated.save()
+            refreshBackupHealth(settings: updated)
+
+        case .failure(let error):
+            log.error("Backup failed: \(error.localizedDescription)")
+            backupStatus = nil
+            lastError = error.localizedDescription
+
+            var updated = settings
+            updated.lastBackupResult = .failed(reason: error.localizedDescription)
+            updated.save()
+            refreshBackupHealth(settings: updated)
+        }
+
+        isBackingUp = false
+    }
+
+    /// Recompute backup health from current state.
+    func refreshBackupHealth(settings: BackupSettings) {
+        let installedCaps = installedServices.map { (id: $0.id, name: userFacingName(for: $0)) }
+
+        // Read manifests from each capability's backup destination
+        var manifests: [String: BackupManifest] = [:]
+        for (capID, path) in settings.capabilityDestinations {
+            let expanded = NSString(string: path).expandingTildeInPath
+            let url = URL(fileURLWithPath: expanded)
+            if let manifest = try? backupEngine.readManifest(from: url) {
+                manifests[capID] = manifest
+            }
+        }
+
+        backupHealth = BackupHealth.compute(
+            settings: settings,
+            installedCapabilities: installedCaps,
+            manifests: manifests
+        )
+    }
+
     // MARK: - Init
 
     package init(basePath: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".haven")) {
@@ -141,11 +288,12 @@ package final class ServiceManager {
     // MARK: - Loading
 
     /// Load catalog from the given URL and installed state. Call once on app launch.
-    package func load(catalogURL: URL) {
+    package func load(catalogURL: URL, backupSettings: BackupSettings = .load()) {
         ensureCatalogFolderExists(at: catalogURL)
         loadCatalog(from: catalogURL)
         loadInstalledState()
         rebuildViewModels()
+        refreshBackupHealth(settings: backupSettings)
     }
 
     /// Reload just the catalog from a (possibly changed) folder URL.

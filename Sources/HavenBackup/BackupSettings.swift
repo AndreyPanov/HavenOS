@@ -12,18 +12,17 @@ public enum BackupSchedule: String, Codable, Sendable, CaseIterable {
 ///
 /// Stored as JSON in UserDefaults. Controls where backups go,
 /// how often they run, and which capabilities are included.
+///
+/// Each capability has its own backup destination folder, chosen by the user.
+/// For example: Books → /Volumes/NAS/Books, Music → /Volumes/NAS/Music.
 public struct BackupSettings: Codable, Equatable, Sendable {
 
-    /// Absolute path to the backup destination folder.
-    /// Nil means backup has not been configured yet.
-    public var destinationPath: String?
+    /// Per-capability backup destination paths (capability ID → absolute path).
+    /// A capability appears here only after the user sets its backup folder.
+    public var capabilityDestinations: [String: String]
 
     /// How often to run automatic backups.
     public var schedule: BackupSchedule
-
-    /// Capability IDs that are included in backup.
-    /// Empty means "back up everything installed."
-    public var enabledCapabilities: Set<String>
 
     /// When the last successful backup completed.
     public var lastBackupDate: Date?
@@ -32,33 +31,47 @@ public struct BackupSettings: Codable, Equatable, Sendable {
     public var lastBackupResult: BackupResult?
 
     public init(
-        destinationPath: String? = nil,
+        capabilityDestinations: [String: String] = [:],
         schedule: BackupSchedule = .weekly,
-        enabledCapabilities: Set<String> = [],
         lastBackupDate: Date? = nil,
         lastBackupResult: BackupResult? = nil
     ) {
-        self.destinationPath = destinationPath
+        self.capabilityDestinations = capabilityDestinations
         self.schedule = schedule
-        self.enabledCapabilities = enabledCapabilities
         self.lastBackupDate = lastBackupDate
         self.lastBackupResult = lastBackupResult
     }
 
-    /// Whether backup has been configured with a valid destination.
+    /// Whether at least one capability has a backup destination configured.
     public var isConfigured: Bool {
-        destinationPath != nil
+        !capabilityDestinations.isEmpty
     }
 
-    /// The destination as a file URL, or nil if not configured.
-    public var destinationURL: URL? {
-        guard let path = destinationPath else { return nil }
+    /// The set of capability IDs that have backup configured.
+    public var configuredCapabilities: Set<String> {
+        Set(capabilityDestinations.keys)
+    }
+
+    /// Get the destination URL for a specific capability, or nil.
+    public func destinationURL(for capabilityID: String) -> URL? {
+        guard let path = capabilityDestinations[capabilityID] else { return nil }
         let expanded = NSString(string: path).expandingTildeInPath
         return URL(fileURLWithPath: expanded)
     }
 
+    /// Set the backup destination for a capability.
+    public mutating func setDestination(_ path: String, for capabilityID: String) {
+        capabilityDestinations[capabilityID] = path
+    }
+
+    /// Remove the backup destination for a capability.
+    public mutating func removeDestination(for capabilityID: String) {
+        capabilityDestinations.removeValue(forKey: capabilityID)
+    }
+
     /// Whether a backup is due based on schedule and last backup date.
     public func isOverdue(now: Date = Date()) -> Bool {
+        guard isConfigured else { return false }
         guard schedule != .manual else { return false }
         guard let last = lastBackupDate else { return true }
 
