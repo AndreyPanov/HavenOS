@@ -87,6 +87,14 @@ let package = Package(
             path: "Sources/HavenInstaller"
         ),
 
+        // MARK: - Backup
+
+        .target(
+            name: "HavenBackup",
+            dependencies: ["HavenCore"],
+            path: "Sources/HavenBackup"
+        ),
+
         // MARK: - macOS App
 
         /// All app logic lives here so it is importable by tests.
@@ -99,6 +107,7 @@ let package = Package(
                 "HavenLaunchd",
                 "HavenRuntimes",
                 "HavenInstaller",
+                "HavenBackup",
             ],
             path: "Sources/HavenApp",
             exclude: ["Info.plist"]
@@ -148,6 +157,11 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "Tests/HavenCLITests"
+        ),
+        .testTarget(
+            name: "HavenBackupTests",
+            dependencies: ["HavenBackup", "HavenCore"],
+            path: "Tests/HavenBackupTests"
         ),
         .testTarget(
             name: "HavenAppTests",

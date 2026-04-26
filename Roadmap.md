@@ -829,6 +829,52 @@ This is the trust milestone before Files.
 
 ⸻
 
+🛠️ Implementation Sub-phases
+
+16.1 — Backup Scope (Foundation)
+	•	New module: HavenBackup (depends on HavenCore only)
+	•	BackupScope: reads StoredServiceState + Bundle.storage → produces paths to back up per capability
+	•	BackupManifest: Codable struct describing backup contents (version, date, per-capability entries)
+	•	BackupSettings: Codable config (destination, schedule, enabled capabilities, last backup info)
+	•	BackupHealth: value type (status, protection score, per-capability protection)
+	•	Tests: scope produces correct paths, manifest round-trips, settings persist
+
+16.2 — Backup Engine (Core Logic)
+	•	BackupEngine: performs backup (copy dirs → export credentials → write manifest) and restore
+	•	Full copy for v1 (not incremental)
+	•	Credentials: export UserDefaults keys as credentials.json sidecar
+	•	services.json backed up as-is
+	•	Atomic per-capability: finish one before starting next; partial backup is valid
+	•	Tests: backup → restore round-trip with temp dirs
+
+16.3 — Backup Scheduler
+	•	In-process Timer (checks on launch + hourly)
+	•	Triggers BackupEngine.backup() in background Task when overdue
+	•	Tests: fires when overdue, skips when not due, manual-only never auto-fires
+
+16.4 — Settings UI
+	•	BackupSettingsSection: destination picker, schedule picker, per-capability toggles, health summary, "Back Up Now"
+	•	Integrated into SettingsView
+	•	BackupSettings persisted via HavenSettingsModel
+
+16.5 — Protection Status
+	•	ProtectionStatusView: circular progress (0-100%), per-capability rows
+	•	BackupHealthBanner: compact banner for HomeView (warnings/failures only)
+
+16.6 — Restore Flow
+	•	RestoreFlowView: multi-step sheet (choose folder → detect capabilities → select → progress → done)
+	•	Restore does NOT auto-install (no artifact download) — restores state only
+	•	Re-adding capability finds existing config/data, skips setup wizard
+
+16.7 — Failure Visibility
+	•	Error categorization: destination unreachable, disk full, permission denied, partial failure
+	•	Overdue detection based on schedule
+	•	Orange/red warnings with reason + suggested fix
+
+Not in v1: incremental backups, snapshot recovery, launchd scheduling, encryption, cloud destinations
+
+⸻
+
 🏠 Phase 17 — Smart Home (Home Assistant)
 
 🎯 Goal
