@@ -875,41 +875,6 @@ Not in v1: incremental backups, snapshot recovery, launchd scheduling, encryptio
 
 ⸻
 
-🏠 Phase 17 — Smart Home (Home Assistant)
-
-🎯 Goal
-
-Expand Haven from "media operating system" to "home operating system."
-Create simple private smart home setup without cloud dependency.
-
-Strategic principle: Do NOT build "Home Assistant UI wrapper." Build "Add smart home to your home." Simple, guided, native.
-
-⸻
-
-🔧 Deliverables
-
-1. SmartHomeFacade
-	•	Core supported concepts only: Lights, Sensors, Presence, Scenes, Remote access
-	•	Not full Home Assistant parity
-
-2. HomeAssistantAdapter
-	•	Install + runtime, onboarding, device discovery, secure local access, remote access guidance
-
-3. Guided Onboarding UX
-	•	Device-first: "Add your first device" → Choose: Lights / Sensors / Cameras / Presence
-	•	Not dashboard-first
-
-4. Scene-first UX
-	•	Examples: Good Morning, Away Mode, Night Mode
-	•	Focus on outcomes, not entities
-
-⸻
-
-⚠️ Scope Control
-	•	DO NOT: expose HA complexity, expose YAML, expose integrations list explosion
-	•	Keep v1 intentionally narrow
-
-⸻
 
 🔄 Phase 18 — Service Update System
 
@@ -958,19 +923,17 @@ Capability	Engine	Protocol	Status
 Books	Kavita	OPDS	✅ Complete
 Music	Navidrome	Subsonic	✅ Complete
 Movies	Jellyfin	DLNA / HTTP	✅ Complete
-Smart Home	Home Assistant	Local / Zigbee	⬜ Planned
 Files	File Browser	HTTP	⬜ Deferred
 
 Execution Strategy
 
-Books → Music → Movies → Backup → Smart Home → Updates → Files
+Books → Music → Movies → Backup → Updates → Files
 Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
 Music validated: Haven can scale the pattern.
 Movies validated: Haven is a media platform.
 Backup will validate: Haven can be trusted long-term.
-Smart Home will validate: Haven is a home operating system.
 
 ⸻
 
@@ -978,7 +941,7 @@ Smart Home will validate: Haven is a home operating system.
 
 Haven is becoming:
 
-private Netflix + Spotify + Kindle + Smart Home
+private Netflix + Spotify + Kindle
 
 —not a service manager.
 
@@ -987,4 +950,4 @@ private Netflix + Spotify + Kindle + Smart Home
 Install → Start → Use (inside Haven)
 
 ⸻
-UPDATED 26.04.26 (Phase 16 Backup & Sync added — trust milestone before Files; Smart Home → 17, Updates → 18)
+UPDATED 26.04.26 (Phase 16 Backup & Sync added — trust milestone before Files; Updates → 18)
