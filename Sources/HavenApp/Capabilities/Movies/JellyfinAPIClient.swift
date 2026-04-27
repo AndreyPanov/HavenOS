@@ -176,16 +176,31 @@ package struct JellyfinAPIClient: Sendable {
         return try JSONDecoder().decode([VirtualFolder].self, from: data)
     }
 
-    /// Update the paths for an existing library.
-    func updateLibraryPath(libraryName: String, newPath: String, token: String) async throws {
-        var url = baseURL.appending(path: "/Library/VirtualFolders/Paths/Update")
+    /// Add a media path to an existing library.
+    func addMediaPath(libraryName: String, path: String, token: String) async throws {
+        var url = baseURL.appending(path: "/Library/VirtualFolders/Paths")
         url.append(queryItems: [URLQueryItem(name: "refreshLibrary", value: "true")])
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
-        let body: [String: String] = ["Name": libraryName, "NewPath": newPath]
-        request.httpBody = try JSONEncoder().encode(body)
+        let body: [String: Any] = ["Name": libraryName, "Path": path]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data, allowNoContent: true)
+    }
+
+    /// Remove a media path from an existing library.
+    func removeMediaPath(libraryName: String, path: String, token: String) async throws {
+        var url = baseURL.appending(path: "/Library/VirtualFolders/Paths")
+        url.append(queryItems: [
+            URLQueryItem(name: "refreshLibrary", value: "true"),
+            URLQueryItem(name: "name", value: libraryName),
+            URLQueryItem(name: "path", value: path),
+        ])
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
         let (data, response) = try await URLSession.shared.data(for: request)
         try checkHTTPStatus(response, data: data, allowNoContent: true)
     }

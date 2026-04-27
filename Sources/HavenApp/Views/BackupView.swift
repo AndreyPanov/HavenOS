@@ -75,42 +75,49 @@ struct BackupView: View {
     private var backupHealthView: some View {
         let health = serviceManager.backupHealth
 
-        switch health.status {
-        case .notConfigured:
-            Label("Choose a backup folder for each capability to protect your data",
-                  systemImage: "externaldrive.badge.questionmark")
+        if serviceManager.isBackingUp {
+            Label("Backup in progress\u{2026}",
+                  systemImage: "arrow.triangle.2.circlepath")
                 .font(.callout)
-                .foregroundStyle(.secondary)
-
-        case .neverRun:
-            Label("Backup configured but hasn't run yet",
-                  systemImage: "clock.badge.questionmark")
-                .font(.callout)
-                .foregroundStyle(.orange)
-
-        case .healthy:
-            if let date = health.lastBackupDate {
-                Label("Last backup: \(date.formatted(.relative(presentation: .named)))",
-                      systemImage: "checkmark.circle")
+                .foregroundStyle(.blue)
+        } else {
+            switch health.status {
+            case .notConfigured:
+                Label("Choose a backup folder for each capability to protect your data",
+                      systemImage: "externaldrive.badge.questionmark")
                     .font(.callout)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(.secondary)
+
+            case .neverRun:
+                Label("Backup configured but hasn't run yet",
+                      systemImage: "clock.badge.questionmark")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+
+            case .healthy:
+                if let date = health.lastBackupDate {
+                    Label("Last backup: \(date.formatted(.relative(presentation: .named)))",
+                          systemImage: "checkmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(.green)
+                }
+
+            case .overdue(let days):
+                Label("Backup overdue by \(days) day\(days == 1 ? "" : "s")",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+
+            case .warning(let message):
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+
+            case .failed(let message):
+                Label(message, systemImage: "xmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.red)
             }
-
-        case .overdue(let days):
-            Label("Backup overdue by \(days) day\(days == 1 ? "" : "s")",
-                  systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.orange)
-
-        case .warning(let message):
-            Label(message, systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.orange)
-
-        case .failed(let message):
-            Label(message, systemImage: "xmark.circle")
-                .font(.callout)
-                .foregroundStyle(.red)
         }
 
         if !serviceManager.installedServices.isEmpty {

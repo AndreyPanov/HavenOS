@@ -211,6 +211,12 @@ struct MusicHomeView: View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
 
+            RestoreFromBackupSection(
+                capabilityID: facade.capabilityID,
+                libraryPath: facade.library?.libraryPath,
+                label: "Music"
+            )
+
             centeredCard {
                 Image(systemName: "music.note.house")
                     .font(.system(size: 48))

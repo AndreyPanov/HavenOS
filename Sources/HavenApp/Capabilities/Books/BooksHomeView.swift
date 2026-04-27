@@ -223,6 +223,12 @@ struct BooksHomeView: View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
 
+            RestoreFromBackupSection(
+                capabilityID: facade.capabilityID,
+                libraryPath: facade.library?.libraryPath,
+                label: "Books"
+            )
+
             centeredCard {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 48))

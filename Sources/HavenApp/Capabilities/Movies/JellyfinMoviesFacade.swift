@@ -155,11 +155,6 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             log.info("setLibraryPath: created directory at \(expandedPath)")
         }
 
-        // List folder contents for debugging
-        if let contents = try? fm.contentsOfDirectory(atPath: expandedPath) {
-            log.info("setLibraryPath: folder has \(contents.count) items: \(contents.prefix(10).joined(separator: ", "))")
-        }
-
         // Remove existing libraries first (avoids duplicates on folder change)
         do {
             let existing = try await client.getLibraries(token: token)
@@ -181,13 +176,80 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             throw error
         }
 
-        UserDefaults.standard.set(path, forKey: libraryPathKey)
-        serviceManager?.updateResolvedSetting(for: capabilityID, key: "movies_path", value: path)
+        saveLibraryPaths([path])
         setupPhase = .scanning(progress: nil)
         updateLibrary()
 
         // Start polling for scan completion
         startScanPolling()
+    }
+
+    package func addLibraryPath(_ path: String) async throws {
+        guard let client = apiClient, let token = authToken else {
+            throw FacadeError.adapterError("Not connected")
+        }
+
+        var paths = resolvedLibraryPaths
+        let expandedPath = (path as NSString).expandingTildeInPath
+
+        // Don't add duplicates
+        guard !paths.contains(path) && !paths.contains(expandedPath) else { return }
+
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: expandedPath) {
+            try fm.createDirectory(atPath: expandedPath, withIntermediateDirectories: true)
+        }
+
+        // Find the existing library name to add the path to
+        let libraryName = try await findLibraryName(client: client, token: token)
+        try await client.addMediaPath(libraryName: libraryName, path: expandedPath, token: token)
+        log.info("addLibraryPath: added \(expandedPath) to '\(libraryName)'")
+
+        // Verify the path was actually added
+        let libraries = try await client.getLibraries(token: token)
+        for lib in libraries {
+            log.info("addLibraryPath: library '\(lib.Name)' locations: \(lib.Locations ?? [])")
+        }
+
+        // Explicitly trigger a full library refresh
+        try await client.refreshLibrary(token: token)
+        log.info("addLibraryPath: triggered library refresh")
+
+        paths.append(path)
+        saveLibraryPaths(paths)
+        updateLibrary()
+        startScanPolling()
+    }
+
+    package func removeLibraryPath(_ path: String) async throws {
+        guard let client = apiClient, let token = authToken else {
+            throw FacadeError.adapterError("Not connected")
+        }
+
+        var paths = resolvedLibraryPaths
+        let expandedPath = (path as NSString).expandingTildeInPath
+        paths.removeAll { $0 == path || ($0 as NSString).expandingTildeInPath == expandedPath }
+
+        guard !paths.isEmpty else {
+            throw FacadeError.adapterError("Cannot remove the last folder")
+        }
+
+        let libraryName = try await findLibraryName(client: client, token: token)
+        try await client.removeMediaPath(libraryName: libraryName, path: expandedPath, token: token)
+        log.info("removeLibraryPath: removed \(expandedPath) from '\(libraryName)'")
+
+        saveLibraryPaths(paths)
+        updateLibrary()
+        startScanPolling()
+    }
+
+    /// Find the name of the existing Jellyfin library (usually "Media").
+    private func findLibraryName(client: JellyfinAPIClient, token: String) async throws -> String {
+        let libraries = try await client.getLibraries(token: token)
+        guard let first = libraries.first else {
+            throw FacadeError.adapterError("No library found — set a library path first")
+        }
+        return first.Name
     }
 
     package func rescan() async throws {
@@ -627,7 +689,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         }
 
         library = MoviesLibrary(
-            libraryPath: resolvedLibraryPath,
+            libraryPaths: resolvedLibraryPaths,
             scanStatus: currentScanStatus,
             movieCount: movieCount,
             showCount: showCount
@@ -687,7 +749,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
     private func updateLibrary() {
         library = MoviesLibrary(
-            libraryPath: resolvedLibraryPath,
+            libraryPaths: resolvedLibraryPaths,
             scanStatus: currentScanStatus,
             movieCount: movieCount,
             showCount: showCount
@@ -703,13 +765,33 @@ package final class JellyfinMoviesFacade: MoviesFacade {
     private var managedPasswordKey: String { "haven.jellyfin.managedPass.\(capabilityID)" }
     private var customAccountKey: String { "haven.jellyfin.customAccount.\(capabilityID)" }
     private var libraryPathKey: String { "haven.jellyfin.libraryPath.\(capabilityID)" }
+    private var libraryPathsKey: String { "haven.jellyfin.libraryPaths.\(capabilityID)" }
 
-    private var resolvedLibraryPath: String {
-        if let override = UserDefaults.standard.string(forKey: libraryPathKey) {
-            return override
+    private var resolvedLibraryPaths: [String] {
+        if let saved = UserDefaults.standard.stringArray(forKey: libraryPathsKey), !saved.isEmpty {
+            return saved
+        }
+        // Backward compat: single path from old key or resolvedSettings
+        if let single = UserDefaults.standard.string(forKey: libraryPathKey) {
+            return [single]
         }
         let stored = serviceManager?.storedState(for: capabilityID)
-        return stored?.resolvedSettings["movies_path"] ?? "~/Movies"
+        if let path = stored?.resolvedSettings["movies_path"] {
+            return [path]
+        }
+        return ["~/Movies"]
+    }
+
+    private func saveLibraryPaths(_ paths: [String]) {
+        UserDefaults.standard.set(paths, forKey: libraryPathsKey)
+        // Also keep movies_path for backup scope (primary path)
+        if let first = paths.first {
+            UserDefaults.standard.set(first, forKey: libraryPathKey)
+            serviceManager?.updateResolvedSetting(for: capabilityID, key: "movies_path", value: first)
+        }
+        // Store all paths semicolon-separated for backup scope
+        let joined = paths.joined(separator: ";")
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "movies_paths", value: joined)
     }
 
     private func saveCredentials(_ token: String, username: String) {
@@ -729,5 +811,6 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         UserDefaults.standard.removeObject(forKey: managedPasswordKey)
         UserDefaults.standard.removeObject(forKey: customAccountKey)
         UserDefaults.standard.removeObject(forKey: libraryPathKey)
+        UserDefaults.standard.removeObject(forKey: libraryPathsKey)
     }
 }

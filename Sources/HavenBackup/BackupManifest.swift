@@ -21,26 +21,16 @@ public struct BackupManifest: Codable, Equatable, Sendable {
     /// Per-capability backup entries.
     public let capabilities: [CapabilityBackupEntry]
 
-    /// Whether credentials were included in this backup.
-    public let includesCredentials: Bool
-
-    /// Whether the Haven state file (services.json) was included.
-    public let includesState: Bool
-
     public init(
         version: Int = BackupManifest.currentVersion,
         createdAt: Date = Date(),
         machineName: String = ProcessInfo.processInfo.hostName,
-        capabilities: [CapabilityBackupEntry],
-        includesCredentials: Bool = true,
-        includesState: Bool = true
+        capabilities: [CapabilityBackupEntry]
     ) {
         self.version = version
         self.createdAt = createdAt
         self.machineName = machineName
         self.capabilities = capabilities
-        self.includesCredentials = includesCredentials
-        self.includesState = includesState
     }
 
     /// The manifest file name within the backup root.
@@ -59,10 +49,6 @@ public struct CapabilityBackupEntry: Codable, Equatable, Sendable {
     /// The bundle ID that was installed.
     public let bundleID: String
 
-    /// Relative paths within the backup that contain this capability's data.
-    /// e.g. ["Books/data", "Books/config"]
-    public let relativePaths: [String]
-
     /// Total size in bytes of all backed-up files for this capability.
     public let totalBytes: UInt64
 
@@ -73,14 +59,12 @@ public struct CapabilityBackupEntry: Codable, Equatable, Sendable {
         capabilityID: String,
         displayName: String,
         bundleID: String,
-        relativePaths: [String],
         totalBytes: UInt64,
         status: EntryStatus = .complete
     ) {
         self.capabilityID = capabilityID
         self.displayName = displayName
         self.bundleID = bundleID
-        self.relativePaths = relativePaths
         self.totalBytes = totalBytes
         self.status = status
     }

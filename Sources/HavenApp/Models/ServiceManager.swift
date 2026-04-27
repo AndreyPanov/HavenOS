@@ -144,7 +144,7 @@ package final class ServiceManager {
 
     private let backupEngine = BackupEngine()
 
-    /// Perform a backup of all configured capabilities.
+    /// Perform a backup of all configured capabilities (media files only).
     func performBackup(settings: BackupSettings) async {
         guard settings.isConfigured else { return }
 
@@ -156,7 +156,6 @@ package final class ServiceManager {
             bundles: registry?.bundlesByID ?? [:]
         )
 
-        // Only back up capabilities that have a destination configured
         let configuredScopes = scopes.filter {
             settings.capabilityDestinations[$0.capabilityID] != nil
         }
@@ -172,8 +171,6 @@ package final class ServiceManager {
             uniqueKeysWithValues: installedServices.map { ($0.id, userFacingName(for: $0)) }
         )
 
-        let credentialKeys = BackupEngine.discoverCredentialKeys()
-        let states = havenState.services
         let engine = self.backupEngine
         let statusBox = Mutex<String?>(nil)
         let resultBox = Mutex<Result<[CapabilityBackupEntry], Error>?>(nil)
@@ -183,8 +180,6 @@ package final class ServiceManager {
                 let entries = try engine.backupAll(
                     scopes: configuredScopes,
                     destinations: destinations,
-                    serviceStates: states,
-                    credentialKeys: credentialKeys,
                     displayNames: displayNames,
                     progress: { msg in statusBox.withLock { $0 = msg } }
                 )
@@ -241,6 +236,25 @@ package final class ServiceManager {
         }
 
         isBackingUp = false
+    }
+
+    /// Restore media files from a backup to a capability's library folder.
+    func restoreFiles(
+        for capabilityID: String,
+        from backupDestination: URL,
+        to libraryPath: URL
+    ) async throws {
+        let displayName = installedServices.first(where: { $0.id == capabilityID })
+            .map { userFacingName(for: $0) }
+        let engine = self.backupEngine
+
+        try await Task.detached {
+            try engine.restoreFiles(
+                from: backupDestination,
+                to: libraryPath,
+                displayName: displayName
+            )
+        }.value
     }
 
     /// Recompute backup health from current state.

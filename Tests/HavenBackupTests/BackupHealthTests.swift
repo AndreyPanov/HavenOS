@@ -55,15 +55,15 @@ struct BackupHealthTests {
         let manifests: [String: BackupManifest] = [
             "haven.capability.kavita": BackupManifest(
                 createdAt: Date().addingTimeInterval(-24 * 60 * 60), machineName: "test",
-                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.kavita", displayName: "Books", bundleID: "b", relativePaths: [], totalBytes: 0)]
+                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.kavita", displayName: "Books", bundleID: "b", totalBytes: 0)]
             ),
             "haven.capability.navidrome": BackupManifest(
                 createdAt: Date().addingTimeInterval(-24 * 60 * 60), machineName: "test",
-                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.navidrome", displayName: "Music", bundleID: "b", relativePaths: [], totalBytes: 0)]
+                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.navidrome", displayName: "Music", bundleID: "b", totalBytes: 0)]
             ),
             "haven.capability.jellyfin": BackupManifest(
                 createdAt: Date().addingTimeInterval(-24 * 60 * 60), machineName: "test",
-                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.jellyfin", displayName: "Movies", bundleID: "b", relativePaths: [], totalBytes: 0)]
+                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.jellyfin", displayName: "Movies", bundleID: "b", totalBytes: 0)]
             ),
         ]
 
@@ -93,11 +93,11 @@ struct BackupHealthTests {
         let manifests: [String: BackupManifest] = [
             "haven.capability.kavita": BackupManifest(
                 createdAt: Date(), machineName: "test",
-                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.kavita", displayName: "Books", bundleID: "b", relativePaths: [], totalBytes: 0, status: .complete)]
+                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.kavita", displayName: "Books", bundleID: "b", totalBytes: 0, status: .complete)]
             ),
             "haven.capability.navidrome": BackupManifest(
                 createdAt: Date(), machineName: "test",
-                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.navidrome", displayName: "Music", bundleID: "b", relativePaths: [], totalBytes: 0, status: .failed)]
+                capabilities: [CapabilityBackupEntry(capabilityID: "haven.capability.navidrome", displayName: "Music", bundleID: "b", totalBytes: 0, status: .failed)]
             ),
         ]
 

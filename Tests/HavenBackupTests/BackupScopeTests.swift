@@ -30,24 +30,12 @@ struct BackupScopeTests {
         )
     }
 
-    @Test("Data and config are always included in state paths")
-    func alwaysIncludesDataAndConfig() {
+    @Test("Scope without content settings has empty contentPaths")
+    func noContentPaths() {
         let scope = BackupScope()
         let result = scope.scope(for: makeState())
 
-        let paths = result.statePaths.map(\.lastPathComponent)
-        #expect(paths.contains("data"))
-        #expect(paths.contains("config"))
-    }
-
-    @Test("Logs and run are never included")
-    func excludesLogsAndRun() {
-        let scope = BackupScope()
-        let result = scope.scope(for: makeState())
-
-        let allPaths = result.allPaths.map(\.lastPathComponent)
-        #expect(!allPaths.contains("logs"))
-        #expect(!allPaths.contains("run"))
+        #expect(result.contentPaths.isEmpty)
     }
 
     @Test("Content path from library_path setting is included")
@@ -112,13 +100,12 @@ struct BackupScopeTests {
         )
         let result = scope.scope(for: makeState(), bundle: bundle)
 
-        // content role dir should be in contentPaths
         let contentNames = result.contentPaths.map(\.lastPathComponent)
         #expect(contentNames.contains("content"))
     }
 
-    @Test("Bundle storage policy adds extra persistent dirs to state paths")
-    func storagePolicyExtraPersistent() {
+    @Test("Non-userVisible storage policies are not included")
+    func nonUserVisibleExcluded() {
         let scope = BackupScope()
         let bundle = HavenCore.Bundle(
             id: "haven.bundle.test",
@@ -126,15 +113,13 @@ struct BackupScopeTests {
             capability: "haven.capability.test",
             storage: [
                 "cache": StoragePolicy(persistent: true, userVisible: false),
+                "data": StoragePolicy(persistent: true, userVisible: false),
             ]
         )
         let state = makeState(capability: "haven.capability.test", bundleID: "haven.bundle.test")
         let result = scope.scope(for: state, bundle: bundle)
 
-        let stateNames = result.statePaths.map(\.lastPathComponent)
-        #expect(stateNames.contains("cache"))
-        #expect(stateNames.contains("data"))
-        #expect(stateNames.contains("config"))
+        #expect(result.contentPaths.isEmpty)
     }
 
     @Test("scopeAll returns sorted results for multiple capabilities")
@@ -152,12 +137,11 @@ struct BackupScopeTests {
         #expect(results[1].capabilityID == "haven.capability.navidrome")
     }
 
-    @Test("Scope without bundle still includes data and config")
+    @Test("Scope without bundle has no content paths")
     func scopeWithoutBundle() {
         let scope = BackupScope()
         let result = scope.scope(for: makeState(), bundle: nil)
 
-        #expect(result.statePaths.count == 2)
         #expect(result.contentPaths.isEmpty)
     }
 
@@ -172,8 +156,6 @@ struct BackupScopeTests {
                 "content": StoragePolicy(persistent: true, userVisible: true),
             ]
         )
-        // The library_path setting points to an external path,
-        // and the content role also exists — both should appear but no duplicates
         let result = scope.scope(
             for: makeState(resolvedSettings: ["library_path": "/Users/test/Books"]),
             bundle: bundle

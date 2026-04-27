@@ -415,6 +415,12 @@ struct MoviesHomeView: View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
 
+            RestoreFromBackupSection(
+                capabilityID: facade.capabilityID,
+                libraryPath: facade.library?.libraryPath,
+                label: "Movies"
+            )
+
             centeredCard {
                 Image(systemName: "film")
                     .font(.system(size: 48))
@@ -534,29 +540,44 @@ struct MoviesHomeView: View {
                         }
                     }
 
-                    // Folder path
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                        Text(lib.libraryPath)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    // Folder paths
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(lib.libraryPaths, id: \.self) { path in
+                            HStack(spacing: 6) {
+                                Image(systemName: "folder")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                Text(path)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
 
-                        Button("Change") {
-                            changeLibraryFolder()
+                                if lib.libraryPaths.count > 1 {
+                                    Button {
+                                        Task { try? await facade.removeLibraryPath(path) }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.secondary)
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove this folder")
+                                }
+                            }
                         }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                        .foregroundStyle(.blue)
                     }
 
                     // Actions
                     HStack(spacing: 8) {
-                        Button("Add Movies", systemImage: "plus") {
+                        Button("Add Folder", systemImage: "plus") {
+                            addFolder()
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+
+                        Button("Open Folder", systemImage: "folder") {
                             let path = (lib.libraryPath as NSString).expandingTildeInPath
                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
                             pendingRescanOnFocus = true
@@ -576,7 +597,7 @@ struct MoviesHomeView: View {
                     }
 
                     // Hint
-                    Text("Add your movie files to the library folder \u{2014} metadata and artwork will be downloaded automatically.")
+                    Text("Add your movie files to the library folders \u{2014} metadata and artwork will be downloaded automatically.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -596,22 +617,17 @@ struct MoviesHomeView: View {
         }
     }
 
-    private func changeLibraryFolder() {
+    private func addFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        panel.message = "Choose a new movies folder"
-
-        if let lib = facade.library {
-            let expanded = (lib.libraryPath as NSString).expandingTildeInPath
-            panel.directoryURL = URL(fileURLWithPath: expanded)
-        }
+        panel.prompt = "Add"
+        panel.message = "Choose a folder to add to your movie library"
 
         if panel.runModal() == .OK, let url = panel.url {
             Task {
-                try? await facade.setLibraryPath(url.path, contentType: .moviesAndShows)
+                try? await facade.addLibraryPath(url.path)
             }
         }
     }
@@ -655,10 +671,16 @@ struct MoviesHomeView: View {
     private var advancedMenu: some View {
         Menu {
             if let lib = facade.library {
-                Button("Open Movies Folder", systemImage: "folder") {
-                    let path = (lib.libraryPath as NSString).expandingTildeInPath
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                ForEach(lib.libraryPaths, id: \.self) { path in
+                    Button("Open \(URL(fileURLWithPath: path).lastPathComponent)", systemImage: "folder") {
+                        let expanded = (path as NSString).expandingTildeInPath
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: expanded)
+                    }
                 }
+            }
+
+            Button("Add Folder\u{2026}", systemImage: "folder.badge.plus") {
+                addFolder()
             }
 
             if facade.setupState == .ready {

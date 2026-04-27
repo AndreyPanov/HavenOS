@@ -15,7 +15,6 @@ struct BackupManifestTests {
                     capabilityID: "haven.capability.kavita",
                     displayName: "Books",
                     bundleID: "haven.bundle.kavita",
-                    relativePaths: ["Books/data", "Books/config"],
                     totalBytes: 1_048_576,
                     status: .complete
                 ),
@@ -23,13 +22,10 @@ struct BackupManifestTests {
                     capabilityID: "haven.capability.navidrome",
                     displayName: "Music",
                     bundleID: "haven.bundle.navidrome",
-                    relativePaths: ["Music/data", "Music/config"],
                     totalBytes: 2_097_152,
                     status: .complete
                 ),
-            ],
-            includesCredentials: true,
-            includesState: true
+            ]
         )
 
         let data = try manifest.encode()
@@ -62,8 +58,6 @@ struct BackupManifestTests {
         let decoded = try BackupManifest.decode(from: data)
 
         #expect(decoded.capabilities.isEmpty)
-        #expect(decoded.includesCredentials)
-        #expect(decoded.includesState)
     }
 
     @Test("Entry status values encode correctly")
@@ -71,15 +65,15 @@ struct BackupManifestTests {
         let entries: [CapabilityBackupEntry] = [
             CapabilityBackupEntry(
                 capabilityID: "a", displayName: "A", bundleID: "b",
-                relativePaths: [], totalBytes: 0, status: .complete
+                totalBytes: 0, status: .complete
             ),
             CapabilityBackupEntry(
                 capabilityID: "b", displayName: "B", bundleID: "b",
-                relativePaths: [], totalBytes: 0, status: .partial
+                totalBytes: 0, status: .partial
             ),
             CapabilityBackupEntry(
                 capabilityID: "c", displayName: "C", bundleID: "b",
-                relativePaths: [], totalBytes: 0, status: .failed
+                totalBytes: 0, status: .failed
             ),
         ]
 
@@ -107,7 +101,6 @@ struct BackupManifestTests {
                     capabilityID: "haven.capability.kavita",
                     displayName: "Books",
                     bundleID: "haven.bundle.kavita",
-                    relativePaths: ["Books/data"],
                     totalBytes: 100
                 ),
             ]
@@ -118,8 +111,6 @@ struct BackupManifestTests {
 
         #expect(json["version"] as? Int == 1)
         #expect(json["machineName"] as? String == "test")
-        #expect(json["includesCredentials"] as? Bool == true)
-        #expect(json["includesState"] as? Bool == true)
 
         let caps = json["capabilities"] as? [[String: Any]]
         #expect(caps?.count == 1)

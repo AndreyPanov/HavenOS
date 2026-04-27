@@ -866,10 +866,13 @@ This is the trust milestone before Files.
 	•	BackupHealthBanner: compact banner on HomeView (warnings/failures only, taps to Backup tab)
 	•	Sidebar badge on Backup tab for overdue/warning/failure states
 
-16.6 — Restore Flow
+16.6 — Restore Flow ✅
 	•	RestoreFlowView: multi-step sheet (choose folder → detect capabilities → select → progress → done)
-	•	Restore does NOT auto-install (no artifact download) — restores state only
+	•	BackupEngine.scanForBackups(): discovers all capability backups in a folder
+	•	Multi-capability restore: findCapabilityRoot filters by capabilityID to avoid first-match bug
+	•	Restore does NOT auto-install (no artifact download) — restores state + data only
 	•	Re-adding capability finds existing config/data, skips setup wizard
+	•	"Restore" button in Backup tab, disabled during backup/restore
 
 16.7 — Failure Visibility
 	•	Error categorization: destination unreachable, disk full, permission denied, partial failure

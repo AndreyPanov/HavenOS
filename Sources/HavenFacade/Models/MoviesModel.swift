@@ -5,8 +5,8 @@ import Foundation
 /// Haven-native representation of a movie/TV library.
 /// Backend-independent — no Jellyfin, Emby, or other engine terms.
 public struct MoviesLibrary: Sendable, Equatable {
-    /// Path to the movies library on disk.
-    public let libraryPath: String
+    /// Paths to the movies library folders on disk.
+    public let libraryPaths: [String]
     /// Current scan/index status.
     public let scanStatus: ScanStatus
     /// Number of movies (nil if unknown).
@@ -14,13 +14,18 @@ public struct MoviesLibrary: Sendable, Equatable {
     /// Number of TV shows (nil if unknown).
     public let showCount: Int?
 
+    /// Primary library path (first one).
+    public var libraryPath: String {
+        libraryPaths.first ?? "~/Movies"
+    }
+
     public init(
-        libraryPath: String,
+        libraryPaths: [String],
         scanStatus: ScanStatus = .idle,
         movieCount: Int? = nil,
         showCount: Int? = nil
     ) {
-        self.libraryPath = libraryPath
+        self.libraryPaths = libraryPaths
         self.scanStatus = scanStatus
         self.movieCount = movieCount
         self.showCount = showCount
@@ -79,6 +84,12 @@ public protocol MoviesFacade: ConnectableFacade {
 
     /// Set or change the movies library path on disk.
     func setLibraryPath(_ path: String, contentType: LibraryContentType) async throws
+
+    /// Add an additional library folder.
+    func addLibraryPath(_ path: String) async throws
+
+    /// Remove a library folder by path.
+    func removeLibraryPath(_ path: String) async throws
 
     /// Advance the setup wizard from folder selection to content type selection.
     func confirmLibraryFolder()
