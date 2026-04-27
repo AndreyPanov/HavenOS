@@ -1,5 +1,6 @@
 import SwiftUI
 import HavenFacade
+import HavenBackup
 
 enum SidebarItem: Hashable {
     case home
@@ -39,7 +40,7 @@ package struct ContentView: View {
                 }
 
                 Section("Preferences") {
-                    Label("Backup", systemImage: "externaldrive")
+                    Label("Backup", systemImage: backupSidebarIcon)
                         .tag(SidebarItem.backup)
                     Label("Settings", systemImage: "gearshape")
                         .tag(SidebarItem.settings)
@@ -52,7 +53,7 @@ package struct ContentView: View {
             Group {
                 switch selectedSidebar {
                 case .home:
-                    HomeView()
+                    HomeView(onNavigateToBackup: { selectedSidebar = .backup })
                 case .capability(let id):
                     capabilityView(for: id)
                 case .backup:
@@ -92,6 +93,16 @@ package struct ContentView: View {
     /// User-facing tab label — capability type, not backend name.
     private func capabilityLabel(for service: InstalledService) -> String {
         serviceManager.userFacingName(for: service)
+    }
+
+    /// Icon for the Backup sidebar item — shows warning variant for issues.
+    private var backupSidebarIcon: String {
+        switch serviceManager.backupHealth.status {
+        case .overdue, .warning, .failed, .neverRun:
+            "externaldrive.badge.exclamationmark"
+        default:
+            "externaldrive"
+        }
     }
 
     @ViewBuilder

@@ -95,11 +95,19 @@ public struct BackupHealth: Sendable, Equatable {
             let manifest = manifests[cap.id]
             let backedUp = manifest?.capabilities.first?.status == .complete
 
+            // Use the overall last backup date when available (all capabilities
+            // in a single run should show the same timestamp, not staggered ones).
+            let capDate: Date? = if backedUp {
+                settings.lastBackupDate ?? manifest?.createdAt
+            } else {
+                nil
+            }
+
             return CapabilityProtection(
                 capabilityID: cap.id,
                 displayName: cap.name,
                 isProtected: backedUp,
-                lastBackedUp: backedUp ? manifest?.createdAt : nil,
+                lastBackedUp: capDate,
                 destinationPath: destPath
             )
         }

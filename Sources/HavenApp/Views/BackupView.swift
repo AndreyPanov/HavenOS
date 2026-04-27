@@ -113,24 +113,9 @@ struct BackupView: View {
                 .foregroundStyle(.red)
         }
 
-        // Protection score
         if !serviceManager.installedServices.isEmpty {
-            HStack(spacing: 12) {
-                Text("Protection: \(health.protectionScore)%")
-                    .font(.callout)
-                    .fontWeight(.medium)
-
-                ForEach(health.capabilities) { cap in
-                    HStack(spacing: 4) {
-                        Image(systemName: cap.isProtected ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(cap.isProtected ? Color.green : Color.secondary)
-                            .font(.caption)
-                        Text(cap.displayName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+            ProtectionStatusView(health: health)
+                .padding(.top, 4)
         }
     }
 }

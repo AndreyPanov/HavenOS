@@ -86,7 +86,7 @@ Phase	Focus	Outcome	Status
 14	Music (Navidrome)	Second capability — validate pattern scales	✅ DONE
 14.5	Platform Hardening	Shared protocols, zero downcasts, lifecycle tests	✅ DONE
 15	Movies (Jellyfin)	Third capability — video streaming	✅ DONE
-16	Backup & Sync	Trust milestone — capability-aware backup/restore	⬜ Not started
+16	Backup & Sync	Trust milestone — capability-aware backup/restore	🔶 In progress
 17	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
 18	Service Updates	Version discovery + safe atomic updates	⬜ Not started
 19	Files	Basic file access (deferred)	⬜ Not started
@@ -831,7 +831,7 @@ This is the trust milestone before Files.
 
 🛠️ Implementation Sub-phases
 
-16.1 — Backup Scope (Foundation)
+16.1 — Backup Scope (Foundation) ✅
 	•	New module: HavenBackup (depends on HavenCore only)
 	•	BackupScope: reads StoredServiceState + Bundle.storage → produces paths to back up per capability
 	•	BackupManifest: Codable struct describing backup contents (version, date, per-capability entries)
@@ -839,27 +839,32 @@ This is the trust milestone before Files.
 	•	BackupHealth: value type (status, protection score, per-capability protection)
 	•	Tests: scope produces correct paths, manifest round-trips, settings persist
 
-16.2 — Backup Engine (Core Logic)
+16.2 — Backup Engine (Core Logic) ✅
 	•	BackupEngine: performs backup (copy dirs → export credentials → write manifest) and restore
-	•	Full copy for v1 (not incremental)
+	•	Per-capability named root folders (Books/, Music/, Movies/) with config/ + data/ layout
+	•	Incremental media sync: compares size + modification date, skips unchanged, removes orphans
 	•	Credentials: export UserDefaults keys as credentials.json sidecar
-	•	services.json backed up as-is
 	•	Atomic per-capability: finish one before starting next; partial backup is valid
-	•	Tests: backup → restore round-trip with temp dirs
+	•	Per-file progress reporting for media content
+	•	Tests: backup → restore round-trip with temp dirs (14 tests)
 
-16.3 — Backup Scheduler
+16.3 — Backup Scheduler ✅
 	•	In-process Timer (checks on launch + hourly)
 	•	Triggers BackupEngine.backup() in background Task when overdue
 	•	Tests: fires when overdue, skips when not due, manual-only never auto-fires
 
-16.4 — Settings UI
-	•	BackupSettingsSection: destination picker, schedule picker, per-capability toggles, health summary, "Back Up Now"
-	•	Integrated into SettingsView
-	•	BackupSettings persisted via HavenSettingsModel
+16.4 — Settings UI ✅
+	•	Dedicated Backup tab in sidebar (not a section in Settings)
+	•	Per-capability destination picker via NSOpenPanel
+	•	Schedule picker (Daily, Every 3 Days, Weekly, Manual Only)
+	•	"Back Up Now" button with progress spinner and per-file status
+	•	BackupSettings persisted via UserDefaults
 
-16.5 — Protection Status
-	•	ProtectionStatusView: circular progress (0-100%), per-capability rows
-	•	BackupHealthBanner: compact banner for HomeView (warnings/failures only)
+16.5 — Protection Status ✅
+	•	ProtectionStatusView: circular progress ring (0-100%), animated, color-coded
+	•	Per-capability rows with last backup date, "not backed up yet", or "not configured"
+	•	BackupHealthBanner: compact banner on HomeView (warnings/failures only, taps to Backup tab)
+	•	Sidebar badge on Backup tab for overdue/warning/failure states
 
 16.6 — Restore Flow
 	•	RestoreFlowView: multi-step sheet (choose folder → detect capabilities → select → progress → done)
@@ -871,7 +876,7 @@ This is the trust milestone before Files.
 	•	Overdue detection based on schedule
 	•	Orange/red warnings with reason + suggested fix
 
-Not in v1: incremental backups, snapshot recovery, launchd scheduling, encryption, cloud destinations
+Not in v1: snapshot recovery, launchd scheduling, encryption, cloud destinations
 
 ⸻
 

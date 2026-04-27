@@ -1,9 +1,11 @@
 import SwiftUI
 import HavenFacade
+import HavenBackup
 
 struct HomeView: View {
     @Environment(ServiceManager.self) private var serviceManager
     @State private var path = NavigationPath()
+    var onNavigateToBackup: (() -> Void)?
 
     private var plugins: [DiscoverablePlugin] {
         serviceManager.discoverablePlugins
@@ -13,6 +15,11 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    BackupHealthBanner(
+                        health: serviceManager.backupHealth,
+                        onNavigateToBackup: onNavigateToBackup
+                    )
+
                     Text("Add capabilities to your Haven")
                         .font(.title3)
                         .foregroundStyle(.secondary)
