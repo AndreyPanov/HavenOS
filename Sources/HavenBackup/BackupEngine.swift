@@ -3,20 +3,16 @@ import HavenCore
 
 /// Performs backup and restore operations for Haven capabilities.
 ///
-/// Each capability backs up to its own user-chosen folder:
+/// Each capability backs up to its own user-chosen folder with a clean two-folder layout:
 /// ```
 /// /Volumes/NAS/Books/            (user-chosen for Books)
-///   manifest.json
-///   data/
-///   config/
-///   state.json                   (this capability's slice of services.json)
-///   credentials.json             (this capability's credential keys)
-///
-/// /Volumes/NAS/Music/            (user-chosen for Music)
-///   manifest.json
-///   data/
-///   config/
-///   ...
+///   config/                      (service internals + Haven metadata)
+///     service_config/            (from service config dir)
+///     service_data/              (from service data dir)
+///     manifest.json
+///     state.json
+///     credentials.json
+///   data/                        (user content — books, music, movies)
 /// ```
 public struct BackupEngine: Sendable {
 
@@ -30,16 +26,6 @@ public struct BackupEngine: Sendable {
     // MARK: - Backup
 
     /// Back up a single capability to its designated destination.
-    ///
-    /// - Parameters:
-    ///   - scope: The backup scope for this capability.
-    ///   - destination: Root URL of the backup folder for this capability.
-    ///   - serviceState: The stored service state for this capability.
-    ///   - credentialKeys: UserDefaults keys belonging to this capability.
-    ///   - defaults: UserDefaults instance to read credentials from.
-    ///   - displayName: Human-readable name for the manifest.
-    ///   - progress: Called with status updates.
-    /// - Returns: The capability backup entry describing what was backed up.
     public func backupCapability(
         scope: CapabilityBackupScope,
         destination: URL,
@@ -54,30 +40,38 @@ public struct BackupEngine: Sendable {
 
         try ensureDestinationReachable(destination)
 
+        // Create a root folder named after the capability
+        let capabilityRoot = destination.appendingPathComponent(name)
+        try ensureDestinationReachable(capabilityRoot)
+
+        let configRoot = capabilityRoot.appendingPathComponent("config")
+        let dataRoot = capabilityRoot.appendingPathComponent("data")
+        try ensureDestinationReachable(configRoot)
+        try ensureDestinationReachable(dataRoot)
+
         var relativePaths: [String] = []
         var totalBytes: UInt64 = 0
         var entryStatus: CapabilityBackupEntry.EntryStatus = .complete
 
-        // Copy state paths (data, config, etc.)
+        // Copy service state paths (config, data, other persistent dirs) into config/
         for sourcePath in scope.statePaths {
             do {
                 let dirName = sourcePath.lastPathComponent
-                let destPath = destination.appendingPathComponent(dirName)
+                let safeName = "service_\(dirName)"
+                let destPath = configRoot.appendingPathComponent(safeName)
                 let bytes = try copyDirectory(from: sourcePath, to: destPath)
-                relativePaths.append(dirName)
+                relativePaths.append("config/\(safeName)")
                 totalBytes += bytes
             } catch {
                 entryStatus = .partial
             }
         }
 
-        // Copy content paths (user media files)
+        // Copy user content directly into data/ (no extra subfolder)
         for sourcePath in scope.contentPaths {
             do {
-                let safeName = "content_\(sourcePath.lastPathComponent)"
-                let destPath = destination.appendingPathComponent(safeName)
-                let bytes = try copyDirectory(from: sourcePath, to: destPath)
-                relativePaths.append(safeName)
+                let bytes = try copyDirectoryContents(from: sourcePath, to: dataRoot)
+                relativePaths.append("data")
                 totalBytes += bytes
             } catch {
                 entryStatus = .partial
@@ -88,25 +82,25 @@ public struct BackupEngine: Sendable {
             entryStatus = .failed
         }
 
-        // Save this capability's state slice
+        // Save this capability's state slice into config/
         if let state = serviceState {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
             if let data = try? encoder.encode(state) {
-                let stateFile = destination.appendingPathComponent("state.json")
+                let stateFile = configRoot.appendingPathComponent("state.json")
                 try? data.write(to: stateFile, options: .atomic)
             }
         }
 
-        // Export this capability's credentials
+        // Export this capability's credentials into config/
         if !credentialKeys.isEmpty {
             let credsData = exportCredentials(keys: credentialKeys, from: defaults)
-            let credsFile = destination.appendingPathComponent("credentials.json")
+            let credsFile = configRoot.appendingPathComponent("credentials.json")
             try? credsData.write(to: credsFile, options: .atomic)
         }
 
-        // Write per-capability manifest
+        // Write per-capability manifest into config/
         let entry = CapabilityBackupEntry(
             capabilityID: scope.capabilityID,
             displayName: name,
@@ -122,7 +116,7 @@ public struct BackupEngine: Sendable {
             includesState: serviceState != nil
         )
         let manifestData = try manifest.encode()
-        let manifestFile = destination.appendingPathComponent(BackupManifest.fileName)
+        let manifestFile = configRoot.appendingPathComponent(BackupManifest.fileName)
         try manifestData.write(to: manifestFile, options: .atomic)
 
         progress?("Backup of \(name) complete.")
@@ -130,16 +124,6 @@ public struct BackupEngine: Sendable {
     }
 
     /// Back up all configured capabilities.
-    ///
-    /// - Parameters:
-    ///   - scopes: Per-capability backup scopes.
-    ///   - destinations: Map of capability ID → destination URL.
-    ///   - serviceStates: Map of capability ID → stored state.
-    ///   - credentialKeys: All Haven credential keys to export.
-    ///   - defaults: UserDefaults instance.
-    ///   - displayNames: Map of capability ID → display name.
-    ///   - progress: Status callback.
-    /// - Returns: Array of per-capability backup entries.
     public func backupAll(
         scopes: [CapabilityBackupScope],
         destinations: [String: URL],
@@ -155,7 +139,6 @@ public struct BackupEngine: Sendable {
             guard let dest = destinations[scope.capabilityID] else { continue }
 
             let capKeys = credentialKeys.filter { key in
-                // Match keys belonging to this capability
                 key.contains(scope.capabilityID)
             }
 
@@ -177,21 +160,19 @@ public struct BackupEngine: Sendable {
 
     // MARK: - Restore
 
-    /// Restore a single capability from its backup folder.
+    /// Restore a single capability from its backup destination.
     ///
-    /// - Parameters:
-    ///   - source: Root URL of this capability's backup folder.
-    ///   - havenPaths: The Haven paths on the target machine.
-    ///   - defaults: UserDefaults instance for credential import.
-    ///   - progress: Status callback.
-    /// - Returns: The manifest from the backup.
+    /// The destination contains a capability root folder (e.g. "Books/")
+    /// with `config/` and `data/` inside it.
     public func restoreCapability(
         from source: URL,
         havenPaths: HavenPaths,
         defaults: UserDefaults = .standard,
         progress: (@Sendable (String) -> Void)? = nil
     ) throws -> BackupManifest {
-        let manifestFile = source.appendingPathComponent(BackupManifest.fileName)
+        let capRoot = try findCapabilityRoot(in: source)
+        let configRoot = capRoot.appendingPathComponent("config")
+        let manifestFile = configRoot.appendingPathComponent(BackupManifest.fileName)
         guard fileManager.fileExists(atPath: manifestFile.path) else {
             throw BackupError.manifestNotFound(path: source.path)
         }
@@ -215,40 +196,46 @@ public struct BackupEngine: Sendable {
         let layout = havenPaths.serviceLayout(for: entry.capabilityID)
 
         for relPath in entry.relativePaths {
-            let sourceDir = source.appendingPathComponent(relPath)
+            let sourceDir = capRoot.appendingPathComponent(relPath)
             guard fileManager.fileExists(atPath: sourceDir.path) else { continue }
 
-            let dirName = URL(fileURLWithPath: relPath).lastPathComponent
-            let destDir: URL
-            if dirName == "data" {
-                destDir = layout.data
-            } else if dirName == "config" {
-                destDir = layout.config
-            } else {
-                destDir = layout.serviceRoot.appendingPathComponent(dirName)
+            if relPath.hasPrefix("config/service_") {
+                // Restore service internal dirs: config/service_config → layout.config, etc.
+                let serviceDirName = String(relPath.dropFirst("config/service_".count))
+                let destDir: URL
+                if serviceDirName == "data" {
+                    destDir = layout.data
+                } else if serviceDirName == "config" {
+                    destDir = layout.config
+                } else {
+                    destDir = layout.serviceRoot.appendingPathComponent(serviceDirName)
+                }
+                try copyDirectory(from: sourceDir, to: destDir)
+            } else if relPath.hasPrefix("data/") {
+                // Restore user content — copy back to original location from state
+                let dirName = String(relPath.dropFirst("data/".count))
+                let destDir = layout.serviceRoot.appendingPathComponent(dirName)
+                try copyDirectory(from: sourceDir, to: destDir)
             }
-
-            try copyDirectory(from: sourceDir, to: destDir)
         }
 
-        // Restore state slice
+        // Restore state slice from config/
         if manifest.includesState {
-            let stateFile = source.appendingPathComponent("state.json")
+            let stateFile = configRoot.appendingPathComponent("state.json")
             if fileManager.fileExists(atPath: stateFile.path) {
                 let data = try Data(contentsOf: stateFile)
                 let decoder = JSONDecoder()
                 decoder.dateDecodingStrategy = .iso8601
                 if let serviceState = try? decoder.decode(StoredServiceState.self, from: data) {
-                    // Merge into existing haven state
                     let stateStore = FileStateStore(paths: havenPaths)
                     try? stateStore.upsert(serviceState)
                 }
             }
         }
 
-        // Restore credentials
+        // Restore credentials from config/
         if manifest.includesCredentials {
-            let credsFile = source.appendingPathComponent("credentials.json")
+            let credsFile = configRoot.appendingPathComponent("credentials.json")
             if fileManager.fileExists(atPath: credsFile.path) {
                 try importCredentials(from: credsFile, into: defaults)
             }
@@ -260,12 +247,15 @@ public struct BackupEngine: Sendable {
 
     // MARK: - Read Manifest
 
-    /// Read the manifest from a capability backup location without restoring.
-    public func readManifest(from source: URL) throws -> BackupManifest {
-        let manifestFile = source.appendingPathComponent(BackupManifest.fileName)
-        guard fileManager.fileExists(atPath: manifestFile.path) else {
-            throw BackupError.manifestNotFound(path: source.path)
-        }
+    /// Read the manifest from a backup destination without restoring.
+    ///
+    /// The destination contains a capability root folder (e.g. "Books/")
+    /// with `config/manifest.json` inside it.
+    public func readManifest(from destination: URL) throws -> BackupManifest {
+        let capRoot = try findCapabilityRoot(in: destination)
+        let manifestFile = capRoot
+            .appendingPathComponent("config")
+            .appendingPathComponent(BackupManifest.fileName)
         let data = try Data(contentsOf: manifestFile)
         return try BackupManifest.decode(from: data)
     }
@@ -283,6 +273,50 @@ public struct BackupEngine: Sendable {
     }
 
     // MARK: - Private
+
+    /// Find the capability root folder inside a backup destination.
+    /// The capability root is the first subfolder containing `config/manifest.json`.
+    private func findCapabilityRoot(in destination: URL) throws -> URL {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: destination,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else {
+            throw BackupError.manifestNotFound(path: destination.path)
+        }
+
+        for item in contents {
+            let manifest = item
+                .appendingPathComponent("config")
+                .appendingPathComponent(BackupManifest.fileName)
+            if fileManager.fileExists(atPath: manifest.path) {
+                return item
+            }
+        }
+
+        throw BackupError.manifestNotFound(path: destination.path)
+    }
+
+    /// Copy the contents of a source directory into a destination directory (flat, no nesting).
+    @discardableResult
+    private func copyDirectoryContents(from source: URL, to destination: URL) throws -> UInt64 {
+        guard fileManager.fileExists(atPath: source.path) else { return 0 }
+
+        let items = try fileManager.contentsOfDirectory(
+            at: source,
+            includingPropertiesForKeys: nil
+        )
+
+        var total: UInt64 = 0
+        for item in items {
+            let destItem = destination.appendingPathComponent(item.lastPathComponent)
+            if fileManager.fileExists(atPath: destItem.path) {
+                try fileManager.removeItem(at: destItem)
+            }
+            try fileManager.copyItem(at: item, to: destItem)
+            total += directorySize(at: destItem)
+        }
+        return total
+    }
 
     private func ensureDestinationReachable(_ url: URL) throws {
         var isDir: ObjCBool = false

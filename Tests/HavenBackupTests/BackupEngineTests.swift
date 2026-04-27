@@ -9,7 +9,6 @@ struct BackupEngineTests {
 
     private let engine = BackupEngine()
 
-    /// Create a temp directory and return its URL. Caller must clean up.
     private func makeTempDir(_ name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("HavenBackupTests")
@@ -46,13 +45,11 @@ struct BackupEngineTests {
         )
     }
 
-    /// Set up a service directory with some test data files.
     private func populateServiceDirs(layout: ServiceDirectoryLayout) throws {
         let fm = FileManager.default
         for dir in layout.allDirectories {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
-        // Write test data
         try "database content".write(
             to: layout.data.appendingPathComponent("library.db"),
             atomically: true, encoding: .utf8
@@ -67,7 +64,9 @@ struct BackupEngineTests {
         )
     }
 
-    @Test("backupCapability creates manifest at destination")
+    // MARK: - Backup
+
+    @Test("backupCapability creates Books/ root with config/manifest.json")
     func backupCreatesManifest() throws {
         let havenDir = try makeTempDir("haven")
         let backupDir = try makeTempDir("backup")
@@ -89,18 +88,17 @@ struct BackupEngineTests {
         #expect(entry.displayName == "Books")
         #expect(entry.status == .complete)
 
-        // Manifest file exists on disk
-        let manifestFile = backupDir.appendingPathComponent("manifest.json")
+        // Manifest inside Books/config/
+        let manifestFile = backupDir.appendingPathComponent("Books/config/manifest.json")
         #expect(FileManager.default.fileExists(atPath: manifestFile.path))
 
-        // Verify manifest content
         let manifest = try engine.readManifest(from: backupDir)
         #expect(manifest.version == 1)
         #expect(manifest.capabilities.count == 1)
         #expect(manifest.includesState)
     }
 
-    @Test("backupCapability copies data and config, skips logs")
+    @Test("backupCapability copies service dirs into config/service_*, skips logs")
     func backupCopiesCorrectDirs() throws {
         let havenDir = try makeTempDir("haven")
         let backupDir = try makeTempDir("backup")
@@ -114,26 +112,29 @@ struct BackupEngineTests {
         _ = try engine.backupCapability(
             scope: scope,
             destination: backupDir,
-            serviceState: state
+            serviceState: state,
+            displayName: "Books"
         )
 
         let fm = FileManager.default
+        let root = backupDir.appendingPathComponent("Books")
 
-        // Data was copied
-        let dbFile = backupDir.appendingPathComponent("data/library.db")
+        // Service data in config/service_data/
+        let dbFile = root.appendingPathComponent("config/service_data/library.db")
         #expect(fm.fileExists(atPath: dbFile.path))
         #expect(try String(contentsOf: dbFile, encoding: .utf8) == "database content")
 
-        // Config was copied
-        let configFile = backupDir.appendingPathComponent("config/appsettings.json")
+        // Service config in config/service_config/
+        let configFile = root.appendingPathComponent("config/service_config/appsettings.json")
         #expect(fm.fileExists(atPath: configFile.path))
+        #expect(try String(contentsOf: configFile, encoding: .utf8) == "config content")
 
-        // Logs were NOT copied (not in scope)
-        let logDir = backupDir.appendingPathComponent("logs")
+        // Logs NOT copied
+        let logDir = root.appendingPathComponent("logs")
         #expect(!fm.fileExists(atPath: logDir.path))
     }
 
-    @Test("backupCapability saves state.json")
+    @Test("backupCapability saves state.json in config/")
     func backupExportsState() throws {
         let havenDir = try makeTempDir("haven")
         let backupDir = try makeTempDir("backup")
@@ -147,16 +148,62 @@ struct BackupEngineTests {
         _ = try engine.backupCapability(
             scope: scope,
             destination: backupDir,
-            serviceState: state
+            serviceState: state,
+            displayName: "Books"
         )
 
-        let stateFile = backupDir.appendingPathComponent("state.json")
+        let stateFile = backupDir.appendingPathComponent("Books/config/state.json")
         #expect(FileManager.default.fileExists(atPath: stateFile.path))
         let content = try String(contentsOf: stateFile, encoding: .utf8)
         #expect(content.contains("haven.capability.kavita"))
     }
 
-    @Test("backupCapability exports and restoreCapability restores credentials")
+    @Test("Content files are copied flat into data/, not nested")
+    func contentCopiedFlat() throws {
+        let havenDir = try makeTempDir("haven")
+        let backupDir = try makeTempDir("backup")
+        let contentDir = try makeTempDir("Books")
+        defer { cleanup(havenDir); cleanup(backupDir); cleanup(contentDir) }
+
+        // Create some book files in the content directory
+        try "epub data".write(
+            to: contentDir.appendingPathComponent("novel.epub"),
+            atomically: true, encoding: .utf8
+        )
+        try "pdf data".write(
+            to: contentDir.appendingPathComponent("textbook.pdf"),
+            atomically: true, encoding: .utf8
+        )
+
+        let paths = HavenPaths(base: havenDir)
+        let state = makeServiceState(
+            servicesDir: paths.servicesDirectory,
+            resolvedSettings: ["library_path": contentDir.path]
+        )
+        try populateServiceDirs(layout: state.directoryLayout)
+
+        let scope = BackupScope().scope(for: state)
+        _ = try engine.backupCapability(
+            scope: scope,
+            destination: backupDir,
+            serviceState: state,
+            displayName: "Books"
+        )
+
+        let fm = FileManager.default
+        let dataRoot = backupDir.appendingPathComponent("Books/data")
+
+        // Files are directly in data/, not in data/Books/
+        #expect(fm.fileExists(atPath: dataRoot.appendingPathComponent("novel.epub").path))
+        #expect(fm.fileExists(atPath: dataRoot.appendingPathComponent("textbook.pdf").path))
+
+        // No nested subfolder
+        #expect(!fm.fileExists(atPath: dataRoot.appendingPathComponent(contentDir.lastPathComponent).path))
+    }
+
+    // MARK: - Credentials
+
+    @Test("Credential export and restore round-trip")
     func credentialRoundTrip() throws {
         let havenDir = try makeTempDir("haven")
         let backupDir = try makeTempDir("backup")
@@ -166,7 +213,6 @@ struct BackupEngineTests {
         let state = makeServiceState(servicesDir: paths.servicesDirectory)
         try populateServiceDirs(layout: state.directoryLayout)
 
-        // Set up credentials in a test defaults suite
         let suiteName = "BackupEngineCredTest-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -179,7 +225,6 @@ struct BackupEngineTests {
             "haven.kavita.username.haven.capability.kavita",
         ]
 
-        // Backup
         let scope = BackupScope().scope(for: state)
         _ = try engine.backupCapability(
             scope: scope,
@@ -190,22 +235,26 @@ struct BackupEngineTests {
             displayName: "Books"
         )
 
-        // Clear credentials
+        // Credentials file inside Books/config/
+        let credsFile = backupDir.appendingPathComponent("Books/config/credentials.json")
+        #expect(FileManager.default.fileExists(atPath: credsFile.path))
+
+        // Clear and restore
         defaults.removeObject(forKey: "haven.kavita.token.haven.capability.kavita")
         defaults.removeObject(forKey: "haven.kavita.username.haven.capability.kavita")
         #expect(defaults.string(forKey: "haven.kavita.token.haven.capability.kavita") == nil)
 
-        // Restore
         _ = try engine.restoreCapability(
             from: backupDir,
             havenPaths: paths,
             defaults: defaults
         )
 
-        // Credentials restored
         #expect(defaults.string(forKey: "haven.kavita.token.haven.capability.kavita") == "test-token-123")
         #expect(defaults.string(forKey: "haven.kavita.username.haven.capability.kavita") == "admin")
     }
+
+    // MARK: - Round-trip
 
     @Test("Full backup → restore round-trip preserves data")
     func fullRoundTrip() throws {
@@ -217,11 +266,9 @@ struct BackupEngineTests {
         let sourcePaths = HavenPaths(base: sourceHaven)
         let targetPaths = HavenPaths(base: targetHaven)
 
-        // Set up source service
         let state = makeServiceState(servicesDir: sourcePaths.servicesDirectory)
         try populateServiceDirs(layout: state.directoryLayout)
 
-        // Backup
         let scope = BackupScope().scope(for: state)
         _ = try engine.backupCapability(
             scope: scope,
@@ -230,7 +277,6 @@ struct BackupEngineTests {
             displayName: "Books"
         )
 
-        // Restore to target
         let manifest = try engine.restoreCapability(
             from: backupDir,
             havenPaths: targetPaths
@@ -238,7 +284,6 @@ struct BackupEngineTests {
 
         #expect(manifest.capabilities.count == 1)
 
-        // Verify data was restored
         let targetLayout = targetPaths.serviceLayout(for: "haven.capability.kavita")
         let dbFile = targetLayout.data.appendingPathComponent("library.db")
         #expect(FileManager.default.fileExists(atPath: dbFile.path))
@@ -248,6 +293,8 @@ struct BackupEngineTests {
         #expect(FileManager.default.fileExists(atPath: configFile.path))
         #expect(try String(contentsOf: configFile, encoding: .utf8) == "config content")
     }
+
+    // MARK: - Multi-capability
 
     @Test("backupAll backs up multiple capabilities to separate destinations")
     func backupAllMultipleCapabilities() throws {
@@ -292,15 +339,17 @@ struct BackupEngineTests {
 
         #expect(entries.count == 2)
 
-        // Each destination has its own manifest
         let fm = FileManager.default
-        #expect(fm.fileExists(atPath: backupBooks.appendingPathComponent("manifest.json").path))
-        #expect(fm.fileExists(atPath: backupMusic.appendingPathComponent("manifest.json").path))
+        // Each has its own named root with manifest
+        #expect(fm.fileExists(atPath: backupBooks.appendingPathComponent("Books/config/manifest.json").path))
+        #expect(fm.fileExists(atPath: backupMusic.appendingPathComponent("Music/config/manifest.json").path))
 
-        // Each has data
-        #expect(fm.fileExists(atPath: backupBooks.appendingPathComponent("data/library.db").path))
-        #expect(fm.fileExists(atPath: backupMusic.appendingPathComponent("data/library.db").path))
+        // Each has service data
+        #expect(fm.fileExists(atPath: backupBooks.appendingPathComponent("Books/config/service_data/library.db").path))
+        #expect(fm.fileExists(atPath: backupMusic.appendingPathComponent("Music/config/service_data/library.db").path))
     }
+
+    // MARK: - Read manifest
 
     @Test("readManifest returns manifest without restoring")
     func readManifest() throws {
@@ -316,7 +365,8 @@ struct BackupEngineTests {
         _ = try engine.backupCapability(
             scope: scope,
             destination: backupDir,
-            serviceState: state
+            serviceState: state,
+            displayName: "Books"
         )
 
         let manifest = try engine.readManifest(from: backupDir)
@@ -348,6 +398,8 @@ struct BackupEngineTests {
         }
     }
 
+    // MARK: - Credential discovery
+
     @Test("discoverCredentialKeys finds haven credential keys")
     func discoverKeys() {
         let suiteName = "BackupEngineDiscoverTest-\(UUID().uuidString)"
@@ -367,6 +419,8 @@ struct BackupEngineTests {
         #expect(!keys.contains("unrelated.key"))
     }
 
+    // MARK: - Overwrite
+
     @Test("Multiple backups overwrite previous backup cleanly")
     func overwriteBackup() throws {
         let havenDir = try makeTempDir("haven")
@@ -379,8 +433,9 @@ struct BackupEngineTests {
 
         let scope = BackupScope().scope(for: state)
 
-        // First backup
-        _ = try engine.backupCapability(scope: scope, destination: backupDir, serviceState: state)
+        _ = try engine.backupCapability(
+            scope: scope, destination: backupDir, serviceState: state, displayName: "Books"
+        )
 
         // Modify data
         try "updated content".write(
@@ -389,12 +444,15 @@ struct BackupEngineTests {
         )
 
         // Second backup overwrites
-        _ = try engine.backupCapability(scope: scope, destination: backupDir, serviceState: state)
+        _ = try engine.backupCapability(
+            scope: scope, destination: backupDir, serviceState: state, displayName: "Books"
+        )
 
-        // Verify updated content
-        let dbFile = backupDir.appendingPathComponent("data/library.db")
+        let dbFile = backupDir.appendingPathComponent("Books/config/service_data/library.db")
         #expect(try String(contentsOf: dbFile, encoding: .utf8) == "updated content")
     }
+
+    // MARK: - Progress
 
     @Test("Progress callback is called during backup")
     func progressCallbacks() throws {
@@ -420,5 +478,47 @@ struct BackupEngineTests {
         let captured = messages.withLock { $0 }
         #expect(captured.contains("Backing up Books…"))
         #expect(captured.contains("Backup of Books complete."))
+    }
+
+    // MARK: - Layout
+
+    @Test("Backup creates Name/config + Name/data layout")
+    func twoFolderLayout() throws {
+        let havenDir = try makeTempDir("haven")
+        let backupDir = try makeTempDir("backup")
+        defer { cleanup(havenDir); cleanup(backupDir) }
+
+        let paths = HavenPaths(base: havenDir)
+        let state = makeServiceState(servicesDir: paths.servicesDirectory)
+        try populateServiceDirs(layout: state.directoryLayout)
+
+        let scope = BackupScope().scope(for: state)
+        _ = try engine.backupCapability(
+            scope: scope,
+            destination: backupDir,
+            serviceState: state,
+            displayName: "Books"
+        )
+
+        let fm = FileManager.default
+
+        // Root level has only the capability folder
+        let rootContents = try fm.contentsOfDirectory(atPath: backupDir.path)
+        #expect(rootContents == ["Books"])
+
+        // Inside Books: only config/ and data/
+        let booksContents = try fm.contentsOfDirectory(
+            atPath: backupDir.appendingPathComponent("Books").path
+        ).sorted()
+        #expect(booksContents == ["config", "data"])
+
+        // config/ contains service dirs + metadata
+        let configContents = try fm.contentsOfDirectory(
+            atPath: backupDir.appendingPathComponent("Books/config").path
+        ).sorted()
+        #expect(configContents.contains("manifest.json"))
+        #expect(configContents.contains("state.json"))
+        #expect(configContents.contains("service_config"))
+        #expect(configContents.contains("service_data"))
     }
 }

@@ -159,7 +159,7 @@ package final class ServiceManager {
         )
 
         let displayNames = Dictionary(
-            uniqueKeysWithValues: installedServices.map { ($0.id, $0.name) }
+            uniqueKeysWithValues: installedServices.map { ($0.id, userFacingName(for: $0)) }
         )
 
         let credentialKeys = BackupEngine.discoverCredentialKeys()
