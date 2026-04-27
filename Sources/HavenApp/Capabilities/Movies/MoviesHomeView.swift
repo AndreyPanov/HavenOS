@@ -279,6 +279,11 @@ struct MoviesHomeView: View {
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
 
+                                Text("Tip: Organize TV shows as Show Name/Season 1/episode.mkv for best results. Movies can be loose files or in their own folders.")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+
                                 HStack(spacing: 8) {
                                     Text(selectedLibraryPath)
                                         .font(.system(.callout, design: .monospaced))

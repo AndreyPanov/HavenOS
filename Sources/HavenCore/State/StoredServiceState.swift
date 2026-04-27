@@ -21,8 +21,8 @@ public struct StoredServiceState: Codable, Equatable, Sendable {
     /// Current lifecycle status.
     public var status: ServiceStatus
 
-    /// Resolved settings at install time (key → value).
-    public let resolvedSettings: [String: String]
+    /// Resolved settings (key → value). Updated when user changes paths post-install.
+    public var resolvedSettings: [String: String]
 
     /// Port assignments per runtime unit.
     public let portAssignments: [StoredPortAssignment]

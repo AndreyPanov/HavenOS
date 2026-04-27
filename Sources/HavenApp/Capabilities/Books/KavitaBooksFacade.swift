@@ -176,8 +176,9 @@ package final class KavitaBooksFacade: BooksFacade {
             try await client.createLibrary(name: "Books", folders: [expandedPath], token: token)
         }
 
-        // Persist the override in UserDefaults
+        // Persist the override in UserDefaults and resolved settings
         UserDefaults.standard.set(path, forKey: libraryPathOverrideKey)
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "library_path", value: path)
         log.info("Library folder changed to \(path)")
 
         updateLibrary()

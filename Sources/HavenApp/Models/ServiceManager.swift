@@ -108,6 +108,16 @@ package final class ServiceManager {
         havenState.services[capabilityID]
     }
 
+    /// Update a resolved setting for a capability and persist the change.
+    /// Used when facades change paths post-install (e.g. user picks a new library folder).
+    func updateResolvedSetting(for capabilityID: String, key: String, value: String) {
+        guard var state = havenState.services[capabilityID] else { return }
+        state.resolvedSettings[key] = value
+        state.updatedAt = Date()
+        havenState.services[capabilityID] = state
+        try? stateStore.upsert(state)
+    }
+
     /// User-facing name for a service (e.g. "Books" instead of "Kavita").
     func userFacingName(for service: InstalledService) -> String {
         if let f = facade(for: service.id) {

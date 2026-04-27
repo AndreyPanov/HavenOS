@@ -51,10 +51,16 @@ struct BackupView: View {
                     }
                     .disabled(!settings.backupSettings.isConfigured || serviceManager.isBackingUp)
 
-                    if serviceManager.isBackingUp, let status = serviceManager.backupStatus {
-                        Text(status)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                    if serviceManager.isBackingUp {
+                        ProgressView()
+                            .controlSize(.small)
+                        if let status = serviceManager.backupStatus {
+                            Text(status)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
                 }
             }

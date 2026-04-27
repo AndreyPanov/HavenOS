@@ -70,7 +70,9 @@ public struct BackupEngine: Sendable {
         // Copy user content directly into data/ (no extra subfolder)
         for sourcePath in scope.contentPaths {
             do {
-                let bytes = try copyDirectoryContents(from: sourcePath, to: dataRoot)
+                let bytes = try copyDirectoryContentsWithProgress(
+                    from: sourcePath, to: dataRoot, label: name, progress: progress
+                )
                 relativePaths.append("data")
                 totalBytes += bytes
             } catch {
@@ -299,23 +301,100 @@ public struct BackupEngine: Sendable {
     /// Copy the contents of a source directory into a destination directory (flat, no nesting).
     @discardableResult
     private func copyDirectoryContents(from source: URL, to destination: URL) throws -> UInt64 {
+        try copyDirectoryContentsWithProgress(from: source, to: destination, label: nil, progress: nil)
+    }
+
+    /// Incrementally sync directory contents with progress reporting.
+    /// Skips files where size and modification date match. Removes orphaned files from destination.
+    @discardableResult
+    private func copyDirectoryContentsWithProgress(
+        from source: URL,
+        to destination: URL,
+        label: String?,
+        progress: (@Sendable (String) -> Void)?
+    ) throws -> UInt64 {
         guard fileManager.fileExists(atPath: source.path) else { return 0 }
 
-        let items = try fileManager.contentsOfDirectory(
+        let sourceItems = try fileManager.contentsOfDirectory(
             at: source,
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
         )
 
+        let totalItems = sourceItems.count
+        let prefix = label ?? "Backup"
+        let resourceKeys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+
+        // Remove destination items that no longer exist in source
+        if fileManager.fileExists(atPath: destination.path) {
+            let sourceNames = Set(sourceItems.map(\.lastPathComponent))
+            let destItems = try fileManager.contentsOfDirectory(
+                at: destination,
+                includingPropertiesForKeys: nil
+            )
+            for destItem in destItems where !sourceNames.contains(destItem.lastPathComponent) {
+                try? fileManager.removeItem(at: destItem)
+            }
+        }
+
         var total: UInt64 = 0
-        for item in items {
-            let destItem = destination.appendingPathComponent(item.lastPathComponent)
+        var copiedCount = 0
+        var skippedCount = 0
+
+        for (index, sourceItem) in sourceItems.enumerated() {
+            let destItem = destination.appendingPathComponent(sourceItem.lastPathComponent)
+
+            // Check if destination already has an identical copy
+            if fileManager.fileExists(atPath: destItem.path),
+               filesMatch(sourceItem, destItem, keys: resourceKeys) {
+                skippedCount += 1
+                total += fileOrDirectorySize(at: destItem)
+                if totalItems > 5 {
+                    progress?("\(prefix): \(index + 1) of \(totalItems) — \(sourceItem.lastPathComponent) (unchanged)")
+                }
+                continue
+            }
+
+            copiedCount += 1
+            progress?("\(prefix): Copying \(index + 1) of \(totalItems) — \(sourceItem.lastPathComponent)")
+
             if fileManager.fileExists(atPath: destItem.path) {
                 try fileManager.removeItem(at: destItem)
             }
-            try fileManager.copyItem(at: item, to: destItem)
-            total += directorySize(at: destItem)
+            try fileManager.copyItem(at: sourceItem, to: destItem)
+            total += fileOrDirectorySize(at: destItem)
         }
+
+        if copiedCount == 0 && skippedCount > 0 {
+            progress?("\(prefix): All \(skippedCount) items up to date")
+        }
+
         return total
+    }
+
+    /// Compare two files/directories by size and modification date.
+    private func filesMatch(_ a: URL, _ b: URL, keys: Set<URLResourceKey>) -> Bool {
+        guard let aVals = try? a.resourceValues(forKeys: keys),
+              let bVals = try? b.resourceValues(forKeys: keys) else {
+            return false
+        }
+
+        // For directories, compare recursively would be expensive — just check mod date
+        if aVals.fileSize != bVals.fileSize { return false }
+        if let aDate = aVals.contentModificationDate,
+           let bDate = bVals.contentModificationDate {
+            return abs(aDate.timeIntervalSince(bDate)) < 1.0
+        }
+        return false
+    }
+
+    /// Size of a file or directory.
+    private func fileOrDirectorySize(at url: URL) -> UInt64 {
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir) else { return 0 }
+        if isDir.boolValue {
+            return directorySize(at: url)
+        }
+        return (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { UInt64($0) } ?? 0
     }
 
     private func ensureDestinationReachable(_ url: URL) throws {

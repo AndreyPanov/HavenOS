@@ -182,6 +182,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         }
 
         UserDefaults.standard.set(path, forKey: libraryPathKey)
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "movies_path", value: path)
         setupPhase = .scanning(progress: nil)
         updateLibrary()
 
