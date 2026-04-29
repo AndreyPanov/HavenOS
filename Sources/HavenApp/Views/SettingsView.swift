@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import HavenCore
 import HavenFacade
@@ -20,64 +21,9 @@ struct SettingsView: View {
         @Bindable var settings = settings
 
         Form {
-            Section("Catalog") {
-                LabeledContent("Catalog Folder") {
-                    HStack(spacing: 8) {
-                        Text(settings.catalogFolder)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-                        Button("Choose\u{2026}") {
-                            showFolderPicker = true
-                        }
-                        .controlSize(.small)
-                    }
-                }
-
-                HStack(spacing: 12) {
-                    Button("Reload Catalog") {
-                        serviceManager.reloadCatalog(from: settings.catalogFolderURL)
-                    }
-
-                    Button("Open in Finder") {
-                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: settings.catalogFolderURL.path)
-                    }
-
-                    if settings.catalogFolder != HavenSettingsModel.defaultCatalogFolder {
-                        Button("Reset to Default") {
-                            settings.catalogFolder = HavenSettingsModel.defaultCatalogFolder
-                        }
-                    }
-                }
-
-                catalogStatusBlock
-            }
-
             Section("General") {
                 LabeledContent("Data Directory") {
                     Text(settings.dataDirectory)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                Toggle("Launch at Login", isOn: $settings.launchAtLogin)
-                Toggle("Automatically Start Installed Services", isOn: $settings.autoStartServices)
-            }
-
-            Section("Paths") {
-                LabeledContent("Base Directory") {
-                    Text(settings.baseDirectory)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                LabeledContent("Downloads") {
-                    Text(settings.downloadsDirectory)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                LabeledContent("Installed Artifacts") {
-                    Text(settings.artifactsDirectory)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
@@ -112,15 +58,46 @@ struct SettingsView: View {
             }
 
             Section("Advanced") {
-                Toggle("Show Internal Details", isOn: $settings.showInternalDetails)
-                LabeledContent("Logs") {
-                    Button("Open Logs Folder") {
-                        // TODO: Open ~/.haven/Services/*/logs in Finder
+                // Catalog
+                LabeledContent("Catalog Folder") {
+                    HStack(spacing: 8) {
+                        Text(settings.catalogFolder)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        Button("Choose\u{2026}") {
+                            showFolderPicker = true
+                        }
+                        .controlSize(.small)
                     }
                 }
-                LabeledContent("Service State") {
-                    Button("Rebuild Service State") {
-                        // TODO: Reconcile persisted state with launchd reality
+
+                HStack(spacing: 12) {
+                    Button("Reload Catalog") {
+                        serviceManager.reloadCatalog(from: settings.catalogFolderURL)
+                    }
+
+                    Button("Open Catalog in Finder") {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: settings.catalogFolderURL.path)
+                    }
+
+                    if settings.catalogFolder != HavenSettingsModel.defaultCatalogFolder {
+                        Button("Reset to Default") {
+                            settings.catalogFolder = HavenSettingsModel.defaultCatalogFolder
+                        }
+                    }
+                }
+
+                catalogStatusBlock
+
+                // Logs
+                LabeledContent("Logs") {
+                    Button("Open Logs Folder") {
+                        let logsPath = (settings.baseDirectory as NSString)
+                            .expandingTildeInPath + "/Services"
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: logsPath)
                     }
                 }
             }

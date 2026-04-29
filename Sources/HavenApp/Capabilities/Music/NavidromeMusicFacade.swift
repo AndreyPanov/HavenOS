@@ -25,13 +25,15 @@ package final class NavidromeMusicFacade: MusicFacade {
     // MARK: - MusicFacade
 
     package private(set) var library: MusicLibrary?
+    package var setupPhase: SetupPhase?
 
     package var setupState: BackendSetupState {
+        if setupPhase != nil { return .settingUp }
         switch connectionState {
-        case .disconnected: .needsSetup(message: "Connect to see your library")
-        case .connecting:   .settingUp
-        case .connected:    .ready
-        case .failed(let m): .failed(m)
+        case .disconnected: return .needsSetup(message: "Connect to see your library")
+        case .connecting:   return .settingUp
+        case .connected:    return .ready
+        case .failed(let m): return .failed(m)
         }
     }
 
@@ -206,103 +208,137 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Auto-Connect
 
+    /// Two flows:
+    /// - **Returning user** (has saved credentials): silent reconnect, no wizard.
+    /// - **First run** (no credentials): progressive wizard with account choice.
     package func autoConnect() async {
         guard let client = apiClient else { return }
-        // isAutoConnecting is set by refresh() before this Task is created
         connectionState = .connecting
         log.info("Auto-connect: waiting for Navidrome API...")
 
         // Step 1: Poll /ping until reachable
+        setupPhase = .waitingForServer
         let healthy = await pollHealth(client: client, maxAttempts: 15, interval: 1.0)
-        guard healthy else {
-            log.warning("Auto-connect: Navidrome API not reachable after polling")
-            connectionState = .failed("Service is starting — try again in a moment")
+        guard healthy, !Task.isCancelled else {
+            if !Task.isCancelled {
+                log.warning("Auto-connect: Navidrome API not reachable after polling")
+                connectionState = .failed("Service is starting — try again in a moment")
+            }
+            setupPhase = nil
             isAutoConnecting = false
             return
         }
         log.info("Auto-connect: Navidrome API is healthy")
 
-        // Step 2: Try saved JWT token
-        loadSavedCredentials()
-        if let token = authToken {
-            log.info("Auto-connect: trying saved token")
-            if await verifyToken(client: client, token: token) {
-                connectionState = .connected
-                isAutoConnecting = false
-                log.info("Auto-connect: saved token valid")
-                await fetchLibraryStats()
-                return
-            }
-            log.info("Auto-connect: saved token expired")
-            authToken = nil
+        // Step 2: Try saved credentials (returning user — skip wizard)
+        if await tryExistingCredentials(client: client) {
+            setupPhase = nil
+            isAutoConnecting = false
+            return
         }
 
-        // Step 3: Try saved password
-        if let username = UserDefaults.standard.string(forKey: usernameKey),
-           let password = UserDefaults.standard.string(forKey: passwordKey) {
-            log.info("Auto-connect: re-login with saved credentials")
+        // Step 3: First run — show account choice
+        setupPhase = .awaitingAccountChoice
+        isAutoConnecting = false
+        log.info("Auto-connect: first run, awaiting account choice")
+    }
+
+    /// User chose "Set it up for me" during setup wizard.
+    package func chooseManaged() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = true
+        setupPhase = .creatingAccount
+
+        autoConnectTask = Task {
+            guard let client = apiClient else { return }
+
+            let username = "haven"
+            let password = generatePassword()
             do {
-                let response = try await client.login(username: username, password: password)
+                let response = try await client.createAdmin(username: username, password: password)
                 authToken = response.token
                 connectionState = .connected
                 saveCredentials(response.token, username: username)
-                isAutoConnecting = false
-                log.info("Auto-connect: re-login succeeded")
-                await fetchLibraryStats()
-                return
+                UserDefaults.standard.set(password, forKey: passwordKey)
+                UserDefaults.standard.set(username, forKey: managedUsernameKey)
+                UserDefaults.standard.set(password, forKey: managedPasswordKey)
+                log.info("Setup wizard: created managed account")
             } catch {
-                log.warning("Auto-connect: re-login failed: \(error.localizedDescription)")
+                log.info("Setup wizard: admin creation failed, trying login: \(error.localizedDescription)")
+                if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
+                   let mPass = UserDefaults.standard.string(forKey: managedPasswordKey),
+                   let response = try? await client.login(username: mUser, password: mPass) {
+                    authToken = response.token
+                    connectionState = .connected
+                    saveCredentials(response.token, username: mUser)
+                    log.info("Setup wizard: logged in with existing managed credentials")
+                } else {
+                    setupPhase = nil
+                    connectionState = .failed("Couldn't create account — try signing in manually")
+                    return
+                }
             }
-        }
 
-        // Step 3b: Try managed credentials
-        if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
-           let mPass = UserDefaults.standard.string(forKey: managedPasswordKey) {
-            log.info("Auto-connect: trying managed credentials")
-            do {
-                let response = try await client.login(username: mUser, password: mPass)
-                authToken = response.token
+            // Navidrome uses a configured music_path from the spec,
+            // so we skip the folder picker and go straight to scanning.
+            setupPhase = nil
+            await fetchLibraryStats()
+            log.info("Setup wizard: complete")
+        }
+    }
+
+    /// User chose "I have my own account".
+    package func chooseCustom() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = false
+        // View will show ConnectSheet; after connect() succeeds, call continueSetupAfterLogin()
+    }
+
+    /// Called after manual connect() to finish setup.
+    package func continueSetupAfterLogin() {
+        setupPhase = nil
+        log.info("Setup wizard: manual login succeeded, setup complete")
+    }
+
+    /// Try all saved credential methods. Returns true if connected.
+    private func tryExistingCredentials(client: NavidromeAPIClient) async -> Bool {
+        loadSavedCredentials()
+        if let token = authToken {
+            if await verifyToken(client: client, token: token) {
                 connectionState = .connected
-                saveCredentials(response.token, username: mUser)
-                UserDefaults.standard.set(mPass, forKey: passwordKey)
-                isAutoConnecting = false
-                log.info("Auto-connect: managed credentials valid")
                 await fetchLibraryStats()
-                return
-            } catch {
-                log.warning("Auto-connect: managed credentials failed: \(error.localizedDescription)")
+                return true
             }
+            authToken = nil
         }
 
-        // Step 4: Try to create admin account (fresh install)
-        log.info("Auto-connect: attempting admin creation")
-        let username = "haven"
-        let password = generatePassword()
-        do {
-            let response = try await client.createAdmin(username: username, password: password)
+        if let username = UserDefaults.standard.string(forKey: usernameKey),
+           let password = UserDefaults.standard.string(forKey: passwordKey),
+           let response = try? await client.login(username: username, password: password) {
             authToken = response.token
             connectionState = .connected
             saveCredentials(response.token, username: username)
-            UserDefaults.standard.set(password, forKey: passwordKey)
-            UserDefaults.standard.set(username, forKey: managedUsernameKey)
-            UserDefaults.standard.set(password, forKey: managedPasswordKey)
-            log.info("Auto-connect: created admin account")
-            isAutoConnecting = false
             await fetchLibraryStats()
-            return
-        } catch {
-            log.info("Auto-connect: admin creation failed (account exists?): \(error.localizedDescription)")
+            return true
         }
 
-        // Step 5: All methods exhausted
-        connectionState = .disconnected
-        isAutoConnecting = false
-        autoConnectExhausted = true
-        log.info("Auto-connect: giving up, manual sign-in required")
+        if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
+           let mPass = UserDefaults.standard.string(forKey: managedPasswordKey),
+           let response = try? await client.login(username: mUser, password: mPass) {
+            authToken = response.token
+            connectionState = .connected
+            saveCredentials(response.token, username: mUser)
+            UserDefaults.standard.set(mPass, forKey: passwordKey)
+            await fetchLibraryStats()
+            return true
+        }
+
+        return false
     }
 
     private func pollHealth(client: NavidromeAPIClient, maxAttempts: Int, interval: TimeInterval) async -> Bool {
         for attempt in 1...maxAttempts {
+            if Task.isCancelled { return false }
             if await client.isHealthy() {
                 return true
             }
@@ -396,6 +432,7 @@ package final class NavidromeMusicFacade: MusicFacade {
         albumCount = nil
         trackCount = nil
         currentScanStatus = .idle
+        setupPhase = nil
         UserDefaults.standard.removeObject(forKey: tokenKey)
         updateLibrary()
     }
@@ -412,6 +449,7 @@ package final class NavidromeMusicFacade: MusicFacade {
         albumCount = nil
         trackCount = nil
         currentScanStatus = .idle
+        setupPhase = nil
         clearAllCredentials()
         updateLibrary()
     }
@@ -439,6 +477,15 @@ package final class NavidromeMusicFacade: MusicFacade {
         advancedURL = result.advancedURL
 
         guard let service = result.service else {
+            // Service uninstalled — cancel any running auto-connect
+            autoConnectTask?.cancel()
+            autoConnectTask = nil
+            isAutoConnecting = false
+            autoConnectExhausted = false
+            setupPhase = nil
+            if connectionState != .disconnected {
+                connectionState = .disconnected
+            }
             library = nil
             return
         }
@@ -523,13 +570,16 @@ package final class NavidromeMusicFacade: MusicFacade {
     }
 
     private func updateLibrary() {
+        let path = resolvedLibraryPath
         library = MusicLibrary(
-            libraryPath: resolvedLibraryPath,
+            libraryPath: path,
             scanStatus: currentScanStatus,
             artistCount: artistCount,
             albumCount: albumCount,
             trackCount: trackCount
         )
+        // Ensure unified content_paths key is set for backup scope
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "content_paths", value: path)
     }
 
     // MARK: - Credential Persistence

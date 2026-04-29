@@ -217,6 +217,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
         paths.append(path)
         saveLibraryPaths(paths)
+        currentScanStatus = .scanning
         updateLibrary()
         startScanPolling()
     }
@@ -239,6 +240,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         log.info("removeLibraryPath: removed \(expandedPath) from '\(libraryName)'")
 
         saveLibraryPaths(paths)
+        currentScanStatus = .scanning
         updateLibrary()
         startScanPolling()
     }
@@ -334,7 +336,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
     private func runSetupWizard(client: JellyfinAPIClient) async -> Bool {
         log.info("Running Jellyfin setup wizard")
 
-        // Step 1: Configure language/metadata
+        // Step 1: Check if setup is already complete
         setupPhase = .waitingForServer
         do {
             let complete = try await client.isSetupComplete()
@@ -347,89 +349,124 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             log.warning("Could not check setup status: \(error.localizedDescription)")
         }
 
-        setupPhase = .creatingAccount
+        // Step 2: Configure language/metadata
         do {
             try await client.setStartupConfiguration()
             log.info("Setup wizard: configuration set")
         } catch {
             log.warning("Setup wizard: config failed: \(error.localizedDescription)")
-            // Non-fatal — may already be configured
         }
 
-        // Step 2: Wait for user database to be ready, then create admin user.
-        // Jellyfin's user DB may not be initialized when /System/Ping first succeeds.
-        // Poll GET /Startup/User until it returns a valid response.
-        let username = "haven"
-        let password = generatePassword()
-        var userCreated = false
-        for attempt in 1...10 {
+        // Step 3: Ask user how they want to manage the account
+        setupPhase = .awaitingAccountChoice
+        isAutoConnecting = false
+        log.info("Setup wizard: awaiting account choice")
+        // Wizard continues when user calls chooseManaged() or chooseCustom()
+        return true
+    }
+
+    /// User chose "Set it up for me" during setup wizard.
+    package func chooseManaged() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = true
+        setupPhase = .creatingAccount
+
+        autoConnectTask = Task {
+            guard let client = apiClient else { return }
+
+            // Wait for user database and create admin user
+            let username = "haven"
+            let password = generatePassword()
+            var userCreated = false
+            for attempt in 1...10 {
+                do {
+                    let _ = try await client.getStartupUser()
+                    try await client.createSetupUser(username: username, password: password)
+                    log.info("Setup wizard: user created")
+                    userCreated = true
+                    break
+                } catch {
+                    log.warning("Setup wizard: user creation attempt \(attempt)/10: \(error.localizedDescription)")
+                    if attempt < 10 {
+                        try? await Task.sleep(for: .seconds(2))
+                    }
+                }
+            }
+            guard userCreated else {
+                setupPhase = nil
+                connectionState = .failed("Couldn't create account")
+                return
+            }
+
+            // Configure remote access + complete setup
+            try? await client.setRemoteAccess(enableRemote: true, enableUPnP: false)
+            try? await client.completeSetup()
+
+            // Authenticate
             do {
-                // Poll until the user database is ready
-                let _ = try await client.getStartupUser()
-                // DB is ready — now update the user
-                try await client.createSetupUser(username: username, password: password)
-                log.info("Setup wizard: user created")
-                userCreated = true
-                break
+                let response = try await client.login(username: username, password: password)
+                authToken = response.AccessToken
+                connectionState = .connected
+                saveCredentials(response.AccessToken, username: username)
+                UserDefaults.standard.set(password, forKey: passwordKey)
+                UserDefaults.standard.set(username, forKey: managedUsernameKey)
+                UserDefaults.standard.set(password, forKey: managedPasswordKey)
+                log.info("Setup wizard: authenticated as \(username)")
             } catch {
-                log.warning("Setup wizard: user creation attempt \(attempt)/10: \(error.localizedDescription)")
-                if attempt < 10 {
-                    try? await Task.sleep(for: .seconds(2))
+                log.error("Setup wizard: login failed: \(error.localizedDescription)")
+                setupPhase = nil
+                connectionState = .failed("Login failed after account creation")
+                return
+            }
+
+            // Check if libraries already exist
+            if let libs = try? await client.getLibraries(token: authToken!), !libs.isEmpty {
+                setupPhase = nil
+                await fetchItemCounts()
+                return
+            }
+
+            // Transition to folder picker
+            setupPhase = .awaitingLibraryPath
+            log.info("Setup wizard: awaiting library path")
+        }
+    }
+
+    /// User chose "I have my own account" — they need to complete Jellyfin setup
+    /// in the browser first, then sign in.
+    package func chooseCustom() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = false
+
+        // Complete the Jellyfin startup wizard so the user can create their own account in the web UI
+        Task {
+            guard let client = apiClient else { return }
+            // Wait for user DB, set a temp user so we can complete the wizard
+            for _ in 1...5 {
+                if let _ = try? await client.getStartupUser() { break }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            try? await client.setRemoteAccess(enableRemote: true, enableUPnP: false)
+            try? await client.completeSetup()
+        }
+
+        setupPhase = nil
+        // View will show ConnectSheet
+    }
+
+    /// Called after manual connect() to continue setup if needed.
+    package func continueSetupAfterLogin() {
+        if connectionState == .connected {
+            Task {
+                guard let token = authToken, let client = apiClient else { return }
+                if let libs = try? await client.getLibraries(token: token), !libs.isEmpty {
+                    setupPhase = nil
+                    await fetchItemCounts()
+                } else {
+                    setupPhase = .awaitingLibraryPath
                 }
             }
         }
-        guard userCreated else {
-            setupPhase = nil
-            return false
-        }
-
-        // Step 3: Configure remote access
-        do {
-            try await client.setRemoteAccess(enableRemote: true, enableUPnP: false)
-            log.info("Setup wizard: remote access configured")
-        } catch {
-            log.warning("Setup wizard: remote access config failed: \(error.localizedDescription)")
-        }
-
-        // Step 4: Complete setup
-        do {
-            try await client.completeSetup()
-            log.info("Setup wizard: complete")
-        } catch {
-            log.warning("Setup wizard: complete failed: \(error.localizedDescription)")
-        }
-
-        // Now authenticate with the created credentials
-        do {
-            let response = try await client.login(username: username, password: password)
-            authToken = response.AccessToken
-            connectionState = .connected
-            saveCredentials(response.AccessToken, username: username)
-            UserDefaults.standard.set(password, forKey: passwordKey)
-            UserDefaults.standard.set(username, forKey: managedUsernameKey)
-            UserDefaults.standard.set(password, forKey: managedPasswordKey)
-            log.info("Setup wizard: authenticated as \(username)")
-        } catch {
-            log.error("Setup wizard: login after setup failed: \(error.localizedDescription)")
-            setupPhase = nil
-            return false
-        }
-
-        // Check if libraries already exist (user might have set them up before)
-        do {
-            let libraries = try await client.getLibraries(token: authToken!)
-            if !libraries.isEmpty {
-                setupPhase = nil
-                await fetchItemCounts()
-                return true
-            }
-        } catch {
-            log.warning("Could not check libraries: \(error.localizedDescription)")
-        }
-
-        // Transition to user input phase
-        setupPhase = .awaitingLibraryPath
-        return true
     }
 
     // MARK: - Auto-Connect
@@ -441,9 +478,11 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
         // Step 1: Poll /System/Ping until reachable
         let healthy = await pollHealth(client: client, maxAttempts: 15, interval: 1.0)
-        guard healthy else {
-            log.warning("Auto-connect: Jellyfin API not reachable after polling")
-            connectionState = .failed("Service is starting — try again in a moment")
+        guard healthy, !Task.isCancelled else {
+            if !Task.isCancelled {
+                log.warning("Auto-connect: Jellyfin API not reachable after polling")
+                connectionState = .failed("Service is starting — try again in a moment")
+            }
             isAutoConnecting = false
             return
         }
@@ -536,6 +575,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
     private func pollHealth(client: JellyfinAPIClient, maxAttempts: Int, interval: TimeInterval) async -> Bool {
         for attempt in 1...maxAttempts {
+            if Task.isCancelled { return false }
             if await client.isHealthy() { return true }
             log.debug("Health poll \(attempt)/\(maxAttempts): not ready")
             try? await Task.sleep(for: .seconds(interval))
@@ -666,6 +706,15 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         advancedURL = result.advancedURL
 
         guard let service = result.service else {
+            // Service uninstalled — cancel any running auto-connect
+            autoConnectTask?.cancel()
+            autoConnectTask = nil
+            isAutoConnecting = false
+            autoConnectExhausted = false
+            setupPhase = nil
+            if connectionState != .disconnected {
+                connectionState = .disconnected
+            }
             library = nil
             return
         }
@@ -784,14 +833,13 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
     private func saveLibraryPaths(_ paths: [String]) {
         UserDefaults.standard.set(paths, forKey: libraryPathsKey)
-        // Also keep movies_path for backup scope (primary path)
         if let first = paths.first {
             UserDefaults.standard.set(first, forKey: libraryPathKey)
             serviceManager?.updateResolvedSetting(for: capabilityID, key: "movies_path", value: first)
         }
-        // Store all paths semicolon-separated for backup scope
+        // Unified content_paths key for backup scope (shared convention across all capabilities)
         let joined = paths.joined(separator: ";")
-        serviceManager?.updateResolvedSetting(for: capabilityID, key: "movies_paths", value: joined)
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "content_paths", value: joined)
     }
 
     private func saveCredentials(_ token: String, username: String) {

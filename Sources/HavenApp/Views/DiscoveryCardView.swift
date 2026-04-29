@@ -16,9 +16,14 @@ struct CapabilityCardView: View {
             HStack(spacing: 10) {
                 ServiceIconView(systemName: plugin.icon, imagePath: plugin.iconImagePath)
 
-                Text(plugin.name)
-                    .font(.headline)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(plugin.name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text("Powered by \(plugin.backendName)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
 
                 Spacer()
 

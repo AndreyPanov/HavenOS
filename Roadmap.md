@@ -884,6 +884,46 @@ Not in v1: snapshot recovery, launchd scheduling, encryption, cloud destinations
 ⸻
 
 
+🎯 Phase 17 — Consistency
+
+🎯 Goal
+
+Make Books, Music, and Movies feel like one product — not three separate open-source wrappers.
+Every capability should have the same setup flow, the same folder management, and the same UI patterns.
+
+17.1 — Unified Setup Wizard
+	•	Move SetupPhase enum from MoviesModel to shared HavenFacade (all capabilities use it)
+	•	Progressive inline wizard for Books, Music, Movies (same card-based pattern)
+	•	New "account choice" step: "Set it up for me" (managed) vs "I have my own account" (custom sign-in)
+	•	Folder picker step during first install — user always chooses where their content lives
+	•	Wizard steps: Server ready → Account choice → Account created → Choose folder → Scanning
+	•	Books/Music facades gain setupPhase support (currently Movies-only)
+
+17.2 — Multi-Folder for All
+	•	BooksLibrary and MusicLibrary get libraryPaths: [String] (like MoviesLibrary)
+	•	BooksFacade and MusicFacade gain addLibraryPath() / removeLibraryPath()
+	•	Kavita API: add/remove library folders
+	•	Navidrome: single-folder limitation documented (if applicable), or multi-folder via config
+	•	Library card shows all paths with per-path add/remove (same pattern as Movies)
+	•	BackupScope extended for books_paths, music_paths (semicolon-separated)
+
+17.3 — Library Card & Menu Consistency
+	•	Identical library card layout across all three: stats → folder paths → action buttons → hint
+	•	Unified button set: "Add [Content]", "Add Folder", "Open Folder", "Check for New"
+	•	"Open in Browser" in all toolbar menus (not just Movies)
+	•	Music gets missing folder change option
+	•	Consistent hint text pattern per capability
+
+17.4 — Shared Components
+	•	Extract SetupWizardView: reusable progressive wizard driven by SetupPhase
+	•	Extract LibraryFolderRow: path display + remove button, reused in all library cards
+	•	Unified CapabilityUIState enum (replace per-capability BooksUIState/MusicUIState/MoviesUIState)
+	•	Shared centeredCard, statView helpers
+	•	Reduce HomeView duplication — common structure, capability-specific content only
+
+⸻
+
+
 🔄 Phase 18 — Service Update System
 
 🎯 Goal

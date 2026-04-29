@@ -42,6 +42,11 @@ struct BooksHomeView: View {
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
                 facade.refresh()
+                // If user just signed in during setup wizard, continue to folder picker
+                if facade.connectionState == .connected,
+                   let kavita = facade as? KavitaBooksFacade {
+                    kavita.continueSetupAfterLogin()
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -85,7 +90,7 @@ struct BooksHomeView: View {
     @ViewBuilder
     private var statusDot: some View {
         switch resolvedState {
-        case .starting, .settingUp:
+        case .starting, .settingUp, .setupWizard:
             ProgressView()
                 .controlSize(.mini)
         case .needsSetup:
@@ -101,14 +106,15 @@ struct BooksHomeView: View {
 
     private var statusLabel: String {
         switch resolvedState {
-        case .starting:    "Starting up…"
-        case .needsSetup:  "Needs setup"
-        case .settingUp:   "Setting up…"
-        case .empty:       "Ready"
-        case .ready:       "Ready"
-        case .updating:    "Updating…"
-        case .error:       "Error"
-        case .stopped:     "Offline"
+        case .starting:      "Starting up\u{2026}"
+        case .needsSetup:    "Needs setup"
+        case .settingUp:     "Setting up\u{2026}"
+        case .setupWizard:   "Setting up\u{2026}"
+        case .empty:         "Ready"
+        case .ready:         "Ready"
+        case .updating:      "Updating\u{2026}"
+        case .error:         "Error"
+        case .stopped:       "Offline"
         }
     }
 
@@ -125,6 +131,8 @@ struct BooksHomeView: View {
             needsSetupView
         case .settingUp:
             settingUpView
+        case .setupWizard(let phase):
+            setupWizardContent(phase: phase)
         case .empty:
             emptyView
         case .ready:
@@ -209,12 +217,40 @@ struct BooksHomeView: View {
         centeredCard {
             ProgressView()
                 .controlSize(.regular)
-            Text("Setting up your library…")
+            Text("Setting up your library\u{2026}")
                 .font(.headline)
             Text("This usually takes a few seconds.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - State: Setup Wizard
+
+    private func setupWizardContent(phase: SetupPhase) -> some View {
+        SetupWizardView(
+            phase: phase,
+            contentLabel: "Books",
+            icon: "books.vertical",
+            facade: facade,
+            onChooseManaged: {
+                if let kavita = facade as? KavitaBooksFacade {
+                    kavita.chooseManaged()
+                }
+            },
+            onChooseCustom: {
+                if let kavita = facade as? KavitaBooksFacade {
+                    kavita.chooseCustom()
+                    showingConnectSheet = true
+                }
+            },
+            onPickFolder: {},
+            onConfirmFolder: { path in
+                if let kavita = facade as? KavitaBooksFacade {
+                    Task { try? await kavita.confirmSetupFolder(path) }
+                }
+            }
+        )
     }
 
     // MARK: - State: Empty
@@ -352,29 +388,44 @@ struct BooksHomeView: View {
                         }
                     }
 
-                    // Folder path
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                        Text(lib.libraryPath)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    // Folder paths
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(lib.libraryPaths, id: \.self) { path in
+                            HStack(spacing: 6) {
+                                Image(systemName: "folder")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                Text(path)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
 
-                        Button("Change") {
-                            pickLibraryFolder()
+                                if lib.libraryPaths.count > 1 {
+                                    Button {
+                                        Task { try? await facade.removeLibraryPath(path) }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.secondary)
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove this folder")
+                                }
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .font(.callout)
-                        .foregroundStyle(.tint)
                     }
 
                     // Actions
                     HStack(spacing: 8) {
-                        Button("Add Books", systemImage: "plus") {
+                        Button("Add Folder", systemImage: "plus") {
+                            addFolder()
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+
+                        Button("Open Folder", systemImage: "folder") {
                             let path = (lib.libraryPath as NSString).expandingTildeInPath
                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
                             pendingRescanOnFocus = true
@@ -394,7 +445,7 @@ struct BooksHomeView: View {
                     }
 
                     // Hint
-                    Text("Add your EPUB, PDF, or CBZ files to the library folder — Haven organizes them automatically.")
+                    Text("Add your EPUB, PDF, or CBZ files to the library folders \u{2014} Haven organizes them automatically.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -479,10 +530,16 @@ struct BooksHomeView: View {
 
     private var advancedMenu: some View {
         Menu {
-            if let lib = facade.library {
+            if facade.library != nil {
+                Button("Add Folder\u{2026}", systemImage: "folder.badge.plus") {
+                    addFolder()
+                }
+
                 Button("Open Library Folder", systemImage: "folder") {
-                    let path = (lib.libraryPath as NSString).expandingTildeInPath
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                    if let lib = facade.library {
+                        let path = (lib.libraryPath as NSString).expandingTildeInPath
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                    }
                 }
             }
 
@@ -523,12 +580,17 @@ struct BooksHomeView: View {
         case .degraded:
             return .error("Library is running with issues")
         case .ready:
+            // Check for active setup wizard
+            if let phase = facade.setupPhase {
+                return .setupWizard(phase)
+            }
+
             if facade.isManagedByHaven,
                (facade.isAutoConnecting || facade.connectionState == .connecting) {
                 return .settingUp
             }
             if facade.isManagedByHaven, facade.autoConnectExhausted {
-                return .error("Couldn't connect automatically — try signing in manually")
+                return .error("Couldn\u{2019}t connect automatically \u{2014} try signing in manually")
             }
             switch facade.setupState {
             case .needsSetup:
@@ -553,6 +615,22 @@ struct BooksHomeView: View {
     }
 
     // MARK: - Folder Picker
+
+    private func addFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add"
+        panel.message = "Choose a folder to add to your book library"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            Task {
+                try? await facade.addLibraryPath(url.path)
+            }
+        }
+    }
 
     private func pickLibraryFolder() {
         let panel = NSOpenPanel()
@@ -589,6 +667,7 @@ private enum BooksUIState {
     case starting
     case needsSetup
     case settingUp
+    case setupWizard(SetupPhase)
     case empty
     case ready
     case updating

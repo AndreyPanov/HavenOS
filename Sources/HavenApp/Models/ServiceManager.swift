@@ -331,6 +331,7 @@ package final class ServiceManager {
     func refresh() {
         loadInstalledState()
         rebuildViewModels()
+        refreshBackupHealth(settings: .load())
     }
 
     // MARK: - Lifecycle Actions
@@ -403,9 +404,29 @@ package final class ServiceManager {
         clearFacadeCredentials(for: capabilityID)
         facades.removeValue(forKey: capabilityID)
 
+        // Clean up backup settings for this capability
+        clearBackupSettings(for: capabilityID)
+
         await performAction("Uninstall", capabilityID: capabilityID) { executor in
             try executor.uninstall(capabilityID: capabilityID)
         }
+    }
+
+    /// Remove backup destination and stale backup results for an uninstalled capability.
+    private func clearBackupSettings(for capabilityID: String) {
+        var settings = BackupSettings.load()
+        settings.removeDestination(for: capabilityID)
+
+        // Clear stale lastBackupResult if it references capabilities no longer installed
+        if case .partial(let failed, _) = settings.lastBackupResult {
+            let remainingInstalled = Set(installedServices.map(\.id)).subtracting([capabilityID])
+            let stillRelevant = failed.filter { remainingInstalled.contains($0) }
+            if stillRelevant.isEmpty {
+                settings.lastBackupResult = settings.lastBackupDate != nil ? .success : nil
+            }
+        }
+
+        settings.save()
     }
 
     /// Remove all UserDefaults keys associated with a facade's credentials.
@@ -662,20 +683,34 @@ package final class ServiceManager {
             facade.refresh()
         }
 
-        // Build discoverable plugins from catalog
-        discoverablePlugins = catalog.map { entry in
-            DiscoverablePlugin(
-                id: entry.capability.id,
-                name: entry.capability.name,
-                summary: entry.capability.description ?? "",
-                icon: entry.metadata.icon,
-                iconImagePath: entry.metadata.iconImagePath,
-                notes: entry.metadata.notes,
-                isInstalled: installedCapIDs.contains(entry.capability.id),
-                fullDescription: entry.metadata.fullDescription,
-                screenshotPaths: entry.capability.screenshots
-            )
-        }
+        // Build discoverable plugins from catalog (only supported capabilities)
+        let supportedIDs: Set<String> = [
+            "haven.capability.kavita",
+            "haven.capability.navidrome",
+            "haven.capability.jellyfin",
+        ]
+        let userFacingNames: [String: String] = [
+            "haven.capability.kavita": "Books",
+            "haven.capability.navidrome": "Music",
+            "haven.capability.jellyfin": "Movies",
+        ]
+
+        discoverablePlugins = catalog
+            .filter { supportedIDs.contains($0.capability.id) }
+            .map { entry in
+                DiscoverablePlugin(
+                    id: entry.capability.id,
+                    name: userFacingNames[entry.capability.id] ?? entry.capability.name,
+                    backendName: entry.capability.name,
+                    summary: entry.capability.description ?? "",
+                    icon: entry.metadata.icon,
+                    iconImagePath: entry.metadata.iconImagePath,
+                    notes: entry.metadata.notes,
+                    isInstalled: installedCapIDs.contains(entry.capability.id),
+                    fullDescription: entry.metadata.fullDescription,
+                    screenshotPaths: entry.capability.screenshots
+                )
+            }
     }
 
     // MARK: - Helpers

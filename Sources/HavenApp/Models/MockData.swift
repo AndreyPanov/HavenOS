@@ -53,14 +53,15 @@ enum MockData {
 
     static let discoverablePlugins: [DiscoverablePlugin] = [
         DiscoverablePlugin(
-            id: "haven.capability.hello-service",
-            name: "Hello Service",
-            summary: "A simple greeting service for testing Haven.",
-            icon: "hand.wave",
+            id: "haven.capability.kavita",
+            name: "Books",
+            backendName: "Kavita",
+            summary: "Your personal library for books, comics, and manga.",
+            icon: "books.vertical",
             iconImagePath: nil,
-            notes: ["Lightweight", "Native service"],
+            notes: ["Books", "Comics", "Manga"],
             isInstalled: false,
-            fullDescription: "Hello Service is a minimal service that responds to HTTP requests with a greeting. Useful for testing your Haven setup and verifying connectivity.",
+            fullDescription: "Your personal library for books, comics, and manga.",
             screenshotPaths: []
         ),
     ]

@@ -12,7 +12,6 @@ struct MoviesHomeView: View {
     let facade: any MoviesFacade
     @State private var showingConnectSheet = false
     @State private var pendingRescanOnFocus = false
-    @State private var selectedLibraryPath = "~/Movies"
 
     var body: some View {
         ScrollView {
@@ -40,6 +39,10 @@ struct MoviesHomeView: View {
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
                 facade.refresh()
+                if facade.connectionState == .connected,
+                   let jellyfin = facade as? JellyfinMoviesFacade {
+                    jellyfin.continueSetupAfterLogin()
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -210,203 +213,32 @@ struct MoviesHomeView: View {
         }
     }
 
-    // MARK: - State: Setup Wizard (Progressive Inline Form)
+    // MARK: - State: Setup Wizard
 
     private func setupWizardView(phase: SetupPhase) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Setting up your movie library")
-                .font(.headline)
-            Text("Haven is configuring everything for you.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                // Step 1: Server ready
-                wizardStepCard(
-                    icon: "checkmark.circle.fill",
-                    iconColor: .green,
-                    title: "Server ready",
-                    completed: phase != .waitingForServer
-                ) {
-                    if phase == .waitingForServer {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Waiting for server to start\u{2026}")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+        SetupWizardView(
+            phase: phase,
+            contentLabel: "Movies",
+            icon: "film",
+            facade: facade,
+            onChooseManaged: {
+                if let jellyfin = facade as? JellyfinMoviesFacade {
+                    jellyfin.chooseManaged()
                 }
-
-                // Step 2: Account created
-                if phase != .waitingForServer {
-                    wizardStepCard(
-                        icon: "checkmark.circle.fill",
-                        iconColor: .green,
-                        title: "Account created",
-                        completed: phase != .creatingAccount
-                    ) {
-                        if phase == .creatingAccount {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text("Creating your account\u{2026}")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else if phase != .creatingAccount {
-                            if let username = facade.connectedUsername {
-                                Text("Signed in as \(username)")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            },
+            onChooseCustom: {
+                if let jellyfin = facade as? JellyfinMoviesFacade {
+                    jellyfin.chooseCustom()
+                    showingConnectSheet = true
                 }
-
-                // Step 3: Choose library folder
-                if phase == .awaitingLibraryPath || phase == .creatingLibrary || isScanning(phase) || phase == .complete {
-                    wizardStepCard(
-                        icon: phase == .awaitingLibraryPath ? "folder.badge.questionmark" : "checkmark.circle.fill",
-                        iconColor: phase == .awaitingLibraryPath ? .blue : .green,
-                        title: "Where are your movies?",
-                        completed: phase != .awaitingLibraryPath
-                    ) {
-                        if phase == .awaitingLibraryPath {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Choose the folder with your movies and TV shows. Haven will organize and stream everything in it.")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                Text("Tip: Organize TV shows as Show Name/Season 1/episode.mkv for best results. Movies can be loose files or in their own folders.")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                HStack(spacing: 8) {
-                                    Text(selectedLibraryPath)
-                                        .font(.system(.callout, design: .monospaced))
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(8)
-                                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
-
-                                    Button("Choose\u{2026}") {
-                                        pickFolder()
-                                    }
-                                    .buttonStyle(.glass)
-                                    .controlSize(.small)
-                                }
-
-                                Button("Continue") {
-                                    Task {
-                                        try? await facade.setLibraryPath(selectedLibraryPath, contentType: .moviesAndShows)
-                                    }
-                                }
-                                .buttonStyle(.glassProminent)
-                                .controlSize(.regular)
-                                .disabled(selectedLibraryPath.isEmpty)
-                            }
-                        } else {
-                            Text(selectedLibraryPath)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                // Step 4: Scanning
-                if isScanning(phase) || phase == .creatingLibrary {
-                    wizardStepCard(
-                        icon: "magnifyingglass",
-                        iconColor: .blue,
-                        title: "Finding your movies\u{2026}",
-                        completed: false
-                    ) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            if case .scanning(let progress) = phase, let pct = progress {
-                                ProgressView(value: pct / 100)
-                                Text("\(Int(pct))% complete")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                            Text("Downloading metadata and artwork. This may take a while for large libraries.")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            },
+            onPickFolder: {},
+            onConfirmFolder: { path in
+                Task {
+                    try? await facade.setLibraryPath(path, contentType: .moviesAndShows)
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: wizardPhaseKey(phase))
-        }
-    }
-
-    private func wizardStepCard<Content: View>(
-        icon: String,
-        iconColor: Color,
-        title: String,
-        completed: Bool,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        GroupBox {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundStyle(completed ? .green : iconColor)
-                    .frame(width: 24, alignment: .center)
-                    .padding(.top, 2)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(title)
-                        .font(.callout)
-                        .fontWeight(.medium)
-                        .foregroundStyle(completed ? .secondary : .primary)
-                    content()
-                }
-            }
-            .padding(4)
-        }
-    }
-
-    private func pickFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        panel.message = "Choose your movies folder"
-
-        let expandedPath = (selectedLibraryPath as NSString).expandingTildeInPath
-        panel.directoryURL = URL(fileURLWithPath: expandedPath)
-
-        if panel.runModal() == .OK, let url = panel.url {
-            selectedLibraryPath = url.path
-        }
-    }
-
-    private func isScanning(_ phase: SetupPhase) -> Bool {
-        if case .scanning = phase { return true }
-        return false
-    }
-
-    private func wizardPhaseKey(_ phase: SetupPhase) -> String {
-        switch phase {
-        case .waitingForServer: "waiting"
-        case .creatingAccount: "creating"
-        case .awaitingLibraryPath: "path"
-        case .awaitingLibraryType: "type"
-        case .creatingLibrary: "library"
-        case .scanning: "scanning"
-        case .complete: "complete"
-        }
+        )
     }
 
     // MARK: - State: Empty

@@ -5,6 +5,28 @@ public enum ConnectionState: Sendable, Equatable {
     case disconnected, connecting, connected, failed(String)
 }
 
+/// Phases of the setup wizard shared by all connectable capabilities.
+/// Drives the progressive inline UI — each phase maps to a card
+/// that appears (with animation) in the setup flow.
+public enum SetupPhase: Sendable, Equatable {
+    /// Waiting for the backend server to become reachable.
+    case waitingForServer
+    /// Waiting for the user to choose managed vs custom account.
+    case awaitingAccountChoice
+    /// Creating the admin account automatically.
+    case creatingAccount
+    /// Waiting for the user to pick a library folder.
+    case awaitingLibraryPath
+    /// Waiting for the user to choose library content type (Movies-specific).
+    case awaitingLibraryType
+    /// Creating the library on the backend.
+    case creatingLibrary
+    /// Library scan in progress (progress percentage if available).
+    case scanning(progress: Double?)
+    /// Setup complete — ready to transition to normal view.
+    case complete
+}
+
 /// Device access credentials for streaming/reading on other devices.
 public struct DeviceAccessInfo: Sendable, Equatable {
     /// LAN-accessible server address (e.g. `http://MacBook-Pro.local:4533`).
@@ -38,6 +60,9 @@ public struct DeviceAccessInfo: Sendable, Equatable {
 public protocol ConnectableFacade: CapabilityFacade {
     /// Whether the backend needs additional setup (auth, config, etc.).
     var setupState: BackendSetupState { get }
+
+    /// Current setup wizard phase (nil when setup is complete or not needed).
+    var setupPhase: SetupPhase? { get }
 
     /// Current connection state.
     var connectionState: ConnectionState { get }

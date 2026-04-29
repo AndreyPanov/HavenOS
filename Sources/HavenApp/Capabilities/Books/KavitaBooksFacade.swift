@@ -28,13 +28,15 @@ package final class KavitaBooksFacade: BooksFacade {
     // MARK: - BooksFacade
 
     package private(set) var library: BooksLibrary?
+    package var setupPhase: SetupPhase?
 
     package var setupState: BackendSetupState {
+        if setupPhase != nil { return .settingUp }
         switch connectionState {
-        case .disconnected: .needsSetup(message: "Connect to see your library")
-        case .connecting:   .settingUp
-        case .connected:    .ready
-        case .failed(let m): .failed(m)
+        case .disconnected: return .needsSetup(message: "Connect to see your library")
+        case .connecting:   return .settingUp
+        case .connected:    return .ready
+        case .failed(let m): return .failed(m)
         }
     }
 
@@ -154,6 +156,68 @@ package final class KavitaBooksFacade: BooksFacade {
         try await changeLibraryFolder(to: path)
     }
 
+    package func addLibraryPath(_ path: String) async throws {
+        guard let client = apiClient, let token = authToken else {
+            throw FacadeError.adapterError("Not connected")
+        }
+
+        var paths = resolvedLibraryPaths
+        let expandedPath = (path as NSString).expandingTildeInPath
+
+        // Don't add duplicates
+        guard !paths.contains(path) && !paths.contains(expandedPath) else { return }
+
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: expandedPath) {
+            try fm.createDirectory(atPath: expandedPath, withIntermediateDirectories: true)
+        }
+
+        let expandedPaths = paths.map { ($0 as NSString).expandingTildeInPath } + [expandedPath]
+
+        let libraries = try await client.getLibraries(token: token)
+        if let lib = libraries.first {
+            try await client.updateLibraryFolders(library: lib, folders: expandedPaths, token: token)
+        } else {
+            try await client.createLibrary(name: "Books", folders: expandedPaths, token: token)
+        }
+
+        paths.append(path)
+        saveLibraryPaths(paths)
+        log.info("Added library folder: \(path)")
+
+        updateLibrary()
+
+        organizeLibraryFolder(at: expandedPath)
+        try await rescan()
+    }
+
+    package func removeLibraryPath(_ path: String) async throws {
+        guard let client = apiClient, let token = authToken else {
+            throw FacadeError.adapterError("Not connected")
+        }
+
+        var paths = resolvedLibraryPaths
+        let expandedPath = (path as NSString).expandingTildeInPath
+        paths.removeAll { $0 == path || ($0 as NSString).expandingTildeInPath == expandedPath }
+
+        guard !paths.isEmpty else {
+            throw FacadeError.adapterError("Cannot remove the last folder")
+        }
+
+        let expandedPaths = paths.map { ($0 as NSString).expandingTildeInPath }
+
+        let libraries = try await client.getLibraries(token: token)
+        if let lib = libraries.first {
+            try await client.updateLibraryFolders(library: lib, folders: expandedPaths, token: token)
+        }
+
+        saveLibraryPaths(paths)
+        log.info("Removed library folder: \(path)")
+
+        updateLibrary()
+        try await rescan()
+    }
+
     /// Change the library folder: update Kavita via API, persist override, rescan.
     package func changeLibraryFolder(to path: String) async throws {
         guard let client = apiClient, let token = authToken else {
@@ -176,9 +240,8 @@ package final class KavitaBooksFacade: BooksFacade {
             try await client.createLibrary(name: "Books", folders: [expandedPath], token: token)
         }
 
-        // Persist the override in UserDefaults and resolved settings
-        UserDefaults.standard.set(path, forKey: libraryPathOverrideKey)
-        serviceManager?.updateResolvedSetting(for: capabilityID, key: "library_path", value: path)
+        // Persist the override
+        saveLibraryPaths([path])
         log.info("Library folder changed to \(path)")
 
         updateLibrary()
@@ -238,6 +301,7 @@ package final class KavitaBooksFacade: BooksFacade {
                 }
             }
             self.currentScanStatus = .idle
+            self.setupPhase = nil
             self.updateLibrary()
         }
     }
@@ -246,23 +310,117 @@ package final class KavitaBooksFacade: BooksFacade {
 
     /// Waits for Kavita API to be healthy, then authenticates.
     /// Called automatically when service becomes ready and isManagedByHaven is true.
+    ///
+    /// Two flows:
+    /// - **Returning user** (has saved credentials): silent reconnect, no wizard.
+    /// - **First run** (no credentials): progressive wizard with account choice + folder picker.
     package func autoConnect() async {
         guard let client = apiClient else { return }
-        // isAutoConnecting is set by refresh() before this Task is created
         connectionState = .connecting
         log.info("Auto-connect: waiting for Kavita API...")
 
-        // Step 1: Poll /api/health until reachable (max 15 seconds)
+        // Step 1: Poll /api/health until reachable
+        setupPhase = .waitingForServer
         let healthy = await pollHealth(client: client, maxAttempts: 15, interval: 1.0)
-        guard healthy else {
-            log.warning("Auto-connect: Kavita API not reachable after polling")
-            connectionState = .failed("Service is starting — try again in a moment")
+        guard healthy, !Task.isCancelled else {
+            if !Task.isCancelled {
+                log.warning("Auto-connect: Kavita API not reachable after polling")
+                connectionState = .failed("Service is starting — try again in a moment")
+            }
+            setupPhase = nil
             isAutoConnecting = false
             return
         }
         log.info("Auto-connect: Kavita API is healthy")
 
-        // Step 2: Try saved JWT token
+        // Step 2: Try saved credentials (returning user — skip wizard)
+        if await tryExistingCredentials(client: client) {
+            setupPhase = nil
+            isAutoConnecting = false
+            return
+        }
+
+        // Step 3: First run — show account choice
+        setupPhase = .awaitingAccountChoice
+        isAutoConnecting = false
+        log.info("Auto-connect: first run, awaiting account choice")
+        // Wizard continues when user calls chooseManaged() or the view opens ConnectSheet
+    }
+
+    /// User chose "Set it up for me" during setup wizard.
+    package func chooseManaged() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = true
+        setupPhase = .creatingAccount
+
+        autoConnectTask = Task {
+            guard let client = apiClient else { return }
+
+            // Try to register a new managed account
+            let username = "haven"
+            let password = generatePassword()
+            do {
+                let response = try await client.register(username: username, password: password)
+                authToken = response.token
+                apiKey = response.apiKey
+                connectionState = .connected
+                saveCredentials(response.token, username: username, apiKey: response.apiKey)
+                UserDefaults.standard.set(password, forKey: passwordKey)
+                UserDefaults.standard.set(username, forKey: managedUsernameKey)
+                UserDefaults.standard.set(password, forKey: managedPasswordKey)
+                log.info("Setup wizard: registered managed account")
+            } catch {
+                log.info("Setup wizard: registration failed, trying login: \(error.localizedDescription)")
+                // Account may already exist from a previous install — try managed creds
+                if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
+                   let mPass = UserDefaults.standard.string(forKey: managedPasswordKey),
+                   let response = try? await client.login(username: mUser, password: mPass) {
+                    authToken = response.token
+                    apiKey = response.apiKey
+                    connectionState = .connected
+                    saveCredentials(response.token, username: mUser, apiKey: response.apiKey)
+                    log.info("Setup wizard: logged in with existing managed credentials")
+                } else {
+                    setupPhase = nil
+                    connectionState = .failed("Couldn't create account — try signing in manually")
+                    return
+                }
+            }
+
+            // Transition to folder picker
+            setupPhase = .awaitingLibraryPath
+            log.info("Setup wizard: awaiting library path")
+        }
+    }
+
+    /// User chose "I have my own account" — open sign-in sheet.
+    /// Called from the view; after successful connect(), call continueSetupAfterLogin().
+    package func chooseCustom() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = false
+        // The view will show ConnectSheet; after connect() succeeds,
+        // continueSetupAfterLogin() transitions to folder picker.
+    }
+
+    /// Called after manual connect() succeeds to continue the setup wizard.
+    package func continueSetupAfterLogin() {
+        if setupPhase == .awaitingAccountChoice || setupPhase == nil {
+            setupPhase = .awaitingLibraryPath
+            log.info("Setup wizard: manual login succeeded, awaiting library path")
+        }
+    }
+
+    /// User confirmed a library folder during setup.
+    package func confirmSetupFolder(_ path: String) async throws {
+        guard setupPhase == .awaitingLibraryPath else { return }
+        setupPhase = .creatingLibrary
+        try await changeLibraryFolder(to: path)
+        setupPhase = .scanning(progress: nil)
+        // Scan polling will clear setupPhase when done
+    }
+
+    /// Try all saved credential methods. Returns true if connected.
+    private func tryExistingCredentials(client: KavitaAPIClient) async -> Bool {
         loadSavedCredentials()
         if let token = authToken {
             log.info("Auto-connect: trying saved token")
@@ -270,38 +428,29 @@ package final class KavitaBooksFacade: BooksFacade {
                 connectionState = .connected
                 log.info("Auto-connect: saved token valid")
                 await fetchLibraryData()
-                isAutoConnecting = false
-                return
+                return true
             }
-            log.info("Auto-connect: saved token expired")
             authToken = nil
         }
 
-        // Step 3: Try saved password (Haven-managed account)
         if let username = UserDefaults.standard.string(forKey: usernameKey),
            let password = UserDefaults.standard.string(forKey: passwordKey) {
             log.info("Auto-connect: re-login with saved credentials")
-            do {
-                let response = try await client.login(username: username, password: password)
+            if let response = try? await client.login(username: username, password: password) {
                 authToken = response.token
                 apiKey = response.apiKey
                 connectionState = .connected
                 saveCredentials(response.token, username: username, apiKey: response.apiKey)
                 log.info("Auto-connect: re-login succeeded")
                 await fetchLibraryData()
-                isAutoConnecting = false
-                return
-            } catch {
-                log.warning("Auto-connect: re-login failed: \(error.localizedDescription)")
+                return true
             }
         }
 
-        // Step 3b: Try managed credentials (Haven-provisioned account, survives custom sign-in)
         if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
            let mPass = UserDefaults.standard.string(forKey: managedPasswordKey) {
             log.info("Auto-connect: trying managed credentials")
-            do {
-                let response = try await client.login(username: mUser, password: mPass)
+            if let response = try? await client.login(username: mUser, password: mPass) {
                 authToken = response.token
                 apiKey = response.apiKey
                 connectionState = .connected
@@ -309,45 +458,17 @@ package final class KavitaBooksFacade: BooksFacade {
                 UserDefaults.standard.set(mPass, forKey: passwordKey)
                 log.info("Auto-connect: managed credentials valid")
                 await fetchLibraryData()
-                isAutoConnecting = false
-                return
-            } catch {
-                log.warning("Auto-connect: managed credentials failed: \(error.localizedDescription)")
+                return true
             }
         }
 
-        // Step 4: Try to register a new account (fresh Kavita install)
-        log.info("Auto-connect: attempting registration")
-        let username = "haven"
-        let password = generatePassword()
-        do {
-            let response = try await client.register(username: username, password: password)
-            authToken = response.token
-            apiKey = response.apiKey
-            connectionState = .connected
-            saveCredentials(response.token, username: username, apiKey: response.apiKey)
-            UserDefaults.standard.set(password, forKey: passwordKey)
-            // Persist managed credentials separately so they survive custom sign-in
-            UserDefaults.standard.set(username, forKey: managedUsernameKey)
-            UserDefaults.standard.set(password, forKey: managedPasswordKey)
-            log.info("Auto-connect: registered new account")
-            await fetchLibraryData()
-            isAutoConnecting = false
-            return
-        } catch {
-            log.info("Auto-connect: registration failed (account exists?): \(error.localizedDescription)")
-        }
-
-        // Step 5: All methods exhausted — user must sign in manually
-        connectionState = .disconnected
-        isAutoConnecting = false
-        autoConnectExhausted = true
-        log.info("Auto-connect: giving up, manual sign-in required")
+        return false
     }
 
     /// Poll `/api/health` until it returns 200.
     private func pollHealth(client: KavitaAPIClient, maxAttempts: Int, interval: TimeInterval) async -> Bool {
         for attempt in 1...maxAttempts {
+            if Task.isCancelled { return false }
             if await client.isHealthy() {
                 return true
             }
@@ -445,6 +566,7 @@ package final class KavitaBooksFacade: BooksFacade {
         connectionState = .disconnected
         itemCount = nil
         currentScanStatus = .idle
+        setupPhase = nil
         UserDefaults.standard.removeObject(forKey: tokenKey)
         updateLibrary()
     }
@@ -461,6 +583,7 @@ package final class KavitaBooksFacade: BooksFacade {
         connectionState = .disconnected
         itemCount = nil
         currentScanStatus = .idle
+        setupPhase = nil
         clearAllCredentials()
         updateLibrary()
     }
@@ -490,6 +613,15 @@ package final class KavitaBooksFacade: BooksFacade {
         advancedURL = result.advancedURL
 
         guard let service = result.service else {
+            // Service uninstalled — cancel any running auto-connect
+            autoConnectTask?.cancel()
+            autoConnectTask = nil
+            isAutoConnecting = false
+            autoConnectExhausted = false
+            setupPhase = nil
+            if connectionState != .disconnected {
+                connectionState = .disconnected
+            }
             library = nil
             return
         }
@@ -512,7 +644,7 @@ package final class KavitaBooksFacade: BooksFacade {
         }
 
         library = BooksLibrary(
-            libraryPath: resolvedLibraryPath,
+            libraryPaths: resolvedLibraryPaths,
             scanStatus: currentScanStatus,
             itemCount: itemCount
         )
@@ -586,7 +718,7 @@ package final class KavitaBooksFacade: BooksFacade {
 
     private func updateLibrary() {
         library = BooksLibrary(
-            libraryPath: resolvedLibraryPath,
+            libraryPaths: resolvedLibraryPaths,
             scanStatus: currentScanStatus,
             itemCount: itemCount
         )
@@ -595,7 +727,13 @@ package final class KavitaBooksFacade: BooksFacade {
     // MARK: - Library Organization
 
     private func organizeLibraryFolder() {
-        let expandedPath = (resolvedLibraryPath as NSString).expandingTildeInPath
+        for path in resolvedLibraryPaths {
+            let expandedPath = (path as NSString).expandingTildeInPath
+            LibraryOrganizer.organize(at: URL(fileURLWithPath: expandedPath))
+        }
+    }
+
+    private func organizeLibraryFolder(at expandedPath: String) {
         LibraryOrganizer.organize(at: URL(fileURLWithPath: expandedPath))
     }
 
@@ -609,6 +747,7 @@ package final class KavitaBooksFacade: BooksFacade {
     private var apiKeyKey: String { "haven.kavita.apiKey.\(capabilityID)" }
     private var customAccountKey: String { "haven.kavita.customAccount.\(capabilityID)" }
     private var libraryPathOverrideKey: String { "haven.kavita.libraryPath.\(capabilityID)" }
+    private var libraryPathsKey: String { "haven.kavita.libraryPaths.\(capabilityID)" }
 
     private func saveCredentials(_ token: String, username: String, apiKey: String?) {
         UserDefaults.standard.set(token, forKey: tokenKey)
@@ -621,13 +760,36 @@ package final class KavitaBooksFacade: BooksFacade {
         apiKey = UserDefaults.standard.string(forKey: apiKeyKey)
     }
 
-    /// Resolved library path: UserDefaults override > stored settings > default.
-    private var resolvedLibraryPath: String {
+    /// All resolved library paths: multi-path key > single-path override > stored settings > default.
+    private var resolvedLibraryPaths: [String] {
+        if let saved = UserDefaults.standard.stringArray(forKey: libraryPathsKey), !saved.isEmpty {
+            return saved
+        }
+        // Backward compat: single path from old key or resolvedSettings
         if let override = UserDefaults.standard.string(forKey: libraryPathOverrideKey) {
-            return override
+            return [override]
         }
         let stored = serviceManager?.storedState(for: capabilityID)
-        return stored?.resolvedSettings["library_path"] ?? "~/Books"
+        if let path = stored?.resolvedSettings["library_path"] {
+            return [path]
+        }
+        return ["~/Books"]
+    }
+
+    /// Primary resolved library path (first one).
+    private var resolvedLibraryPath: String {
+        resolvedLibraryPaths.first ?? "~/Books"
+    }
+
+    private func saveLibraryPaths(_ paths: [String]) {
+        UserDefaults.standard.set(paths, forKey: libraryPathsKey)
+        if let first = paths.first {
+            UserDefaults.standard.set(first, forKey: libraryPathOverrideKey)
+            serviceManager?.updateResolvedSetting(for: capabilityID, key: "library_path", value: first)
+        }
+        // Unified content_paths key for backup scope (shared convention across all capabilities)
+        let joined = paths.joined(separator: ";")
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "content_paths", value: joined)
     }
 
     private func clearAllCredentials() {
@@ -638,6 +800,8 @@ package final class KavitaBooksFacade: BooksFacade {
         UserDefaults.standard.removeObject(forKey: managedPasswordKey)
         UserDefaults.standard.removeObject(forKey: apiKeyKey)
         UserDefaults.standard.removeObject(forKey: customAccountKey)
+        UserDefaults.standard.removeObject(forKey: libraryPathOverrideKey)
+        UserDefaults.standard.removeObject(forKey: libraryPathsKey)
     }
 }
 

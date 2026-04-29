@@ -23,6 +23,9 @@ struct DiscoveryDetailView: View {
                         Text(plugin.name)
                             .font(.title2)
                             .fontWeight(.semibold)
+                        Text("Powered by \(plugin.backendName)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                         if let service = installedService {
                             StatusBadgeView(status: service.status)
                         }

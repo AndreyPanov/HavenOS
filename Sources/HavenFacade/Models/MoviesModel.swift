@@ -32,26 +32,6 @@ public struct MoviesLibrary: Sendable, Equatable {
     }
 }
 
-/// Phases of the initial setup wizard for a movies backend.
-/// Drives the progressive inline UI — each phase maps to a card
-/// that appears (with animation) in the setup flow.
-public enum SetupPhase: Sendable, Equatable {
-    /// Waiting for the backend server to become reachable.
-    case waitingForServer
-    /// Creating the admin account automatically.
-    case creatingAccount
-    /// Waiting for the user to pick a library folder.
-    case awaitingLibraryPath
-    /// Waiting for the user to choose library content type.
-    case awaitingLibraryType
-    /// Creating the library on the backend.
-    case creatingLibrary
-    /// Library scan in progress (progress percentage if available).
-    case scanning(progress: Double?)
-    /// Setup complete — ready to transition to normal view.
-    case complete
-}
-
 /// Content type for the movies library.
 public enum LibraryContentType: String, Sendable, Equatable, CaseIterable {
     case moviesAndShows = "mixed"
@@ -78,9 +58,6 @@ public enum LibraryContentType: String, Sendable, Equatable, CaseIterable {
 public protocol MoviesFacade: ConnectableFacade {
     /// Current library state (nil before first provision).
     var library: MoviesLibrary? { get }
-
-    /// Current setup wizard phase (nil when setup is complete or not needed).
-    var setupPhase: SetupPhase? { get }
 
     /// Set or change the movies library path on disk.
     func setLibraryPath(_ path: String, contentType: LibraryContentType) async throws

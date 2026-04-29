@@ -38,6 +38,10 @@ struct MusicHomeView: View {
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
                 facade.refresh()
+                if facade.connectionState == .connected,
+                   let navidrome = facade as? NavidromeMusicFacade {
+                    navidrome.continueSetupAfterLogin()
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -81,7 +85,7 @@ struct MusicHomeView: View {
     @ViewBuilder
     private var statusDot: some View {
         switch resolvedState {
-        case .starting, .settingUp:
+        case .starting, .settingUp, .setupWizard:
             ProgressView()
                 .controlSize(.mini)
         case .needsSetup:
@@ -97,14 +101,15 @@ struct MusicHomeView: View {
 
     private var statusLabel: String {
         switch resolvedState {
-        case .starting:    "Starting up…"
-        case .needsSetup:  "Needs setup"
-        case .settingUp:   "Setting up…"
-        case .empty:       "Ready"
-        case .ready:       "Ready"
-        case .updating:    "Scanning…"
-        case .error:       "Error"
-        case .stopped:     "Offline"
+        case .starting:      "Starting up\u{2026}"
+        case .needsSetup:    "Needs setup"
+        case .settingUp:     "Setting up\u{2026}"
+        case .setupWizard:   "Setting up\u{2026}"
+        case .empty:         "Ready"
+        case .ready:         "Ready"
+        case .updating:      "Scanning\u{2026}"
+        case .error:         "Error"
+        case .stopped:       "Offline"
         }
     }
 
@@ -121,6 +126,8 @@ struct MusicHomeView: View {
             needsSetupView
         case .settingUp:
             settingUpView
+        case .setupWizard(let phase):
+            setupWizardContent(phase: phase)
         case .empty:
             emptyView
         case .ready:
@@ -197,12 +204,37 @@ struct MusicHomeView: View {
         centeredCard {
             ProgressView()
                 .controlSize(.regular)
-            Text("Setting up your music library…")
+            Text("Setting up your music library\u{2026}")
                 .font(.headline)
             Text("This usually takes a few seconds.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - State: Setup Wizard
+
+    private func setupWizardContent(phase: SetupPhase) -> some View {
+        SetupWizardView(
+            phase: phase,
+            contentLabel: "Music",
+            icon: "music.note.house",
+            facade: facade,
+            onChooseManaged: {
+                if let navidrome = facade as? NavidromeMusicFacade {
+                    navidrome.chooseManaged()
+                }
+            },
+            onChooseCustom: {
+                if let navidrome = facade as? NavidromeMusicFacade {
+                    navidrome.chooseCustom()
+                    showingConnectSheet = true
+                }
+            },
+            onPickFolder: {},
+            onConfirmFolder: { _ in },
+            showFolderStep: false  // Navidrome uses configured music_path
+        )
     }
 
     // MARK: - State: Empty
@@ -356,9 +388,10 @@ struct MusicHomeView: View {
 
                     // Actions
                     HStack(spacing: 8) {
-                        Button("Add Music", systemImage: "plus") {
+                        Button("Open Folder", systemImage: "folder") {
                             let path = (lib.libraryPath as NSString).expandingTildeInPath
                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                            pendingRescanOnFocus = true
                         }
                         .buttonStyle(.glass)
                         .controlSize(.small)
@@ -477,12 +510,17 @@ struct MusicHomeView: View {
         case .degraded:
             return .error("Library is running with issues")
         case .ready:
+            // Check for active setup wizard
+            if let phase = facade.setupPhase {
+                return .setupWizard(phase)
+            }
+
             if facade.isManagedByHaven,
                (facade.isAutoConnecting || facade.connectionState == .connecting) {
                 return .settingUp
             }
             if facade.isManagedByHaven, facade.autoConnectExhausted {
-                return .error("Couldn't connect automatically — try signing in manually")
+                return .error("Couldn\u{2019}t connect automatically \u{2014} try signing in manually")
             }
             switch facade.setupState {
             case .needsSetup:
@@ -523,6 +561,7 @@ private enum MusicUIState {
     case starting
     case needsSetup
     case settingUp
+    case setupWizard(SetupPhase)
     case empty
     case ready
     case updating
