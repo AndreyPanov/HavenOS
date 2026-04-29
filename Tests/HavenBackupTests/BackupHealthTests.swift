@@ -171,7 +171,7 @@ struct BackupHealthTests {
             capabilityDestinations: ["cap": "/backup"],
             schedule: .daily,
             lastBackupDate: Date(),
-            lastBackupResult: .partial(failedCapabilities: ["jellyfin"], reason: "Disk full")
+            lastBackupResult: .partial(failedCapabilities: ["haven.capability.jellyfin"], reason: "Disk full")
         )
 
         let health = BackupHealth.compute(

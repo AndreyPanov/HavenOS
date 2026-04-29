@@ -33,34 +33,89 @@ public struct BackupEngine: Sendable {
 
         try ensureDestinationReachable(destination)
 
-        // Create a root folder named after the capability
         let capabilityRoot = destination.appendingPathComponent(name)
         try ensureDestinationReachable(capabilityRoot)
 
         let dataRoot = capabilityRoot.appendingPathComponent("data")
         try ensureDestinationReachable(dataRoot)
 
-        var totalBytes: UInt64 = 0
         var entryStatus: CapabilityBackupEntry.EntryStatus = .complete
-
-        // Copy user content directly into data/ (no extra subfolder)
-        for sourcePath in scope.contentPaths {
-            do {
-                let bytes = try copyDirectoryContentsWithProgress(
-                    from: sourcePath, to: dataRoot, label: name, progress: progress
-                )
-                totalBytes += bytes
-            } catch {
-                entryStatus = .partial
-            }
-        }
 
         if scope.contentPaths.isEmpty {
             entryStatus = .failed
         }
 
-        // Write manifest for identification
-        let entry = CapabilityBackupEntry(
+        // Step 1: Collect all items from all content folders into one flat list.
+        // If two folders contain the same filename, the last folder wins.
+        var allItems: [(name: String, source: URL)] = []
+        var seenNames = Set<String>()
+
+        for contentPath in scope.contentPaths {
+            guard fileManager.fileExists(atPath: contentPath.path) else { continue }
+            do {
+                let items = try fileManager.contentsOfDirectory(
+                    at: contentPath,
+                    includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
+                )
+                for item in items {
+                    let itemName = item.lastPathComponent
+                    if seenNames.contains(itemName) {
+                        allItems.removeAll { $0.name == itemName }
+                    }
+                    seenNames.insert(itemName)
+                    allItems.append((name: itemName, source: item))
+                }
+            } catch {
+                entryStatus = .partial
+            }
+        }
+
+        // Step 2: Remove backup items that no longer exist in any source folder.
+        if fileManager.fileExists(atPath: dataRoot.path) {
+            let destItems = try fileManager.contentsOfDirectory(
+                at: dataRoot, includingPropertiesForKeys: nil
+            )
+            for destItem in destItems where !seenNames.contains(destItem.lastPathComponent) {
+                try? fileManager.removeItem(at: destItem)
+            }
+        }
+
+        // Step 3: Copy new/changed items, skip unchanged ones.
+        let totalItems = allItems.count
+        let resourceKeys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        var totalBytes: UInt64 = 0
+        var copiedCount = 0
+        var skippedCount = 0
+
+        for (index, entry) in allItems.enumerated() {
+            let destItem = dataRoot.appendingPathComponent(entry.name)
+
+            if fileManager.fileExists(atPath: destItem.path),
+               filesMatch(entry.source, destItem, keys: resourceKeys) {
+                skippedCount += 1
+                totalBytes += fileOrDirectorySize(at: destItem)
+                if totalItems > 5 {
+                    progress?("\(name): \(index + 1) of \(totalItems) — \(entry.name) (unchanged)")
+                }
+                continue
+            }
+
+            copiedCount += 1
+            progress?("\(name): Copying \(index + 1) of \(totalItems) — \(entry.name)")
+
+            if fileManager.fileExists(atPath: destItem.path) {
+                try fileManager.removeItem(at: destItem)
+            }
+            try fileManager.copyItem(at: entry.source, to: destItem)
+            totalBytes += fileOrDirectorySize(at: destItem)
+        }
+
+        if copiedCount == 0 && skippedCount > 0 {
+            progress?("\(name): All \(skippedCount) items up to date")
+        }
+
+        // Write manifest
+        let capEntry = CapabilityBackupEntry(
             capabilityID: scope.capabilityID,
             displayName: name,
             bundleID: scope.bundleID,
@@ -68,13 +123,13 @@ public struct BackupEngine: Sendable {
             status: entryStatus
         )
 
-        let manifest = BackupManifest(capabilities: [entry])
+        let manifest = BackupManifest(capabilities: [capEntry])
         let manifestData = try manifest.encode()
         let manifestFile = capabilityRoot.appendingPathComponent(BackupManifest.fileName)
         try manifestData.write(to: manifestFile, options: .atomic)
 
         progress?("Backup of \(name) complete.")
-        return entry
+        return capEntry
     }
 
     /// Back up all configured capabilities.

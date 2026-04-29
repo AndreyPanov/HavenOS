@@ -21,6 +21,7 @@ struct JellyfinMoviesFacadeTests {
             "haven.jellyfin.managedPass.\(id)",
             "haven.jellyfin.customAccount.\(id)",
             "haven.jellyfin.libraryPath.\(id)",
+            "haven.jellyfin.libraryPaths.\(id)",
         ] {
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -336,6 +337,58 @@ struct JellyfinMoviesFacadeTests {
         #expect(f.setupPhase == nil)
     }
 
+    @Test("setupState returns .settingUp when setupPhase is active")
+    @MainActor func setupStateSettingUpWhenPhaseActive() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        #expect(f.setupState == .settingUp)
+    }
+
+    @Test("chooseManaged: transitions from awaitingAccountChoice to creatingAccount, sets managed")
+    @MainActor func chooseManagedTransition() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.chooseManaged()
+        #expect(f.isManagedByHaven == true)
+        #expect(f.setupPhase == .creatingAccount)
+    }
+
+    @Test("chooseManaged: no-op when not in awaitingAccountChoice")
+    @MainActor func chooseManagedGuard() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.chooseManaged()
+        #expect(f.setupPhase == .creatingAccount)
+    }
+
+    @Test("chooseCustom: sets isManagedByHaven to false, clears setupPhase")
+    @MainActor func chooseCustomSetsFlag() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.chooseCustom()
+        #expect(f.isManagedByHaven == false)
+        #expect(f.setupPhase == nil)
+    }
+
+    @Test("chooseCustom: no-op when not in awaitingAccountChoice")
+    @MainActor func chooseCustomGuard() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.isManagedByHaven = true
+        f.chooseCustom()
+        #expect(f.isManagedByHaven == true)
+    }
+
     // MARK: - Library Path Persistence
 
     @Test("Library path saved to UserDefaults key")
@@ -390,6 +443,58 @@ struct JellyfinMoviesFacadeTests {
         }
     }
 
+    // MARK: - addLibraryPath / removeLibraryPath Guards
+
+    @Test("addLibraryPath throws when not connected")
+    @MainActor func addLibraryPathThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.addLibraryPath("/Movies2")
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+
+    @Test("removeLibraryPath throws when not connected")
+    @MainActor func removeLibraryPathThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.removeLibraryPath("/Movies")
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+
+    // MARK: - Multi-Path Persistence
+
+    @Test("Multi-path array persists in UserDefaults")
+    @MainActor func multiPathPersistence() async {
+        let id = makeTestID()
+        defer { cleanupDefaults(for: id) }
+
+        let paths = ["/Movies", "/TV Shows"]
+        UserDefaults.standard.set(paths, forKey: "haven.jellyfin.libraryPaths.\(id)")
+
+        let stored = UserDefaults.standard.stringArray(forKey: "haven.jellyfin.libraryPaths.\(id)")
+        #expect(stored == paths)
+    }
+
+    @Test("signOut clears multi-path key")
+    @MainActor func signOutClearsMultiPaths() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        UserDefaults.standard.set(["/Movies", "/TV"], forKey: "haven.jellyfin.libraryPaths.\(id)")
+        f.signOut()
+        #expect(UserDefaults.standard.stringArray(forKey: "haven.jellyfin.libraryPaths.\(id)") == nil)
+    }
+
     // MARK: - deviceAccessInfo
 
     @Test("deviceAccessInfo nil when not connected")
@@ -410,6 +515,7 @@ struct SetupPhaseTests {
     func phasesDistinct() {
         let phases: [SetupPhase] = [
             .waitingForServer,
+            .awaitingAccountChoice,
             .creatingAccount,
             .awaitingLibraryPath,
             .awaitingLibraryType,
@@ -465,8 +571,9 @@ struct MoviesLibraryTests {
 
     @Test("Default init has idle scan and nil counts")
     func defaultInit() {
-        let lib = MoviesLibrary(libraryPath: "/Movies")
+        let lib = MoviesLibrary(libraryPaths: ["/Movies"])
         #expect(lib.libraryPath == "/Movies")
+        #expect(lib.libraryPaths == ["/Movies"])
         #expect(lib.scanStatus == .idle)
         #expect(lib.movieCount == nil)
         #expect(lib.showCount == nil)
@@ -474,16 +581,29 @@ struct MoviesLibraryTests {
 
     @Test("Equatable: identical libraries are equal")
     func equatable() {
-        let a = MoviesLibrary(libraryPath: "/Movies", movieCount: 5, showCount: 2)
-        let b = MoviesLibrary(libraryPath: "/Movies", movieCount: 5, showCount: 2)
+        let a = MoviesLibrary(libraryPaths: ["/Movies"], movieCount: 5, showCount: 2)
+        let b = MoviesLibrary(libraryPaths: ["/Movies"], movieCount: 5, showCount: 2)
         #expect(a == b)
     }
 
     @Test("Equatable: different counts are not equal")
     func notEquatable() {
-        let a = MoviesLibrary(libraryPath: "/Movies", movieCount: 5)
-        let b = MoviesLibrary(libraryPath: "/Movies", movieCount: 10)
+        let a = MoviesLibrary(libraryPaths: ["/Movies"], movieCount: 5)
+        let b = MoviesLibrary(libraryPaths: ["/Movies"], movieCount: 10)
         #expect(a != b)
+    }
+
+    @Test("Multi-path: libraryPath returns first")
+    func multiPath() {
+        let lib = MoviesLibrary(libraryPaths: ["/Movies", "/TV Shows"])
+        #expect(lib.libraryPath == "/Movies")
+        #expect(lib.libraryPaths.count == 2)
+    }
+
+    @Test("Empty paths: libraryPath returns default")
+    func emptyPaths() {
+        let lib = MoviesLibrary(libraryPaths: [])
+        #expect(lib.libraryPath == "~/Movies")
     }
 }
 

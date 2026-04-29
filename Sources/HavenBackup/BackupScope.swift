@@ -24,27 +24,39 @@ public struct BackupScope: Sendable {
 
         var contentPaths: [URL] = []
 
-        // Check resolved settings for user-visible content paths
-        // (e.g. library_path, music_path, movies_path, root_path)
-        // movies_paths stores semicolon-separated multiple paths
-        let contentSettingKeys = ["library_path", "music_path", "movies_path", "root_path"]
-        for key in contentSettingKeys {
-            if let path = state.resolvedSettings[key] {
+        // All facades save content paths to the unified "content_paths" key
+        // (semicolon-separated, may contain tildes).
+        // Fallback: legacy per-capability keys for services installed before unification.
+        if let unified = state.resolvedSettings["content_paths"], !unified.isEmpty {
+            for path in unified.split(separator: ";").map(String.init) where !path.isEmpty {
                 let expanded = NSString(string: path).expandingTildeInPath
                 let url = URL(fileURLWithPath: expanded)
                 if !contentPaths.contains(url) {
                     contentPaths.append(url)
                 }
             }
-        }
-
-        // Handle multiple movie paths (semicolon-separated)
-        if let multiPaths = state.resolvedSettings["movies_paths"] {
-            for path in multiPaths.split(separator: ";").map(String.init) where !path.isEmpty {
-                let expanded = NSString(string: path).expandingTildeInPath
-                let url = URL(fileURLWithPath: expanded)
-                if !contentPaths.contains(url) {
-                    contentPaths.append(url)
+        } else {
+            // Legacy fallback: check per-capability single-path and multi-path keys
+            let legacySingleKeys = ["library_path", "music_path", "movies_path", "root_path"]
+            for key in legacySingleKeys {
+                if let path = state.resolvedSettings[key] {
+                    let expanded = NSString(string: path).expandingTildeInPath
+                    let url = URL(fileURLWithPath: expanded)
+                    if !contentPaths.contains(url) {
+                        contentPaths.append(url)
+                    }
+                }
+            }
+            let legacyMultiKeys = ["library_paths", "movies_paths"]
+            for key in legacyMultiKeys {
+                if let multiPaths = state.resolvedSettings[key] {
+                    for path in multiPaths.split(separator: ";").map(String.init) where !path.isEmpty {
+                        let expanded = NSString(string: path).expandingTildeInPath
+                        let url = URL(fileURLWithPath: expanded)
+                        if !contentPaths.contains(url) {
+                            contentPaths.append(url)
+                        }
+                    }
                 }
             }
         }

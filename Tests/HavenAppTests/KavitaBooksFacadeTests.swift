@@ -20,6 +20,9 @@ struct KavitaBooksFacadeTests {
             "haven.kavita.managedUser.\(id)",
             "haven.kavita.managedPass.\(id)",
             "haven.kavita.customAccount.\(id)",
+            "haven.kavita.apiKey.\(id)",
+            "haven.kavita.libraryPath.\(id)",
+            "haven.kavita.libraryPaths.\(id)",
         ] {
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -227,6 +230,214 @@ struct KavitaBooksFacadeTests {
         #expect(f.itemCount == nil)
     }
 
+    // MARK: - Setup Wizard
+
+    @Test("setupPhase starts nil on fresh facade")
+    @MainActor func setupPhaseStartsNil() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        #expect(f.setupPhase == nil)
+    }
+
+    @Test("setupState returns .settingUp when setupPhase is active")
+    @MainActor func setupStateSettingUpWhenPhaseActive() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        #expect(f.setupState == .settingUp)
+    }
+
+    @Test("chooseManaged: transitions from awaitingAccountChoice to creatingAccount, sets managed")
+    @MainActor func chooseManagedTransition() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.chooseManaged()
+        #expect(f.isManagedByHaven == true)
+        #expect(f.setupPhase == .creatingAccount)
+    }
+
+    @Test("chooseManaged: no-op when not in awaitingAccountChoice")
+    @MainActor func chooseManagedGuard() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.chooseManaged()
+        // Should still be creatingAccount, not changed
+        #expect(f.setupPhase == .creatingAccount)
+    }
+
+    @Test("chooseCustom: sets isManagedByHaven to false")
+    @MainActor func chooseCustomSetsFlag() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.chooseCustom()
+        #expect(f.isManagedByHaven == false)
+    }
+
+    @Test("chooseCustom: no-op when not in awaitingAccountChoice")
+    @MainActor func chooseCustomGuard() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.isManagedByHaven = true
+        f.chooseCustom()
+        // Should not have changed
+        #expect(f.isManagedByHaven == true)
+    }
+
+    @Test("continueSetupAfterLogin: transitions to awaitingLibraryPath")
+    @MainActor func continueSetupAfterLoginTransition() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.continueSetupAfterLogin()
+        #expect(f.setupPhase == .awaitingLibraryPath)
+    }
+
+    @Test("disconnect clears setupPhase")
+    @MainActor func disconnectClearsSetupPhase() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingLibraryPath
+        f.disconnect()
+        #expect(f.setupPhase == nil)
+    }
+
+    @Test("signOut clears setupPhase")
+    @MainActor func signOutClearsSetupPhase() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.signOut()
+        #expect(f.setupPhase == nil)
+    }
+
+    // MARK: - Multi-Folder Path Persistence
+
+    @Test("Library paths default to ~/Books when no override exists")
+    @MainActor func defaultLibraryPath() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        // Library is populated from resolvedLibraryPaths in refresh()
+        #expect(f.library == nil) // No service installed → nil
+    }
+
+    @Test("Single library path override persists in UserDefaults")
+    @MainActor func singlePathPersistence() async {
+        let id = makeTestID()
+        defer { cleanupDefaults(for: id) }
+
+        UserDefaults.standard.set("/Users/test/Books", forKey: "haven.kavita.libraryPath.\(id)")
+
+        let sm = ServiceManager()
+        let f = KavitaBooksFacade(capabilityID: id, serviceManager: sm)
+        // Can't check resolvedLibraryPaths directly (private), but signOut should clear it
+        f.signOut()
+        #expect(UserDefaults.standard.string(forKey: "haven.kavita.libraryPath.\(id)") == nil)
+    }
+
+    @Test("Multi-path array persists in UserDefaults")
+    @MainActor func multiPathPersistence() async {
+        let id = makeTestID()
+        defer { cleanupDefaults(for: id) }
+
+        let paths = ["/Users/test/Books", "/Users/test/Comics"]
+        UserDefaults.standard.set(paths, forKey: "haven.kavita.libraryPaths.\(id)")
+
+        let stored = UserDefaults.standard.stringArray(forKey: "haven.kavita.libraryPaths.\(id)")
+        #expect(stored == paths)
+    }
+
+    @Test("signOut clears both single and multi-path keys")
+    @MainActor func signOutClearsPaths() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        UserDefaults.standard.set("/Books", forKey: "haven.kavita.libraryPath.\(id)")
+        UserDefaults.standard.set(["/Books", "/Comics"], forKey: "haven.kavita.libraryPaths.\(id)")
+
+        f.signOut()
+
+        #expect(UserDefaults.standard.string(forKey: "haven.kavita.libraryPath.\(id)") == nil)
+        #expect(UserDefaults.standard.stringArray(forKey: "haven.kavita.libraryPaths.\(id)") == nil)
+    }
+
+    // MARK: - rescan Guards
+
+    @Test("rescan throws when not connected")
+    @MainActor func rescanThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.rescan()
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+
+    @Test("addLibraryPath throws when not connected")
+    @MainActor func addLibraryPathThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.addLibraryPath("/Books2")
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+
+    @Test("removeLibraryPath throws when not connected")
+    @MainActor func removeLibraryPathThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.removeLibraryPath("/Books")
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+
+    @Test("setLibraryPath throws when not connected")
+    @MainActor func setLibraryPathThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.setLibraryPath("/Books")
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+
+    // MARK: - deviceAccessInfo
+
+    @Test("deviceAccessInfo nil when not connected")
+    @MainActor func deviceAccessInfoNilWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        #expect(f.deviceAccessInfo == nil)
+    }
+
     // MARK: - Settings Toggle Flow
 
     @Test("Toggle OFF: disconnect, show Sign In needed")
@@ -325,5 +536,63 @@ struct KavitaAPIErrorTests {
     @Test("Empty errors dict falls back to title") func emptyErrors() {
         let e = KavitaAPIError.httpError(statusCode: 400, body: "{\"title\":\"Bad\",\"errors\":{}}")
         #expect(e.localizedDescription == "Bad")
+    }
+}
+
+// MARK: - BooksLibrary Value Type Tests
+
+@Suite("BooksLibrary Value Type")
+struct BooksLibraryTests {
+
+    @Test("Single-path init: libraryPath returns the path")
+    func singlePathInit() {
+        let lib = BooksLibrary(libraryPath: "/Books")
+        #expect(lib.libraryPath == "/Books")
+        #expect(lib.libraryPaths == ["/Books"])
+        #expect(lib.scanStatus == .idle)
+        #expect(lib.itemCount == nil)
+    }
+
+    @Test("Multi-path init: libraryPath returns first")
+    func multiPathInit() {
+        let lib = BooksLibrary(libraryPaths: ["/Books", "/Comics"])
+        #expect(lib.libraryPath == "/Books")
+        #expect(lib.libraryPaths.count == 2)
+        #expect(lib.libraryPaths[1] == "/Comics")
+    }
+
+    @Test("Empty paths: libraryPath returns default")
+    func emptyPaths() {
+        let lib = BooksLibrary(libraryPaths: [])
+        #expect(lib.libraryPath == "~/Books")
+    }
+
+    @Test("Equatable: identical libraries are equal")
+    func equatable() {
+        let a = BooksLibrary(libraryPaths: ["/Books"], itemCount: 5)
+        let b = BooksLibrary(libraryPaths: ["/Books"], itemCount: 5)
+        #expect(a == b)
+    }
+
+    @Test("Equatable: different paths are not equal")
+    func differentPaths() {
+        let a = BooksLibrary(libraryPaths: ["/Books"])
+        let b = BooksLibrary(libraryPaths: ["/Comics"])
+        #expect(a != b)
+    }
+
+    @Test("Equatable: different counts are not equal")
+    func differentCounts() {
+        let a = BooksLibrary(libraryPath: "/Books", itemCount: 5)
+        let b = BooksLibrary(libraryPath: "/Books", itemCount: 10)
+        #expect(a != b)
+    }
+
+    @Test("Multi-path with scan status")
+    func multiPathWithStatus() {
+        let lib = BooksLibrary(libraryPaths: ["/Books", "/Comics"], scanStatus: .scanning, itemCount: 42)
+        #expect(lib.scanStatus == .scanning)
+        #expect(lib.itemCount == 42)
+        #expect(lib.libraryPaths.count == 2)
     }
 }

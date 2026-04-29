@@ -249,6 +249,97 @@ struct NavidromeMusicFacadeTests {
         #expect(f.library == nil)
     }
 
+    // MARK: - Setup Wizard
+
+    @Test("setupPhase starts nil on fresh facade")
+    @MainActor func setupPhaseStartsNil() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        #expect(f.setupPhase == nil)
+    }
+
+    @Test("setupState returns .settingUp when setupPhase is active")
+    @MainActor func setupStateSettingUpWhenPhaseActive() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        #expect(f.setupState == .settingUp)
+    }
+
+    @Test("chooseManaged: transitions from awaitingAccountChoice to creatingAccount, sets managed")
+    @MainActor func chooseManagedTransition() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.chooseManaged()
+        #expect(f.isManagedByHaven == true)
+        #expect(f.setupPhase == .creatingAccount)
+    }
+
+    @Test("chooseManaged: no-op when not in awaitingAccountChoice")
+    @MainActor func chooseManagedGuard() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.chooseManaged()
+        #expect(f.setupPhase == .creatingAccount)
+    }
+
+    @Test("chooseCustom: sets isManagedByHaven to false")
+    @MainActor func chooseCustomSetsFlag() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.chooseCustom()
+        #expect(f.isManagedByHaven == false)
+    }
+
+    @Test("chooseCustom: no-op when not in awaitingAccountChoice")
+    @MainActor func chooseCustomGuard() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.isManagedByHaven = true
+        f.chooseCustom()
+        #expect(f.isManagedByHaven == true)
+    }
+
+    @Test("continueSetupAfterLogin: clears setupPhase (no folder step)")
+    @MainActor func continueSetupAfterLoginClearsPhase() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingAccountChoice
+        f.continueSetupAfterLogin()
+        #expect(f.setupPhase == nil)
+    }
+
+    @Test("disconnect clears setupPhase")
+    @MainActor func disconnectClearsSetupPhase() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .awaitingLibraryPath
+        f.disconnect()
+        #expect(f.setupPhase == nil)
+    }
+
+    @Test("signOut clears setupPhase")
+    @MainActor func signOutClearsSetupPhase() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        f.setupPhase = .creatingAccount
+        f.signOut()
+        #expect(f.setupPhase == nil)
+    }
+
     // MARK: - Settings Toggle Flow
 
     @Test("Toggle OFF: disconnect, show Sign In needed")

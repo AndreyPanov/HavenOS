@@ -112,7 +112,7 @@ public struct BackupHealth: Sendable, Equatable {
             )
         }
 
-        guard settings.isConfigured else {
+        guard settings.isConfigured, !installedCapabilities.isEmpty else {
             return BackupHealth(
                 status: .notConfigured,
                 lastBackupDate: nil,
@@ -137,8 +137,19 @@ public struct BackupHealth: Sendable, Equatable {
                 } else {
                     status = .healthy
                 }
-            case .partial(_, let reason):
-                status = .warning(message: reason)
+            case .partial(let failedIDs, let reason):
+                // Ignore stale failures for capabilities no longer installed
+                let installedIDs = Set(installedCapabilities.map(\.id))
+                let stillFailed = failedIDs.filter { installedIDs.contains($0) }
+                if stillFailed.isEmpty {
+                    if settings.isOverdue() {
+                        status = .overdue(daysSince: settings.daysSinceLastBackup ?? 0)
+                    } else {
+                        status = .healthy
+                    }
+                } else {
+                    status = .warning(message: reason)
+                }
             case .failed(let reason):
                 status = .failed(message: reason)
             }
