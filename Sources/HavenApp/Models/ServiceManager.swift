@@ -340,6 +340,37 @@ package final class ServiceManager {
         refreshBackupHealth(settings: .load())
     }
 
+    /// Refresh installed services with live launchd state for menu/status displays.
+    func refreshRuntimeStatuses() async {
+        let capabilityIDs = installedServices.map(\.id)
+        guard !capabilityIDs.isEmpty else { return }
+
+        let executor = self.executor
+        let liveStatuses = await Task.detached(priority: .utility) {
+            var statuses: [String: ServiceStatus] = [:]
+            for capabilityID in capabilityIDs {
+                do {
+                    let report = try executor.status(capabilityID: capabilityID)
+                    statuses[capabilityID] = Self.displayStatus(from: report)
+                } catch {
+                    statuses[capabilityID] = .failed
+                }
+            }
+            return statuses
+        }.value
+
+        for index in installedServices.indices {
+            let capabilityID = installedServices[index].id
+            if let status = liveStatuses[capabilityID] {
+                installedServices[index].status = status
+            }
+        }
+
+        for facade in facades.values {
+            facade.refresh()
+        }
+    }
+
     // MARK: - Lifecycle Actions
 
     /// Install a service by capability ID. Runs the executor on a background thread.
@@ -902,6 +933,36 @@ package final class ServiceManager {
         case .running:   .running
         case .stopped:   .stopped
         case .failed:    .failed
+        }
+    }
+
+    nonisolated private static func displayStatus(
+        from report: ServiceStatusReport
+    ) -> ServiceStatus {
+        if report.unitStatuses.contains(where: { $0.state == .running }) {
+            return .running
+        }
+
+        if report.unitStatuses.contains(where: {
+            if let lastExitStatus = $0.lastExitStatus {
+                return lastExitStatus != 0
+            }
+            return false
+        }) {
+            return .failed
+        }
+
+        if !report.unitStatuses.isEmpty {
+            return .stopped
+        }
+
+        switch report.status {
+        case .running:
+            return .running
+        case .installed, .stopped:
+            return .stopped
+        case .failed:
+            return .failed
         }
     }
 }

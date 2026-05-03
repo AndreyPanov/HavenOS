@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum ServiceStatus: String, Codable, Hashable, CaseIterable {
+enum ServiceStatus: String, Codable, Hashable, CaseIterable, Sendable {
     case running = "Running"
     case stopped = "Stopped"
     case failed = "Failed"

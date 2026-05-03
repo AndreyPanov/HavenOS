@@ -89,7 +89,8 @@ Phase	Focus	Outcome	Status
 16	Backup & Sync	Trust milestone — capability-aware backup/restore	🔶 In progress
 17	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
 18	Service Updates	Version discovery + safe atomic updates	⬜ Not started
-19	Files	Basic file access (deferred)	⬜ Not started
+19	macOS Topbar Menu	Always-present menu bar control surface	🔶 In progress
+20	Files	Basic file access (deferred)	⬜ Not started
 
 
 ⸻
@@ -969,7 +970,33 @@ Critical rule: Never leave partial state.
 
 ⸻
 
-📁 Phase 19 — Files
+🖥️ Phase 19 — macOS Topbar Menu
+
+🎯 Goal
+
+Make Haven feel resident on macOS: closing the main window should not stop Haven, and core operations should remain available from the menu bar.
+
+🔧 Deliverables
+	•	Always-present macOS menu bar item while Haven is running
+	•	Closing the main Haven window keeps the app process and menu bar item alive
+	•	"Open Haven" menu action reopens/focuses the main window
+	•	"Open at Login" toggle using the native macOS login item API
+	•	Installed capabilities list with live service status from launchd
+	•	Last backup summary with result/date/status
+	•	"Back Up Now" menu action using the same backup path as the Backup tab
+
+✅ Acceptance Criteria
+	•	Haven menu item is visible after app launch
+	•	User can close the main window and continue using Haven from the topbar
+	•	User can reopen Haven from the menu
+	•	Open-at-login preference reflects system state and can be toggled
+	•	Capability status reflects whether services like Jellyfin are actually running
+	•	Backup status is visible without opening the main window
+	•	Backup can be started from the menu and shows in-progress state
+
+⸻
+
+📁 Phase 20 — Files
 
 🎯 Goal
 
@@ -999,7 +1026,7 @@ Files	File Browser	HTTP	⬜ Deferred
 
 Execution Strategy
 
-Books → Music → Movies → Backup → Updates → Files
+Books → Music → Movies → Backup → Updates → Topbar → Files
 Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
@@ -1022,4 +1049,4 @@ private Netflix + Spotify + Kindle
 Install → Start → Use (inside Haven)
 
 ⸻
-UPDATED 26.04.26 (Phase 16 Backup & Sync added — trust milestone before Files; Updates → 18)
+UPDATED 03.05.26 (Phase 19 macOS Topbar Menu added; Files moved to 20)
