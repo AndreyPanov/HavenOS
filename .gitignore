@@ -1,3 +1,7 @@
 .DS_Store
 .build/
 .swiftpm/
+
+# Xcode user-specific workspace/session state
+xcuserdata/
+*.xcuserstate
