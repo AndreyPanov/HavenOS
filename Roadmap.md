@@ -941,11 +941,13 @@ Move Haven from "installer" to "trusted long-term manager."
 	•	Compare upstream release tags against StoredArtifactInfo.version
 	•	Keep installed version tracking in StoredArtifactInfo and service state
 
-18.2 — Safe Atomic Update Engine ⏳
-	•	Download candidate artifact into versioned staging
-	•	Validate archive/executable before stopping the running service
-	•	Stop → Replace → Restart → Healthcheck
-	•	Roll back artifact, launchd job, and persisted state on failure
+18.2 — Safe Atomic Update Engine 🔄
+	•	ServiceUpdateManager state machine implemented
+	•	Dependency boundary added for artifact pipeline and runtime controller
+	•	Sequencing enforced: Download → Validate → Stop → Replace → Restart → Healthcheck
+	•	Rollback path implemented for replace/start/healthcheck failures
+	•	TODO: Wire concrete ArtifactInstaller staging/promote/rollback adapter
+	•	TODO: Wire concrete launchd/runtime controller and persisted-state transaction
 	•	Critical rule: Never leave partial state
 
 18.3 — Update UI ⏳
@@ -953,9 +955,9 @@ Move Haven from "installer" to "trusted long-term manager."
 	•	Show progress states: checking, downloading, validating, stopping, replacing, restarting, healthchecking
 	•	Add recovery path: Retry, Roll Back, Open Logs
 
-18.4 — Verification ⏳
-	•	Unit tests for release discovery and version comparison
-	•	Unit tests for rollback state machine
+18.4 — Verification 🔄
+	•	Unit tests for release discovery and version comparison implemented
+	•	Unit tests for rollback state machine implemented
 	•	UI/state tests for badges and progress mapping
 
 Critical rule: Never leave partial state.
