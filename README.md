@@ -44,6 +44,18 @@ Haven does not run services directly. It plans desired state, prepares artifacts
 swift build
 ```
 
+### Build the macOS App
+
+Open `Haven.xcodeproj` and build the `Haven` scheme to produce a normal `Haven.app` bundle.
+
+You can also build the app wrapper from the command line:
+
+```bash
+./Scripts/build-app.sh --configuration release
+```
+
+The command-line bundle is written to `.build/app/Haven.app` by default.
+
 ### Run the CLI
 
 ```bash

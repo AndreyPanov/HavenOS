@@ -2,29 +2,59 @@
 set -euo pipefail
 
 # Build Haven.app from Swift Package
-# Usage: ./Scripts/build-app.sh [--sign]
+# Usage: ./Scripts/build-app.sh [--configuration debug|release] [--output /path/Haven.app] [--sign]
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="$REPO_ROOT/.build/app"
-APP_BUNDLE="$BUILD_DIR/Haven.app"
-CONTENTS="$APP_BUNDLE/Contents"
-MACOS="$CONTENTS/MacOS"
 
 SIGN_IDENTITY="Apple Development"
 TEAM_ID="KS9Z78DCVM"
 SHOULD_SIGN=false
+CONFIGURATION="release"
+APP_BUNDLE="$REPO_ROOT/.build/app/Haven.app"
 
-for arg in "$@"; do
-    case "$arg" in
-        --sign) SHOULD_SIGN=true ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --sign)
+            SHOULD_SIGN=true
+            shift
+            ;;
+        --configuration)
+            CONFIGURATION="${2:-}"
+            shift 2
+            ;;
+        --output)
+            APP_BUNDLE="${2:-}"
+            shift 2
+            ;;
+        *)
+            echo "ERROR: Unknown argument: $1"
+            echo "Usage: $0 [--configuration debug|release] [--output /path/Haven.app] [--sign]"
+            exit 1
+            ;;
     esac
 done
 
-echo "==> Building Haven (Release)..."
-cd "$REPO_ROOT"
-swift build -c release --product Haven 2>&1 | tail -5
+NORMALIZED_CONFIGURATION="$(printf '%s' "$CONFIGURATION" | tr '[:upper:]' '[:lower:]')"
 
-BINARY="$(swift build -c release --product Haven --show-bin-path)/Haven"
+case "$NORMALIZED_CONFIGURATION" in
+    debug) SWIFT_CONFIGURATION="debug" ;;
+    release) SWIFT_CONFIGURATION="release" ;;
+    *)
+        echo "ERROR: Unsupported configuration: $CONFIGURATION"
+        echo "Use: debug or release"
+        exit 1
+        ;;
+esac
+
+BUILD_DIR="$(dirname "$APP_BUNDLE")"
+CONTENTS="$APP_BUNDLE/Contents"
+MACOS="$CONTENTS/MacOS"
+
+echo "==> Building Haven ($SWIFT_CONFIGURATION)..."
+cd "$REPO_ROOT"
+swift build -c "$SWIFT_CONFIGURATION" --product Haven 2>&1 | tail -5
+
+BINARY="$(swift build -c "$SWIFT_CONFIGURATION" --product Haven --show-bin-path)/Haven"
 
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: Binary not found at $BINARY"
@@ -33,6 +63,7 @@ fi
 
 echo "==> Creating Haven.app bundle..."
 rm -rf "$APP_BUNDLE"
+mkdir -p "$BUILD_DIR"
 mkdir -p "$MACOS"
 mkdir -p "$CONTENTS/Resources"
 
