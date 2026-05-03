@@ -445,7 +445,11 @@ package final class ServiceManager {
                 "\(prefix)apiKey.\(capabilityID)",
                 "\(prefix)customAccount.\(capabilityID)",
                 "\(prefix)libraryPath.\(capabilityID)",
+                "\(prefix)libraryPaths.\(capabilityID)",
                 "\(prefix)setupComplete.\(capabilityID)",
+                "\(prefix)dailyScan.\(capabilityID).dailyChangeCheckAt",
+                "\(prefix)dailyScan.\(capabilityID).dailyChangeRescanAt",
+                "\(prefix)dailyScan.\(capabilityID).contentSignature",
             ]
             for key in keys {
                 defaults.removeObject(forKey: key)
@@ -762,4 +766,3 @@ extension CatalogEntry {
         fullDescription: ""
     )
 }
-

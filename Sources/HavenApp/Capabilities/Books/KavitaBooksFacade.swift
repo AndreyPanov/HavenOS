@@ -110,6 +110,7 @@ package final class KavitaBooksFacade: BooksFacade {
     private var port: Int?
     private var autoConnectTask: Task<Void, Never>?
     private var scanPollTask: Task<Void, Never>?
+    private var dailyScanTask: Task<Void, Never>?
     private var currentScanStatus: ScanStatus = .idle
 
     // MARK: - Init
@@ -273,6 +274,7 @@ package final class KavitaBooksFacade: BooksFacade {
             log.info("Scanning library \(lib.id): \(lib.name)")
             try await client.scanLibrary(id: lib.id, token: token)
         }
+        rememberCurrentContentSignature()
 
         // Poll for completion: Kavita updates lastScanned when scan finishes
         scanPollTask?.cancel()
@@ -303,6 +305,66 @@ package final class KavitaBooksFacade: BooksFacade {
             self.currentScanStatus = .idle
             self.setupPhase = nil
             self.updateLibrary()
+        }
+    }
+
+    // MARK: - Daily Change Scan
+
+    private func startDailyChangeScanner() {
+        guard dailyScanTask == nil else { return }
+        dailyScanTask = Task {
+            await performDailyChangeScan()
+
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(LibraryChangeScanner.defaultCheckInterval))
+                guard !Task.isCancelled else { break }
+                await performDailyChangeScan()
+            }
+        }
+    }
+
+    private func stopDailyChangeScanner() {
+        dailyScanTask?.cancel()
+        dailyScanTask = nil
+    }
+
+    private func performDailyChangeScan() async {
+        guard connectionState == .connected, currentScanStatus != .scanning else { return }
+
+        let paths = resolvedLibraryPaths
+        let keyPrefix = dailyScanDefaultsPrefix
+        guard LibraryChangeScanner.isDailyCheckDue(keyPrefix: keyPrefix) else { return }
+
+        let signature = await Task.detached {
+            LibraryChangeScanner.contentSignature(for: paths)
+        }.value
+
+        let decision = LibraryChangeScanner.evaluateDailyRescan(
+            contentSignature: signature,
+            keyPrefix: keyPrefix
+        )
+
+        guard decision.shouldRescan else { return }
+
+        log.info("Daily change check found book library updates; triggering rescan")
+        do {
+            try await rescan()
+        } catch {
+            log.warning("Daily book library rescan failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func rememberCurrentContentSignature() {
+        let paths = resolvedLibraryPaths
+        let keyPrefix = dailyScanDefaultsPrefix
+        Task {
+            let signature = await Task.detached {
+                LibraryChangeScanner.contentSignature(for: paths)
+            }.value
+            LibraryChangeScanner.markRescanTriggered(
+                contentSignature: signature,
+                keyPrefix: keyPrefix
+            )
         }
     }
 
@@ -560,6 +622,7 @@ package final class KavitaBooksFacade: BooksFacade {
         autoConnectTask = nil
         scanPollTask?.cancel()
         scanPollTask = nil
+        stopDailyChangeScanner()
         isAutoConnecting = false
         authToken = nil
         apiKey = nil
@@ -577,6 +640,7 @@ package final class KavitaBooksFacade: BooksFacade {
         autoConnectTask = nil
         scanPollTask?.cancel()
         scanPollTask = nil
+        stopDailyChangeScanner()
         isAutoConnecting = false
         authToken = nil
         apiKey = nil
@@ -616,6 +680,7 @@ package final class KavitaBooksFacade: BooksFacade {
             // Service uninstalled — cancel any running auto-connect
             autoConnectTask?.cancel()
             autoConnectTask = nil
+            stopDailyChangeScanner()
             isAutoConnecting = false
             autoConnectExhausted = false
             setupPhase = nil
@@ -637,6 +702,7 @@ package final class KavitaBooksFacade: BooksFacade {
             if connectionState != .disconnected {
                 autoConnectTask?.cancel()
                 autoConnectTask = nil
+                stopDailyChangeScanner()
                 isAutoConnecting = false
                 autoConnectExhausted = false
                 connectionState = .disconnected
@@ -685,6 +751,7 @@ package final class KavitaBooksFacade: BooksFacade {
                 for lib in libraries {
                     try? await client.scanLibrary(id: lib.id, token: token)
                 }
+                rememberCurrentContentSignature()
             }
 
             // Auto-fix libraries with unsafe fileGroupTypes (0, 1, 5 crash macOS scanner)
@@ -701,10 +768,7 @@ package final class KavitaBooksFacade: BooksFacade {
             log.info("Fetched library data: \(libraries.count) libraries, \(count) series")
             updateLibrary()
 
-            // Auto-rescan on connect: organize loose files and pick up changes since last run
-            if currentScanStatus != .scanning {
-                try? await rescan()
-            }
+            startDailyChangeScanner()
         } catch {
             log.error("Failed to fetch library data: \(error.localizedDescription)")
             if let apiError = error as? KavitaAPIError,
@@ -748,6 +812,7 @@ package final class KavitaBooksFacade: BooksFacade {
     private var customAccountKey: String { "haven.kavita.customAccount.\(capabilityID)" }
     private var libraryPathOverrideKey: String { "haven.kavita.libraryPath.\(capabilityID)" }
     private var libraryPathsKey: String { "haven.kavita.libraryPaths.\(capabilityID)" }
+    private var dailyScanDefaultsPrefix: String { "haven.kavita.dailyScan.\(capabilityID)" }
 
     private func saveCredentials(_ token: String, username: String, apiKey: String?) {
         UserDefaults.standard.set(token, forKey: tokenKey)
@@ -802,6 +867,7 @@ package final class KavitaBooksFacade: BooksFacade {
         UserDefaults.standard.removeObject(forKey: customAccountKey)
         UserDefaults.standard.removeObject(forKey: libraryPathOverrideKey)
         UserDefaults.standard.removeObject(forKey: libraryPathsKey)
+        LibraryChangeScanner.clear(keyPrefix: dailyScanDefaultsPrefix)
     }
 }
 
@@ -900,4 +966,3 @@ enum KavitaLogParser {
         return errorFiles.sorted()
     }
 }
-

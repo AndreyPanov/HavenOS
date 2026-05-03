@@ -22,6 +22,9 @@ struct JellyfinMoviesFacadeTests {
             "haven.jellyfin.customAccount.\(id)",
             "haven.jellyfin.libraryPath.\(id)",
             "haven.jellyfin.libraryPaths.\(id)",
+            "haven.jellyfin.dailyScan.\(id).dailyChangeCheckAt",
+            "haven.jellyfin.dailyScan.\(id).dailyChangeRescanAt",
+            "haven.jellyfin.dailyScan.\(id).contentSignature",
         ] {
             UserDefaults.standard.removeObject(forKey: key)
         }

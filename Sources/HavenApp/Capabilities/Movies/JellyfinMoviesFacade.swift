@@ -92,6 +92,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
     private var port: Int?
     private var autoConnectTask: Task<Void, Never>?
     private var scanPollTask: Task<Void, Never>?
+    private var dailyScanTask: Task<Void, Never>?
     private var currentScanStatus: ScanStatus = .idle
 
     // MARK: - Init
@@ -179,6 +180,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         saveLibraryPaths([path])
         setupPhase = .scanning(progress: nil)
         updateLibrary()
+        rememberCurrentContentSignature()
 
         // Start polling for scan completion
         startScanPolling()
@@ -219,6 +221,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         saveLibraryPaths(paths)
         currentScanStatus = .scanning
         updateLibrary()
+        rememberCurrentContentSignature()
         startScanPolling()
     }
 
@@ -242,6 +245,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         saveLibraryPaths(paths)
         currentScanStatus = .scanning
         updateLibrary()
+        rememberCurrentContentSignature()
         startScanPolling()
     }
 
@@ -265,6 +269,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
         do {
             try await client.refreshLibrary(token: token)
+            rememberCurrentContentSignature()
         } catch {
             log.warning("Refresh API failed: \(error.localizedDescription)")
             currentScanStatus = .idle
@@ -273,6 +278,66 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         }
 
         startScanPolling()
+    }
+
+    // MARK: - Daily Change Scan
+
+    private func startDailyChangeScanner() {
+        guard dailyScanTask == nil else { return }
+        dailyScanTask = Task {
+            await performDailyChangeScan()
+
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(LibraryChangeScanner.defaultCheckInterval))
+                guard !Task.isCancelled else { break }
+                await performDailyChangeScan()
+            }
+        }
+    }
+
+    private func stopDailyChangeScanner() {
+        dailyScanTask?.cancel()
+        dailyScanTask = nil
+    }
+
+    private func performDailyChangeScan() async {
+        guard connectionState == .connected, currentScanStatus != .scanning else { return }
+
+        let paths = resolvedLibraryPaths
+        let keyPrefix = dailyScanDefaultsPrefix
+        guard LibraryChangeScanner.isDailyCheckDue(keyPrefix: keyPrefix) else { return }
+
+        let signature = await Task.detached {
+            LibraryChangeScanner.contentSignature(for: paths)
+        }.value
+
+        let decision = LibraryChangeScanner.evaluateDailyRescan(
+            contentSignature: signature,
+            keyPrefix: keyPrefix
+        )
+
+        guard decision.shouldRescan else { return }
+
+        log.info("Daily change check found movie library updates; triggering rescan")
+        do {
+            try await rescan()
+        } catch {
+            log.warning("Daily movie library rescan failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func rememberCurrentContentSignature() {
+        let paths = resolvedLibraryPaths
+        let keyPrefix = dailyScanDefaultsPrefix
+        Task {
+            let signature = await Task.detached {
+                LibraryChangeScanner.contentSignature(for: paths)
+            }.value
+            LibraryChangeScanner.markRescanTriggered(
+                contentSignature: signature,
+                keyPrefix: keyPrefix
+            )
+        }
     }
 
     private func startScanPolling() {
@@ -656,6 +721,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         autoConnectTask = nil
         scanPollTask?.cancel()
         scanPollTask = nil
+        stopDailyChangeScanner()
         isAutoConnecting = false
         authToken = nil
         connectionState = .disconnected
@@ -672,6 +738,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         autoConnectTask = nil
         scanPollTask?.cancel()
         scanPollTask = nil
+        stopDailyChangeScanner()
         isAutoConnecting = false
         authToken = nil
         connectionState = .disconnected
@@ -709,6 +776,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             // Service uninstalled — cancel any running auto-connect
             autoConnectTask?.cancel()
             autoConnectTask = nil
+            stopDailyChangeScanner()
             isAutoConnecting = false
             autoConnectExhausted = false
             setupPhase = nil
@@ -730,6 +798,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             if connectionState != .disconnected {
                 autoConnectTask?.cancel()
                 autoConnectTask = nil
+                stopDailyChangeScanner()
                 isAutoConnecting = false
                 autoConnectExhausted = false
                 connectionState = .disconnected
@@ -772,6 +841,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
                 showCount = counts.SeriesCount
                 log.info("Fetched item counts: \(counts.MovieCount) movies, \(counts.SeriesCount) shows")
                 updateLibrary()
+                startDailyChangeScanner()
                 return
             } catch {
                 let is401 = (error as? JellyfinAPIError).flatMap {
@@ -815,6 +885,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
     private var customAccountKey: String { "haven.jellyfin.customAccount.\(capabilityID)" }
     private var libraryPathKey: String { "haven.jellyfin.libraryPath.\(capabilityID)" }
     private var libraryPathsKey: String { "haven.jellyfin.libraryPaths.\(capabilityID)" }
+    private var dailyScanDefaultsPrefix: String { "haven.jellyfin.dailyScan.\(capabilityID)" }
 
     private var resolvedLibraryPaths: [String] {
         if let saved = UserDefaults.standard.stringArray(forKey: libraryPathsKey), !saved.isEmpty {
@@ -860,5 +931,6 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         UserDefaults.standard.removeObject(forKey: customAccountKey)
         UserDefaults.standard.removeObject(forKey: libraryPathKey)
         UserDefaults.standard.removeObject(forKey: libraryPathsKey)
+        LibraryChangeScanner.clear(keyPrefix: dailyScanDefaultsPrefix)
     }
 }

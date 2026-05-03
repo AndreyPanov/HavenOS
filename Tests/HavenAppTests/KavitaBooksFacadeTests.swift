@@ -23,6 +23,9 @@ struct KavitaBooksFacadeTests {
             "haven.kavita.apiKey.\(id)",
             "haven.kavita.libraryPath.\(id)",
             "haven.kavita.libraryPaths.\(id)",
+            "haven.kavita.dailyScan.\(id).dailyChangeCheckAt",
+            "haven.kavita.dailyScan.\(id).dailyChangeRescanAt",
+            "haven.kavita.dailyScan.\(id).contentSignature",
         ] {
             UserDefaults.standard.removeObject(forKey: key)
         }
