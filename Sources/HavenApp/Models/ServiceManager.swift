@@ -67,6 +67,12 @@ package final class ServiceManager {
     /// Current catalog loading state for the UI.
     private(set) var catalogState: CatalogState = .notLoaded
 
+    /// Per-capability update state shown on service cards/details.
+    private(set) var updateStates: [String: ServiceUpdateState] = [:]
+
+    /// Last discovered update candidates, keyed by capability ID.
+    private var updateCandidates: [String: UpdateCandidate] = [:]
+
     // MARK: - Internal State
 
     private var catalog: [CatalogEntry] = []
@@ -396,6 +402,168 @@ package final class ServiceManager {
             log.error("Install failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
+    }
+
+    // MARK: - Updates
+
+    func updateState(for capabilityID: String) -> ServiceUpdateState {
+        updateStates[capabilityID] ?? .idle
+    }
+
+    func updatePresentation(for capabilityID: String) -> ServiceUpdatePresentation {
+        ServiceUpdatePresentation.make(for: updateState(for: capabilityID))
+    }
+
+    func logsURL(for capabilityID: String) -> URL? {
+        havenState.services[capabilityID]?.directoryLayout.logs
+    }
+
+    func checkForUpdates(capabilityID: String) async {
+        guard let service = havenState.services[capabilityID],
+              let artifact = primaryUpdatableArtifact(in: service)
+        else {
+            updateStates[capabilityID] = .failed(
+                reason: "No update metadata is available for this service."
+            )
+            return
+        }
+
+        updateStates[capabilityID] = .checking
+        lastError = nil
+
+        do {
+            let release = try await GitHubReleaseClient()
+                .latestStableRelease(repo: artifact.repo)
+            let state = ServiceUpdateDiscovery.state(
+                for: artifact,
+                latest: release
+            )
+            updateStates[capabilityID] = state
+            if case .updateAvailable(let candidate) = state {
+                updateCandidates[capabilityID] = candidate
+            } else {
+                updateCandidates.removeValue(forKey: capabilityID)
+            }
+        } catch {
+            updateCandidates.removeValue(forKey: capabilityID)
+            updateStates[capabilityID] = .failed(reason: error.localizedDescription)
+            lastError = error.localizedDescription
+        }
+    }
+
+    func updateService(capabilityID: String) async {
+        if updateCandidates[capabilityID] == nil {
+            await checkForUpdates(capabilityID: capabilityID)
+        }
+
+        let candidate: UpdateCandidate
+        if case .updateAvailable(let available) = updateStates[capabilityID] {
+            candidate = available
+        } else if let retryCandidate = updateCandidates[capabilityID],
+                  updatePresentation(for: capabilityID).allowsRetry {
+            candidate = retryCandidate
+        } else {
+            return
+        }
+
+        guard let registry else {
+            lastError = "No catalog loaded. Configure your catalog folder in Settings."
+            return
+        }
+        guard let service = havenState.services[capabilityID],
+              let installedArtifact = service.artifactInfo.first(where: {
+                  $0.unitID == candidate.unitID
+              }),
+              registry.runtimeUnitsByID[candidate.unitID] != nil
+        else {
+            lastError = "Installed update metadata is incomplete."
+            updateStates[capabilityID] = .failed(
+                reason: "Installed update metadata is incomplete."
+            )
+            return
+        }
+
+        isPerformingAction = true
+        activeCapabilityID = capabilityID
+        actionStatus = "Updating…"
+        lastError = nil
+
+        defer {
+            isPerformingAction = false
+            activeCapabilityID = nil
+            actionStatus = nil
+        }
+
+        let paths = self.paths
+        let stateStore = self.stateStore
+        let stateBox = Mutex<ServiceUpdateState?>(nil)
+        let resultBox = Mutex<ServiceUpdateState?>(nil)
+
+        Task.detached {
+            let pipeline = ArtifactServiceUpdatePipeline(
+                installer: ArtifactInstaller(paths: paths),
+                descriptorResolver: { updateCandidate in
+                    guard let runtimeUnit = registry.runtimeUnitsByID[updateCandidate.unitID] else {
+                        throw ServiceUpdateMetadataError.artifactNotFound(
+                            unitID: updateCandidate.unitID
+                        )
+                    }
+                    return try ServiceUpdateArtifactDescriptorFactory.descriptor(
+                        for: updateCandidate,
+                        installed: installedArtifact,
+                        runtimeUnit: runtimeUnit
+                    )
+                }
+            )
+            let runtime = LaunchdServiceUpdateRuntimeController(
+                capabilityID: capabilityID,
+                launchdController: LaunchdController(),
+                readinessProbes: service.readinessProbes
+            )
+            let metadata = StoredArtifactUpdateTransaction(
+                stateStore: stateStore
+            )
+            let manager = ServiceUpdateManager(
+                artifactPipeline: pipeline,
+                runtimeController: runtime,
+                stateTransaction: metadata,
+                onStateChange: { state in
+                    stateBox.withLock { $0 = state }
+                }
+            )
+            let result = await manager.apply(candidate)
+            resultBox.withLock { $0 = result }
+        }
+
+        while resultBox.withLock({ $0 }) == nil {
+            if let updateState = stateBox.withLock({ $0 }) {
+                updateStates[capabilityID] = updateState
+                actionStatus = ServiceUpdatePresentation
+                    .make(for: updateState)
+                    .title
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        let result = resultBox.withLock { $0 }!
+        updateStates[capabilityID] = result
+
+        switch result {
+        case .completed:
+            updateCandidates.removeValue(forKey: capabilityID)
+            refresh()
+        case .rolledBack(let reason), .failed(let reason):
+            lastError = reason
+            refresh()
+        default:
+            break
+        }
+    }
+
+    private func primaryUpdatableArtifact(
+        in service: StoredServiceState
+    ) -> StoredArtifactInfo? {
+        service.artifactInfo.first { !$0.repo.isEmpty }
     }
 
     /// Uninstall a service by capability ID.

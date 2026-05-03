@@ -927,7 +927,7 @@ Every capability should have the same setup flow, the same folder management, an
 ⸻
 
 
-🔄 Phase 18 — Service Update System
+✅ Phase 18 — Service Update System
 
 🎯 Goal
 
@@ -941,27 +941,29 @@ Move Haven from "installer" to "trusted long-term manager."
 	•	Compare upstream release tags against StoredArtifactInfo.version
 	•	Keep installed version tracking in StoredArtifactInfo and service state
 
-18.2 — Safe Atomic Update Engine 🔄
+18.2 — Safe Atomic Update Engine ✅
 	•	ServiceUpdateManager state machine implemented at the dependency boundary
 	•	Dependency boundary added for artifact pipeline and runtime controller
 	•	Sequencing enforced: Download → Validate → Stop → Replace → Restart → Healthcheck
 	•	Rollback path implemented for replace/start/healthcheck failures in the manager flow
-	•	TODO: Wire concrete ArtifactInstaller staging/promote/rollback adapter
-	•	TODO: Wire concrete launchd/runtime controller
-	•	TODO: Add persisted-state transaction for StoredArtifactInfo.version / updatedAt updates
+	•	ArtifactServiceUpdatePipeline wires ArtifactInstaller staging/promote/rollback
+	•	LaunchdServiceUpdateRuntimeController wires stop/start/healthcheck integration
+	•	StoredArtifactUpdateTransaction commits StoredArtifactInfo.version / updatedAt only after healthcheck
 	•	Critical rule: Never leave partial state
 
-18.3 — Update UI ⏳
-	•	Add "Update Available" badges to service rows/cards
-	•	Show progress states: checking, downloading, validating, stopping, replacing, restarting, healthchecking
-	•	Add recovery path: Retry, Roll Back, Open Logs
+18.3 — Update UI ✅
+	•	"Update Available" badges added to service cards/details
+	•	Progress states shown for checking, downloading, validating, stopping, replacing, restarting, healthchecking, rollback
+	•	Recovery path added: Retry and Open Logs
 
-18.4 — Verification 🔄
+18.4 — Verification ✅
 	•	Unit tests for release discovery and version comparison implemented
 	•	Unit tests for rollback state machine implemented
-	•	TODO: Adapter tests for concrete staging/promote/rollback behavior
-	•	TODO: Runtime-controller tests for stop/start/healthcheck integration
-	•	TODO: UI/state tests for badges and progress mapping
+	•	Adapter tests for concrete staging/promote/rollback behavior implemented
+	•	Runtime-controller tests for stop/start/healthcheck integration implemented
+	•	UI/state tests for badges and progress mapping implemented
+
+Scope note: Phase 18 supports GitHub-release artifact updates. Direct-url providers need provider-specific metadata discovery before they can participate.
 
 Critical rule: Never leave partial state.
 

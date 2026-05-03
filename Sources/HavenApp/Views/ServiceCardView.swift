@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import HavenInstaller
 
 struct ServiceCardView: View {
     @Environment(ServiceManager.self) private var serviceManager
@@ -21,6 +22,11 @@ struct ServiceCardView: View {
                     Spacer()
 
                     StatusBadgeView(status: service.status)
+                    if Self.showsUpdateBadge(serviceManager.updateState(for: service.id)) {
+                        ServiceUpdateBadgeView(
+                            state: serviceManager.updateState(for: service.id)
+                        )
+                    }
                 }
 
                 // Description
@@ -37,7 +43,12 @@ struct ServiceCardView: View {
 
             // Action buttons
             HStack(spacing: 12) {
-                if service.status == .running {
+                if case .updateAvailable = serviceManager.updateState(for: service.id) {
+                    CardActionButton(title: "Update", icon: "arrow.down.circle") {
+                        Task { await serviceManager.updateService(capabilityID: service.id) }
+                    }
+                    .disabled(serviceManager.isPerformingAction)
+                } else if service.status == .running {
                     CardActionButton(title: "Stop", icon: "stop.circle") {
                         Task { await serviceManager.stopService(capabilityID: service.id) }
                     }
@@ -72,10 +83,23 @@ struct ServiceCardView: View {
                 }
 
                 Menu {
+                    Button("Check for Updates", systemImage: "arrow.down.circle") {
+                        Task { await serviceManager.checkForUpdates(capabilityID: service.id) }
+                    }
+                    if serviceManager.updatePresentation(for: service.id).allowsRetry {
+                        Button("Retry Update", systemImage: "arrow.clockwise") {
+                            Task { await serviceManager.updateService(capabilityID: service.id) }
+                        }
+                    }
                     Button("Restart", systemImage: "arrow.clockwise") {
                         Task {
                             await serviceManager.stopService(capabilityID: service.id)
                             await serviceManager.startService(capabilityID: service.id)
+                        }
+                    }
+                    if let logsURL = serviceManager.logsURL(for: service.id) {
+                        Button("Open Logs", systemImage: "doc.text.magnifyingglass") {
+                            NSWorkspace.shared.open(logsURL)
                         }
                     }
                     Divider()
@@ -93,6 +117,15 @@ struct ServiceCardView: View {
         }
         .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private static func showsUpdateBadge(_ state: HavenInstaller.ServiceUpdateState) -> Bool {
+        switch state {
+        case .idle, .upToDate:
+            false
+        default:
+            true
+        }
     }
 }
 

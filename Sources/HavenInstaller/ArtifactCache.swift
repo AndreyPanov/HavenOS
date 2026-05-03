@@ -129,6 +129,81 @@ public struct ArtifactCache: Sendable {
         try fileManager.moveItem(at: staging, to: final_)
     }
 
+    /// Promote a staged update while preserving the previous install for rollback.
+    ///
+    /// Unlike first-time install promotion, this never deletes the existing final
+    /// directory before the update is proven healthy. The previous install is
+    /// moved to a unique rollback directory, then staging is moved into place.
+    /// If the second move fails, the previous install is restored immediately.
+    public func promoteStagingDirectoryForUpdate(
+        for unitID: String
+    ) throws -> (previousInstallDirectory: URL?, replacementInstallDirectory: URL) {
+        let staging = stagingDirectory(for: unitID)
+        let final_ = installDirectory(for: unitID)
+
+        guard fileManager.fileExists(atPath: staging.path) else {
+            throw ArtifactInstallerError.installFailed(
+                unitID: unitID,
+                detail: "Staging directory does not exist: \(staging.path)"
+            )
+        }
+
+        try fileManager.createDirectory(at: installedRoot, withIntermediateDirectories: true)
+
+        let previous: URL?
+        if fileManager.fileExists(atPath: final_.path) {
+            let rollback = installedRoot.appendingPathComponent(
+                "\(unitID).rollback.\(UUID().uuidString)",
+                isDirectory: true
+            )
+            try fileManager.moveItem(at: final_, to: rollback)
+            previous = rollback
+        } else {
+            previous = nil
+        }
+
+        do {
+            try fileManager.moveItem(at: staging, to: final_)
+        } catch {
+            if let previous {
+                try? fileManager.moveItem(at: previous, to: final_)
+            }
+            throw ArtifactInstallerError.installFailed(
+                unitID: unitID,
+                detail: "Failed to promote staged update: \(error.localizedDescription)"
+            )
+        }
+
+        return (previous, final_)
+    }
+
+    /// Restore the previous install directory after a failed update.
+    public func rollbackPromotedUpdate(
+        for unitID: String,
+        previousInstallDirectory: URL?,
+        replacementInstallDirectory: URL?
+    ) throws {
+        let final_ = installDirectory(for: unitID)
+        let replacement = replacementInstallDirectory ?? final_
+
+        if fileManager.fileExists(atPath: replacement.path) {
+            try fileManager.removeItem(at: replacement)
+        }
+
+        if let previousInstallDirectory,
+           fileManager.fileExists(atPath: previousInstallDirectory.path) {
+            try fileManager.moveItem(at: previousInstallDirectory, to: final_)
+        }
+    }
+
+    /// Remove the preserved previous install after an update has completed.
+    public func finalizePromotedUpdate(previousInstallDirectory: URL?) throws {
+        guard let previousInstallDirectory,
+              fileManager.fileExists(atPath: previousInstallDirectory.path)
+        else { return }
+        try fileManager.removeItem(at: previousInstallDirectory)
+    }
+
     /// Remove a leftover staging directory for the given unit.
     ///
     /// - Parameter unitID: The runtime unit identifier.

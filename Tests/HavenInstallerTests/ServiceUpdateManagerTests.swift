@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import HavenCore
 @testable import HavenInstaller
 
 final class ServiceUpdateManagerTests: XCTestCase {
@@ -19,7 +20,7 @@ final class ServiceUpdateManagerTests: XCTestCase {
         let stateHistory = await manager.stateHistory()
 
         XCTAssertEqual(result, .completed(candidate))
-        XCTAssertEqual(artifactCalls, ["download", "validate", "promote"])
+        XCTAssertEqual(artifactCalls, ["download", "validate", "promote", "finalize"])
         XCTAssertEqual(runtimeCalls, ["stop:unit", "start:unit", "healthcheck:unit"])
         XCTAssertEqual(stateHistory, [
             .idle,
@@ -83,6 +84,55 @@ final class ServiceUpdateManagerTests: XCTestCase {
         XCTAssertEqual(runtimeCalls, ["stop:unit", "start:unit"])
     }
 
+    func testSuccessfulUpdateCommitsMetadataAfterHealthcheck() async {
+        let candidate = makeCandidate()
+        let artifacts = RecordingArtifactPipeline()
+        let runtime = RecordingRuntimeController()
+        let metadata = RecordingStateTransaction()
+        let manager = ServiceUpdateManager(
+            artifactPipeline: artifacts,
+            runtimeController: runtime,
+            stateTransaction: metadata
+        )
+
+        let result = await manager.apply(candidate)
+        let metadataCalls = await metadata.calls()
+
+        XCTAssertEqual(result, .completed(candidate))
+        XCTAssertEqual(metadataCalls, ["commit:unit"])
+    }
+
+    func testMetadataCommitFailureRollsBackReplacementAndRestartsOldService() async {
+        let candidate = makeCandidate()
+        let artifacts = RecordingArtifactPipeline()
+        let runtime = RecordingRuntimeController()
+        let metadata = RecordingStateTransaction(failCommit: true)
+        let manager = ServiceUpdateManager(
+            artifactPipeline: artifacts,
+            runtimeController: runtime,
+            stateTransaction: metadata
+        )
+
+        let result = await manager.apply(candidate)
+        let artifactCalls = await artifacts.calls()
+        let runtimeCalls = await runtime.calls()
+        let metadataCalls = await metadata.calls()
+
+        guard case .rolledBack(let reason) = result else {
+            return XCTFail("Expected rollback")
+        }
+        XCTAssertTrue(reason.contains("Injected metadata failure"))
+        XCTAssertEqual(artifactCalls, ["download", "validate", "promote", "rollback"])
+        XCTAssertEqual(runtimeCalls, [
+            "stop:unit",
+            "start:unit",
+            "healthcheck:unit",
+            "stop:unit",
+            "start:unit",
+        ])
+        XCTAssertEqual(metadataCalls, ["commit:unit"])
+    }
+
     private func makeCandidate() -> UpdateCandidate {
         UpdateCandidate(
             unitID: "unit",
@@ -140,6 +190,10 @@ private actor RecordingArtifactPipeline: ServiceUpdateArtifactPipeline {
         recordedCalls.append("rollback")
     }
 
+    func finalize(_ token: ServiceUpdateRollbackToken) async throws {
+        recordedCalls.append("finalize")
+    }
+
     func calls() -> [String] {
         recordedCalls
     }
@@ -168,6 +222,53 @@ private actor RecordingRuntimeController: ServiceUpdateRuntimeController {
     func healthcheck(unitID: String) async throws -> Bool {
         recordedCalls.append("healthcheck:\(unitID)")
         return healthcheckResult
+    }
+
+    func calls() -> [String] {
+        recordedCalls
+    }
+}
+
+private enum InjectedMetadataFailure: Error, LocalizedError {
+    case commit
+
+    var errorDescription: String? {
+        "Injected metadata failure"
+    }
+}
+
+private actor RecordingStateTransaction: ServiceUpdateStateTransaction {
+    private let failCommit: Bool
+    private var recordedCalls: [String] = []
+
+    init(failCommit: Bool = false) {
+        self.failCommit = failCommit
+    }
+
+    func commit(
+        _ candidate: UpdateCandidate,
+        replacementInstallDirectory: URL?
+    ) async throws -> ServiceUpdateStateRollbackToken {
+        recordedCalls.append("commit:\(candidate.unitID)")
+        if failCommit { throw InjectedMetadataFailure.commit }
+        return ServiceUpdateStateRollbackToken(previousService: StoredServiceState(
+            capability: "capability",
+            bundleID: "bundle",
+            installedAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 2),
+            status: .running,
+            resolvedSettings: [:],
+            portAssignments: [],
+            runtimeUnits: [candidate.unitID],
+            directoryLayout: ServiceDirectoryLayout(
+                baseDirectory: URL(fileURLWithPath: "/tmp/haven-test"),
+                capabilityID: "capability"
+            )
+        ))
+    }
+
+    func rollback(_ token: ServiceUpdateStateRollbackToken) async throws {
+        recordedCalls.append("metadataRollback")
     }
 
     func calls() -> [String] {

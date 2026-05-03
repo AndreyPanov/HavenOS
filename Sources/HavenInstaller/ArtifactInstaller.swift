@@ -175,6 +175,84 @@ public struct ArtifactInstaller: Sendable {
         )
     }
 
+    // MARK: - Updates
+
+    /// Download and extract an update into the unit's staging directory.
+    ///
+    /// This does not touch the active install directory. Call
+    /// ``validatePreparedUpdate(descriptor:stagingDirectory:)`` and then
+    /// ``promotePreparedUpdate(_:)`` to make the staged update active.
+    public func prepareUpdate(
+        descriptor: ArtifactDescriptor,
+        downloadProgress: (@Sendable (Double) -> Void)? = nil
+    ) throws -> URL {
+        let unitID = descriptor.unitID
+        let localFile = try resolveLocalFile(
+            descriptor: descriptor,
+            downloadProgress: downloadProgress
+        )
+        let staging = try cache.prepareStagingDirectory(for: unitID)
+
+        do {
+            try extractOrCopy(descriptor: descriptor, localFile: localFile, to: staging)
+        } catch {
+            cache.removeStagingDirectory(for: unitID)
+            if case .remote = descriptor.source {
+                try? fileManager.removeItem(at: localFile)
+            }
+            throw error
+        }
+
+        if case .remote = descriptor.source {
+            try? fileManager.removeItem(at: localFile)
+        }
+
+        return staging
+    }
+
+    /// Validate a staged update using the same executable checks as first install.
+    public func validatePreparedUpdate(
+        descriptor: ArtifactDescriptor,
+        stagingDirectory: URL
+    ) throws {
+        try validateExtraction(descriptor: descriptor, directory: stagingDirectory)
+    }
+
+    /// Remove a staged update that did not reach promotion.
+    public func discardPreparedUpdate(_ prepared: PreparedServiceUpdate) {
+        cache.removeStagingDirectory(for: prepared.candidate.unitID)
+    }
+
+    /// Promote a validated staged update while preserving the previous install.
+    public func promotePreparedUpdate(
+        _ prepared: PreparedServiceUpdate
+    ) throws -> ServiceUpdateRollbackToken {
+        let promoted = try cache.promoteStagingDirectoryForUpdate(
+            for: prepared.candidate.unitID
+        )
+        return ServiceUpdateRollbackToken(
+            candidate: prepared.candidate,
+            previousInstallDirectory: promoted.previousInstallDirectory,
+            replacementInstallDirectory: promoted.replacementInstallDirectory
+        )
+    }
+
+    /// Roll back a promoted update to the previous install directory.
+    public func rollbackPreparedUpdate(_ token: ServiceUpdateRollbackToken) throws {
+        try cache.rollbackPromotedUpdate(
+            for: token.candidate.unitID,
+            previousInstallDirectory: token.previousInstallDirectory,
+            replacementInstallDirectory: token.replacementInstallDirectory
+        )
+    }
+
+    /// Discard the preserved previous install after a successful update.
+    public func finalizePreparedUpdate(_ token: ServiceUpdateRollbackToken) throws {
+        try cache.finalizePromotedUpdate(
+            previousInstallDirectory: token.previousInstallDirectory
+        )
+    }
+
     // MARK: - Source resolution
 
     private func resolveLocalFile(descriptor: ArtifactDescriptor, downloadProgress: (@Sendable (Double) -> Void)? = nil) throws -> URL {

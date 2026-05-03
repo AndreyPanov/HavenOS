@@ -29,6 +29,11 @@ struct ServiceDetailView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
                         StatusBadgeView(status: service.status)
+                        if showsUpdateBadge {
+                            ServiceUpdateBadgeView(
+                                state: serviceManager.updateState(for: serviceID)
+                            )
+                        }
                     }
 
                     Spacer()
@@ -57,6 +62,69 @@ struct ServiceDetailView: View {
                             Divider().padding(.vertical, 6)
                         }
                         ServiceDetailRow(label: "Data Path", value: service.dataPath)
+                    }
+                    .padding(4)
+                }
+
+                GroupBox("Updates") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        let presentation = serviceManager.updatePresentation(for: serviceID)
+                        HStack(spacing: 10) {
+                            if presentation.showsProgress {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: presentation.systemImage)
+                                    .foregroundStyle(.secondary)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(presentation.title)
+                                    .font(.callout)
+                                if let detail = presentation.detail {
+                                    Text(detail)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer()
+                        }
+
+                        HStack(spacing: 10) {
+                            Button {
+                                Task {
+                                    await serviceManager.checkForUpdates(
+                                        capabilityID: serviceID
+                                    )
+                                }
+                            } label: {
+                                Label("Check", systemImage: "arrow.down.circle")
+                            }
+                            .disabled(serviceManager.isPerformingAction)
+
+                            if canRunUpdate {
+                                Button {
+                                    Task {
+                                        await serviceManager.updateService(
+                                            capabilityID: serviceID
+                                        )
+                                    }
+                                } label: {
+                                    Label(updateButtonTitle, systemImage: "arrow.clockwise")
+                                }
+                                .disabled(serviceManager.isPerformingAction)
+                            }
+
+                            if let logsURL = serviceManager.logsURL(for: serviceID) {
+                                Button {
+                                    NSWorkspace.shared.open(logsURL)
+                                } label: {
+                                    Label("Logs", systemImage: "doc.text.magnifyingglass")
+                                }
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
                     }
                     .padding(4)
                 }
@@ -90,6 +158,27 @@ struct ServiceDetailView: View {
         .navigationTitle(service.name)
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var showsUpdateBadge: Bool {
+        switch serviceManager.updateState(for: serviceID) {
+        case .idle, .upToDate:
+            false
+        default:
+            true
+        }
+    }
+
+    private var canRunUpdate: Bool {
+        let state = serviceManager.updateState(for: serviceID)
+        if case .updateAvailable = state { return true }
+        return serviceManager.updatePresentation(for: serviceID).allowsRetry
+    }
+
+    private var updateButtonTitle: String {
+        serviceManager.updatePresentation(for: serviceID).allowsRetry
+            ? "Retry"
+            : "Update"
     }
 }
 
