@@ -77,21 +77,96 @@ package struct NavidromeAPIClient: Sendable {
     // MARK: - Library Info
 
     struct LibraryInfo: Decodable, Sendable {
+        let id: Int?
+        let name: String?
+        let path: String?
         let totalSongs: Int?
         let totalAlbums: Int?
         let totalArtists: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, name, path, totalSongs, totalAlbums, totalArtists
+        }
+
+        init(
+            id: Int?,
+            name: String?,
+            path: String?,
+            totalSongs: Int?,
+            totalAlbums: Int?,
+            totalArtists: Int?
+        ) {
+            self.id = id
+            self.name = name
+            self.path = path
+            self.totalSongs = totalSongs
+            self.totalAlbums = totalAlbums
+            self.totalArtists = totalArtists
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let intID = try? c.decode(Int.self, forKey: .id) {
+                id = intID
+            } else if let stringID = try? c.decode(String.self, forKey: .id) {
+                id = Int(stringID)
+            } else {
+                id = nil
+            }
+            name = try c.decodeIfPresent(String.self, forKey: .name)
+            path = try c.decodeIfPresent(String.self, forKey: .path)
+            totalSongs = try c.decodeIfPresent(Int.self, forKey: .totalSongs)
+            totalAlbums = try c.decodeIfPresent(Int.self, forKey: .totalAlbums)
+            totalArtists = try c.decodeIfPresent(Int.self, forKey: .totalArtists)
+        }
     }
 
-    /// Get library stats from `/api/library`.
-    func getLibraryInfo(token: String) async throws -> LibraryInfo {
+    /// Get all accessible libraries from `/api/library`.
+    func getLibraries(token: String) async throws -> [LibraryInfo] {
         let request = authorizedRequest(path: "/api/library", token: token)
         let (data, response) = try await URLSession.shared.data(for: request)
         try checkHTTPStatus(response, data: data)
-        let libraries = try JSONDecoder().decode([LibraryInfo].self, from: data)
+        return try JSONDecoder().decode([LibraryInfo].self, from: data)
+    }
+
+    /// Get aggregate library stats from `/api/library`.
+    func getLibraryInfo(token: String) async throws -> LibraryInfo {
+        let libraries = try await getLibraries(token: token)
         guard let first = libraries.first else {
             throw NavidromeAPIError.httpError(statusCode: 0, body: "No libraries found")
         }
-        return first
+        guard libraries.count > 1 else { return first }
+        return LibraryInfo(
+            id: nil,
+            name: nil,
+            path: nil,
+            totalSongs: libraries.compactMap(\.totalSongs).reduce(0, +),
+            totalAlbums: libraries.compactMap(\.totalAlbums).reduce(0, +),
+            totalArtists: libraries.compactMap(\.totalArtists).reduce(0, +)
+        )
+    }
+
+    /// Create an additional Navidrome library. Requires an admin token.
+    func createLibrary(name: String, path: String, token: String) async throws {
+        var request = authorizedRequest(path: "/api/library", token: token)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "name": name,
+            "path": path,
+            "defaultNewUsers": true,
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data)
+    }
+
+    /// Delete an additional Navidrome library by ID. Requires an admin token.
+    func deleteLibrary(id: Int, token: String) async throws {
+        var request = authorizedRequest(path: "/api/library/\(id)", token: token)
+        request.httpMethod = "DELETE"
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try checkHTTPStatus(response, data: data)
     }
 
     // MARK: - Health

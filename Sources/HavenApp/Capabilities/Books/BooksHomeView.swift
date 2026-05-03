@@ -379,40 +379,14 @@ struct BooksHomeView: View {
                 if let lib = facade.library {
                     // Book count (prominent)
                     if let count = lib.itemCount {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text("\(count)")
-                                .font(.system(.title, design: .rounded, weight: .semibold))
-                            Text(count == 1 ? "book" : "books")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
+                        statView(count: count, label: count == 1 ? "book" : "books")
                     }
 
                     // Folder paths
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(lib.libraryPaths, id: \.self) { path in
-                            HStack(spacing: 6) {
-                                Image(systemName: "folder")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                Text(path)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-
-                                if lib.libraryPaths.count > 1 {
-                                    Button {
-                                        Task { try? await facade.removeLibraryPath(path) }
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundStyle(.secondary)
-                                            .font(.caption)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .help("Remove this folder")
-                                }
+                            LibraryFolderRow(path: path, canRemove: lib.libraryPaths.count > 1) {
+                                Task { try? await facade.removeLibraryPath(path) }
                             }
                         }
                     }
@@ -514,18 +488,6 @@ struct BooksHomeView: View {
         }
     }
 
-    // MARK: - Centered Card
-
-    private func centeredCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        GroupBox {
-            VStack(spacing: 16) {
-                content()
-            }
-            .frame(maxWidth: .infinity)
-            .padding(24)
-        }
-    }
-
     // MARK: - Advanced Menu (Toolbar)
 
     private var advancedMenu: some View {
@@ -549,6 +511,13 @@ struct BooksHomeView: View {
                 }
             }
 
+            if let url = facade.advancedURL {
+                Divider()
+                Button("Open in Browser", systemImage: "globe") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+
             if !facade.isManagedByHaven, facade.connectedUsername != nil {
                 Divider()
                 Button("Sign Out", systemImage: "person.crop.circle.badge.minus") {
@@ -569,7 +538,7 @@ struct BooksHomeView: View {
 
     // MARK: - State Resolution
 
-    private var resolvedState: BooksUIState {
+    private var resolvedState: CapabilityUIState {
         switch facade.state {
         case .idle:
             return .stopped
@@ -658,18 +627,4 @@ struct BooksHomeView: View {
     private var service: InstalledService? {
         serviceManager.installedServices.first { $0.id == facade.capabilityID }
     }
-}
-
-// MARK: - UI State Enum
-
-private enum BooksUIState {
-    case stopped
-    case starting
-    case needsSetup
-    case settingUp
-    case setupWizard(SetupPhase)
-    case empty
-    case ready
-    case updating
-    case error(String)
 }

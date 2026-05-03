@@ -126,6 +126,7 @@ package final class NavidromeMusicFacade: MusicFacade {
         case .ready:
             var actions: [CapabilityAction] = []
             if connectionState == .connected { actions.append(.rescan) }
+            if advancedURL != nil { actions.append(.openInBrowser) }
             actions.append(.remove)
             return actions
         case .idle, .error:
@@ -152,6 +153,66 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     package func setLibraryPath(_ path: String) async throws {
         throw FacadeError.adapterError("Changing music folder requires reinstalling the service with new settings.")
+    }
+
+    package func addLibraryPath(_ path: String) async throws {
+        guard let client = apiClient, let token = authToken else {
+            throw FacadeError.adapterError("Not connected")
+        }
+
+        var paths = resolvedLibraryPaths
+        let expandedPath = (path as NSString).expandingTildeInPath
+        guard !paths.contains(path) && !paths.contains(expandedPath) else { return }
+
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: expandedPath) {
+            try fm.createDirectory(atPath: expandedPath, withIntermediateDirectories: true)
+        }
+
+        try await client.createLibrary(
+            name: libraryName(for: expandedPath),
+            path: expandedPath,
+            token: token
+        )
+
+        paths.append(path)
+        saveLibraryPaths(paths)
+        log.info("Added music library folder: \(path)")
+
+        updateLibrary()
+        try await rescan()
+    }
+
+    package func removeLibraryPath(_ path: String) async throws {
+        guard let client = apiClient, let token = authToken else {
+            throw FacadeError.adapterError("Not connected")
+        }
+
+        var paths = resolvedLibraryPaths
+        let expandedPath = (path as NSString).expandingTildeInPath
+        guard paths.count > 1 else {
+            throw FacadeError.adapterError("Cannot remove the last folder")
+        }
+        guard let first = paths.first,
+              (first as NSString).expandingTildeInPath != expandedPath else {
+            throw FacadeError.adapterError("The primary music folder is set in the service configuration and cannot be removed without reinstalling.")
+        }
+
+        let libraries = try await client.getLibraries(token: token)
+        guard let library = libraries.first(where: {
+            guard let libraryPath = $0.path else { return false }
+            return (libraryPath as NSString).expandingTildeInPath == expandedPath
+        }), let id = library.id else {
+            throw FacadeError.adapterError("Navidrome library not found for this folder")
+        }
+
+        try await client.deleteLibrary(id: id, token: token)
+        paths.removeAll { $0 == path || ($0 as NSString).expandingTildeInPath == expandedPath }
+        saveLibraryPaths(paths)
+        log.info("Removed music library folder: \(path)")
+
+        updateLibrary()
+        try await rescan()
     }
 
     package func rescan() async throws {
@@ -508,7 +569,7 @@ package final class NavidromeMusicFacade: MusicFacade {
         }
 
         library = MusicLibrary(
-            libraryPath: resolvedLibraryPath,
+            libraryPaths: resolvedLibraryPaths,
             scanStatus: currentScanStatus,
             artistCount: artistCount,
             albumCount: albumCount,
@@ -570,16 +631,16 @@ package final class NavidromeMusicFacade: MusicFacade {
     }
 
     private func updateLibrary() {
-        let path = resolvedLibraryPath
+        let paths = resolvedLibraryPaths
         library = MusicLibrary(
-            libraryPath: path,
+            libraryPaths: paths,
             scanStatus: currentScanStatus,
             artistCount: artistCount,
             albumCount: albumCount,
             trackCount: trackCount
         )
         // Ensure unified content_paths key is set for backup scope
-        serviceManager?.updateResolvedSetting(for: capabilityID, key: "content_paths", value: path)
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "content_paths", value: paths.joined(separator: ";"))
     }
 
     // MARK: - Credential Persistence
@@ -590,11 +651,45 @@ package final class NavidromeMusicFacade: MusicFacade {
     private var managedUsernameKey: String { "haven.navidrome.managedUser.\(capabilityID)" }
     private var managedPasswordKey: String { "haven.navidrome.managedPass.\(capabilityID)" }
     private var customAccountKey: String { "haven.navidrome.customAccount.\(capabilityID)" }
+    private var libraryPathKey: String { "haven.navidrome.libraryPath.\(capabilityID)" }
+    private var libraryPathsKey: String { "haven.navidrome.libraryPaths.\(capabilityID)" }
 
     /// Resolved library path from stored settings.
     private var resolvedLibraryPath: String {
+        resolvedLibraryPaths.first ?? "~/Music"
+    }
+
+    /// Resolved library paths from stored settings plus any added Navidrome libraries.
+    private var resolvedLibraryPaths: [String] {
+        if let saved = UserDefaults.standard.stringArray(forKey: libraryPathsKey), !saved.isEmpty {
+            return saved
+        }
+        if let saved = UserDefaults.standard.string(forKey: libraryPathKey) {
+            return [saved]
+        }
         let stored = serviceManager?.storedState(for: capabilityID)
-        return stored?.resolvedSettings["music_path"] ?? "~/Music"
+        if let unified = stored?.resolvedSettings["content_paths"], !unified.isEmpty {
+            let paths = unified.split(separator: ";").map(String.init).filter { !$0.isEmpty }
+            if !paths.isEmpty { return paths }
+        }
+        if let path = stored?.resolvedSettings["music_path"] {
+            return [path]
+        }
+        return ["~/Music"]
+    }
+
+    private func saveLibraryPaths(_ paths: [String]) {
+        UserDefaults.standard.set(paths, forKey: libraryPathsKey)
+        if let first = paths.first {
+            UserDefaults.standard.set(first, forKey: libraryPathKey)
+            serviceManager?.updateResolvedSetting(for: capabilityID, key: "music_path", value: first)
+        }
+        serviceManager?.updateResolvedSetting(for: capabilityID, key: "content_paths", value: paths.joined(separator: ";"))
+    }
+
+    private func libraryName(for path: String) -> String {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name.isEmpty ? "Music" : name
     }
 
     private func saveCredentials(_ token: String, username: String) {
@@ -613,5 +708,7 @@ package final class NavidromeMusicFacade: MusicFacade {
         UserDefaults.standard.removeObject(forKey: managedUsernameKey)
         UserDefaults.standard.removeObject(forKey: managedPasswordKey)
         UserDefaults.standard.removeObject(forKey: customAccountKey)
+        UserDefaults.standard.removeObject(forKey: libraryPathKey)
+        UserDefaults.standard.removeObject(forKey: libraryPathsKey)
     }
 }

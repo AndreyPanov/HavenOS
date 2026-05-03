@@ -37,6 +37,7 @@ struct BackupView: View {
                     }
                 )) {
                     Text("Daily").tag(BackupSchedule.daily)
+                    Text("Every 3 Days").tag(BackupSchedule.every3Days)
                     Text("Weekly").tag(BackupSchedule.weekly)
                     Text("Monthly").tag(BackupSchedule.monthly)
                     Text("Manual Only").tag(BackupSchedule.manual)

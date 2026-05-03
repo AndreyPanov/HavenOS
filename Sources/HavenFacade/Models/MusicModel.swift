@@ -5,8 +5,8 @@ import Foundation
 /// Haven-native representation of a music library.
 /// Backend-independent — no Navidrome, Subsonic, or other engine terms.
 public struct MusicLibrary: Sendable, Equatable {
-    /// Path to the music library on disk.
-    public let libraryPath: String
+    /// Paths to the music library folders on disk.
+    public let libraryPaths: [String]
     /// Current scan/index status.
     public let scanStatus: ScanStatus
     /// Number of artists (nil if unknown).
@@ -16,6 +16,25 @@ public struct MusicLibrary: Sendable, Equatable {
     /// Number of tracks (nil if unknown).
     public let trackCount: Int?
 
+    /// Primary library path (first one).
+    public var libraryPath: String {
+        libraryPaths.first ?? "~/Music"
+    }
+
+    public init(
+        libraryPaths: [String],
+        scanStatus: ScanStatus = .idle,
+        artistCount: Int? = nil,
+        albumCount: Int? = nil,
+        trackCount: Int? = nil
+    ) {
+        self.libraryPaths = libraryPaths
+        self.scanStatus = scanStatus
+        self.artistCount = artistCount
+        self.albumCount = albumCount
+        self.trackCount = trackCount
+    }
+
     public init(
         libraryPath: String,
         scanStatus: ScanStatus = .idle,
@@ -23,7 +42,7 @@ public struct MusicLibrary: Sendable, Equatable {
         albumCount: Int? = nil,
         trackCount: Int? = nil
     ) {
-        self.libraryPath = libraryPath
+        self.libraryPaths = [libraryPath]
         self.scanStatus = scanStatus
         self.artistCount = artistCount
         self.albumCount = albumCount
@@ -45,6 +64,12 @@ public protocol MusicFacade: ConnectableFacade {
 
     /// Set or change the music library path on disk.
     func setLibraryPath(_ path: String) async throws
+
+    /// Add an additional music library folder.
+    func addLibraryPath(_ path: String) async throws
+
+    /// Remove a music library folder by path.
+    func removeLibraryPath(_ path: String) async throws
 
     /// Trigger a library rescan.
     func rescan() async throws

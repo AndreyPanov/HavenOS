@@ -3,6 +3,7 @@ import Foundation
 /// How often Haven should automatically back up.
 public enum BackupSchedule: String, Codable, Sendable, CaseIterable {
     case daily
+    case every3Days
     case weekly
     case monthly
     case manual
@@ -77,6 +78,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
 
         let interval: TimeInterval = switch schedule {
         case .daily: 24 * 60 * 60
+        case .every3Days: 3 * 24 * 60 * 60
         case .weekly: 7 * 24 * 60 * 60
         case .monthly: 30 * 24 * 60 * 60
         case .manual: .infinity

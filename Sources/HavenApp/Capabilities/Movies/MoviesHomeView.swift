@@ -375,28 +375,8 @@ struct MoviesHomeView: View {
                     // Folder paths
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(lib.libraryPaths, id: \.self) { path in
-                            HStack(spacing: 6) {
-                                Image(systemName: "folder")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                Text(path)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-
-                                if lib.libraryPaths.count > 1 {
-                                    Button {
-                                        Task { try? await facade.removeLibraryPath(path) }
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundStyle(.secondary)
-                                            .font(.caption)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .help("Remove this folder")
-                                }
+                            LibraryFolderRow(path: path, canRemove: lib.libraryPaths.count > 1) {
+                                Task { try? await facade.removeLibraryPath(path) }
                             }
                         }
                     }
@@ -439,16 +419,6 @@ struct MoviesHomeView: View {
         }
     }
 
-    private func statView(count: Int, label: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("\(count)")
-                .font(.system(.title, design: .rounded, weight: .semibold))
-            Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private func addFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -483,18 +453,6 @@ struct MoviesHomeView: View {
                 username: access.username,
                 password: access.password
             )
-        }
-    }
-
-    // MARK: - Centered Card
-
-    private func centeredCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        GroupBox {
-            VStack(spacing: 16) {
-                content()
-            }
-            .frame(maxWidth: .infinity)
-            .padding(24)
         }
     }
 
@@ -548,7 +506,7 @@ struct MoviesHomeView: View {
 
     // MARK: - State Resolution
 
-    private var resolvedState: MoviesUIState {
+    private var resolvedState: CapabilityUIState {
         switch facade.state {
         case .idle:
             return .stopped
@@ -600,18 +558,4 @@ struct MoviesHomeView: View {
     private var service: InstalledService? {
         serviceManager.installedServices.first { $0.id == facade.capabilityID }
     }
-}
-
-// MARK: - UI State Enum
-
-private enum MoviesUIState {
-    case stopped
-    case starting
-    case needsSetup
-    case settingUp
-    case setupWizard(SetupPhase)
-    case empty
-    case ready
-    case updating
-    case error(String)
 }

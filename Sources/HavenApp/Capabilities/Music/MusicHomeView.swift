@@ -371,23 +371,23 @@ struct MusicHomeView: View {
                         }
                     }
 
-                    // Folder path
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                        Text(lib.libraryPath)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-
+                    // Folder paths
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(lib.libraryPaths, id: \.self) { path in
+                            LibraryFolderRow(path: path, canRemove: lib.libraryPaths.count > 1 && path != lib.libraryPath) {
+                                Task { try? await facade.removeLibraryPath(path) }
+                            }
+                        }
                     }
 
                     // Actions
                     HStack(spacing: 8) {
+                        Button("Add Folder", systemImage: "plus") {
+                            addFolder()
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+
                         Button("Open Folder", systemImage: "folder") {
                             let path = (lib.libraryPath as NSString).expandingTildeInPath
                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
@@ -408,23 +408,13 @@ struct MusicHomeView: View {
                     }
 
                     // Hint
-                    Text("Add your music files to the library folder — they'll be indexed automatically.")
+                    Text("Add your music files to the library folders — they'll be indexed automatically.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(4)
-        }
-    }
-
-    private func statView(count: Int, label: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("\(count)")
-                .font(.system(.title, design: .rounded, weight: .semibold))
-            Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -450,32 +440,33 @@ struct MusicHomeView: View {
         }
     }
 
-    // MARK: - Centered Card
-
-    private func centeredCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        GroupBox {
-            VStack(spacing: 16) {
-                content()
-            }
-            .frame(maxWidth: .infinity)
-            .padding(24)
-        }
-    }
-
     // MARK: - Advanced Menu (Toolbar)
 
     private var advancedMenu: some View {
         Menu {
             if let lib = facade.library {
-                Button("Open Music Folder", systemImage: "folder") {
-                    let path = (lib.libraryPath as NSString).expandingTildeInPath
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                ForEach(lib.libraryPaths, id: \.self) { path in
+                    Button("Open \(URL(fileURLWithPath: path).lastPathComponent)", systemImage: "folder") {
+                        let expanded = (path as NSString).expandingTildeInPath
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: expanded)
+                    }
+                }
+
+                Button("Add Folder\u{2026}", systemImage: "folder.badge.plus") {
+                    addFolder()
                 }
             }
 
             if facade.setupState == .ready {
                 Button("Check for New Music", systemImage: "arrow.triangle.2.circlepath") {
                     Task { try? await facade.rescan() }
+                }
+            }
+
+            if let url = facade.advancedURL {
+                Divider()
+                Button("Open in Browser", systemImage: "globe") {
+                    NSWorkspace.shared.open(url)
                 }
             }
 
@@ -499,7 +490,7 @@ struct MusicHomeView: View {
 
     // MARK: - State Resolution
 
-    private var resolvedState: MusicUIState {
+    private var resolvedState: CapabilityUIState {
         switch facade.state {
         case .idle:
             return .stopped
@@ -547,23 +538,27 @@ struct MusicHomeView: View {
         }
     }
 
+    // MARK: - Folder Picker
+
+    private func addFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add"
+        panel.message = "Choose a folder to add to your music library"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            Task {
+                try? await facade.addLibraryPath(url.path)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private var service: InstalledService? {
         serviceManager.installedServices.first { $0.id == facade.capabilityID }
     }
-}
-
-// MARK: - UI State Enum
-
-private enum MusicUIState {
-    case stopped
-    case starting
-    case needsSetup
-    case settingUp
-    case setupWizard(SetupPhase)
-    case empty
-    case ready
-    case updating
-    case error(String)
 }

@@ -111,6 +111,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         case .ready:
             var actions: [CapabilityAction] = []
             if connectionState == .connected { actions.append(.rescan) }
+            if advancedURL != nil { actions.append(.openInBrowser) }
             actions.append(.remove)
             return actions
         case .idle, .error:

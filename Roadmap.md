@@ -891,35 +891,38 @@ Not in v1: snapshot recovery, launchd scheduling, encryption, cloud destinations
 Make Books, Music, and Movies feel like one product — not three separate open-source wrappers.
 Every capability should have the same setup flow, the same folder management, and the same UI patterns.
 
-17.1 — Unified Setup Wizard
-	•	Move SetupPhase enum from MoviesModel to shared HavenFacade (all capabilities use it)
-	•	Progressive inline wizard for Books, Music, Movies (same card-based pattern)
-	•	New "account choice" step: "Set it up for me" (managed) vs "I have my own account" (custom sign-in)
-	•	Folder picker step during first install — user always chooses where their content lives
-	•	Wizard steps: Server ready → Account choice → Account created → Choose folder → Scanning
-	•	Books/Music facades gain setupPhase support (currently Movies-only)
+17.1 — Unified Setup Wizard ✅
+	•	SetupPhase lives in shared HavenFacade and all connectable capabilities expose setupPhase
+	•	SetupWizardView is reusable and drives Books, Music, and Movies progressive setup
+	•	Managed vs custom account choice exists for Books, Music, and Movies
+	•	Wizard steps supported: Server ready → Account choice → Account created → Choose folder → Scanning
+	•	Follow-up: move first-install content folder selection before service install where runtime config requires it
 
-17.2 — Multi-Folder for All
-	•	BooksLibrary and MusicLibrary get libraryPaths: [String] (like MoviesLibrary)
-	•	BooksFacade and MusicFacade gain addLibraryPath() / removeLibraryPath()
-	•	Kavita API: add/remove library folders
-	•	Navidrome: single-folder limitation documented (if applicable), or multi-folder via config
-	•	Library card shows all paths with per-path add/remove (same pattern as Movies)
-	•	BackupScope extended for books_paths, music_paths (semicolon-separated)
+17.2 — Multi-Folder for All ✅
+	•	BooksLibrary and MoviesLibrary have libraryPaths: [String]
+	•	BooksFacade and MoviesFacade support addLibraryPath() / removeLibraryPath()
+	•	Kavita API add/remove library folders is implemented
+	•	BackupScope uses unified content_paths for all capabilities, with legacy fallbacks
+	•	MusicLibrary has libraryPaths: [String]
+	•	MusicFacade supports addLibraryPath() / removeLibraryPath()
+	•	Navidrome multi-library support is wired through Haven's add/remove folder flow
+	•	Primary Navidrome MusicFolder remains guarded because it is service configuration and requires reinstall to replace
+	•	Music library card shows all paths with per-path add/remove
 
-17.3 — Library Card & Menu Consistency
-	•	Identical library card layout across all three: stats → folder paths → action buttons → hint
-	•	Unified button set: "Add [Content]", "Add Folder", "Open Folder", "Check for New"
-	•	"Open in Browser" in all toolbar menus (not just Movies)
-	•	Music gets missing folder change option
+17.3 — Library Card & Menu Consistency ✅
+	•	Books and Movies use matching stats → folder paths → action buttons → hint structure
+	•	Music adopts the same multi-folder card structure
+	•	Shared button set across all three: Add Folder, Open Folder, Check for New
+	•	Open in Browser appears in Books, Music, and Movies toolbar menus/actions
+	•	Music gets an Add Folder option
 	•	Consistent hint text pattern per capability
 
-17.4 — Shared Components
-	•	Extract SetupWizardView: reusable progressive wizard driven by SetupPhase
-	•	Extract LibraryFolderRow: path display + remove button, reused in all library cards
-	•	Unified CapabilityUIState enum (replace per-capability BooksUIState/MusicUIState/MoviesUIState)
-	•	Shared centeredCard, statView helpers
-	•	Reduce HomeView duplication — common structure, capability-specific content only
+17.4 — Shared Components 🔄
+	•	SetupWizardView extracted and reused
+	•	LibraryFolderRow extracted for path display + remove button
+	•	Unified CapabilityUIState enum replaces BooksUIState/MusicUIState/MoviesUIState
+	•	Shared centered card and stat count helpers extracted
+	•	TODO: Reduce HomeView duplication — common structure, capability-specific content only
 
 ⸻
 
@@ -930,16 +933,30 @@ Every capability should have the same setup flow, the same folder management, an
 
 Move Haven from "installer" to "trusted long-term manager."
 
-🔧 Deliverables
+🔧 Milestones
 
-1. Version Discovery
-	•	GitHub releases detection, stable version tracking
+18.1 — Update Metadata & Version Discovery ✅
+	•	Add UpdateCandidate / ServiceUpdateState domain models
+	•	Add GitHubReleaseClient for latest stable release discovery
+	•	Compare upstream release tags against StoredArtifactInfo.version
+	•	Keep installed version tracking in StoredArtifactInfo and service state
 
-2. Safe Atomic Update Flow
-	•	Download → Validate → Stop → Replace → Restart → Healthcheck → Rollback on failure
+18.2 — Safe Atomic Update Engine ⏳
+	•	Download candidate artifact into versioned staging
+	•	Validate archive/executable before stopping the running service
+	•	Stop → Replace → Restart → Healthcheck
+	•	Roll back artifact, launchd job, and persisted state on failure
+	•	Critical rule: Never leave partial state
 
-3. Update UI
-	•	"Update Available" badges, update progress, recovery path
+18.3 — Update UI ⏳
+	•	Add "Update Available" badges to service rows/cards
+	•	Show progress states: checking, downloading, validating, stopping, replacing, restarting, healthchecking
+	•	Add recovery path: Retry, Roll Back, Open Logs
+
+18.4 — Verification ⏳
+	•	Unit tests for release discovery and version comparison
+	•	Unit tests for rollback state machine
+	•	UI/state tests for badges and progress mapping
 
 Critical rule: Never leave partial state.
 

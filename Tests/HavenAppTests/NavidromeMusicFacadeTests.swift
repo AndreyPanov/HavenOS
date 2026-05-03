@@ -20,6 +20,8 @@ struct NavidromeMusicFacadeTests {
             "haven.navidrome.managedUser.\(id)",
             "haven.navidrome.managedPass.\(id)",
             "haven.navidrome.customAccount.\(id)",
+            "haven.navidrome.libraryPath.\(id)",
+            "haven.navidrome.libraryPaths.\(id)",
         ] {
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -422,6 +424,61 @@ struct NavidromeMusicFacadeTests {
         } catch {
             #expect(error is FacadeError)
         }
+    }
+
+    // MARK: - addLibraryPath / removeLibraryPath Guards
+
+    @Test("addLibraryPath throws when not connected")
+    @MainActor func addLibraryPathThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.addLibraryPath("/Music2")
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+
+    @Test("removeLibraryPath throws when not connected")
+    @MainActor func removeLibraryPathThrowsWhenDisconnected() async {
+        let (f, id) = makeFacade()
+        defer { cleanupDefaults(for: id) }
+
+        do {
+            try await f.removeLibraryPath("/Music")
+            Issue.record("Expected error")
+        } catch {
+            #expect(error is FacadeError)
+        }
+    }
+}
+
+// MARK: - MusicLibrary Model Tests
+
+@Suite("MusicLibrary Model")
+struct MusicLibraryTests {
+
+    @Test("Single-path init: libraryPath returns the path")
+    func singlePath() {
+        let lib = MusicLibrary(libraryPath: "/Music")
+        #expect(lib.libraryPath == "/Music")
+        #expect(lib.libraryPaths == ["/Music"])
+    }
+
+    @Test("Multi-path init: libraryPath returns first")
+    func multiPath() {
+        let lib = MusicLibrary(libraryPaths: ["/Music", "/Lossless"])
+        #expect(lib.libraryPath == "/Music")
+        #expect(lib.libraryPaths.count == 2)
+        #expect(lib.libraryPaths[1] == "/Lossless")
+    }
+
+    @Test("Empty paths: libraryPath returns default")
+    func emptyPaths() {
+        let lib = MusicLibrary(libraryPaths: [])
+        #expect(lib.libraryPath == "~/Music")
     }
 }
 
