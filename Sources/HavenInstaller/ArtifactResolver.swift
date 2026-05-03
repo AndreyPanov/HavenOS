@@ -107,7 +107,7 @@ public enum ArtifactResolver {
         platform: PlatformInfo
     ) throws -> ArtifactAsset {
         guard let asset = artifact.assets.first(where: {
-            $0.os == platform.os && $0.arch == platform.arch
+            platformMatches(assetOS: $0.os, assetArch: $0.arch, platform: platform)
         }) else {
             throw ArtifactResolverError.noMatchingAsset(
                 unitID: unitID,
@@ -116,6 +116,33 @@ public enum ArtifactResolver {
             )
         }
         return asset
+    }
+
+    private static func platformMatches(
+        assetOS: String,
+        assetArch: String,
+        platform: PlatformInfo
+    ) -> Bool {
+        normalizeOS(assetOS) == normalizeOS(platform.os)
+            && normalizeArch(assetArch) == normalizeArch(platform.arch)
+    }
+
+    private static func normalizeOS(_ value: String) -> String {
+        switch value.lowercased() {
+        case "darwin", "macos", "osx":
+            "macos"
+        default:
+            value.lowercased()
+        }
+    }
+
+    private static func normalizeArch(_ value: String) -> String {
+        switch value.lowercased() {
+        case "amd64", "x64", "x86-64":
+            "x86_64"
+        default:
+            value.lowercased()
+        }
     }
 
     private static func resolveFormat(artifact: Artifact, filename: String) -> ArtifactFormat {

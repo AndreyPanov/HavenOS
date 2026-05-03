@@ -120,6 +120,19 @@ public struct HavenExecutor: Sendable {
         let serviceLayout = paths.serviceLayout(for: capabilityID)
         log.info("[install] Plan OK: bundle=\(service.bundle.id), units=\(service.units.count), serviceRoot=\(serviceLayout.serviceRoot.path)")
 
+        // Rollback stack: closures executed in reverse on failure.
+        // Each step that creates side effects registers a cleanup closure.
+        var rollbackActions: [() -> Void] = []
+
+        /// Run all registered rollback actions in reverse order, then throw
+        /// the original error. Cleanup failures are silently ignored.
+        func rollback(_ error: Error) throws -> Never {
+            for action in rollbackActions.reversed() {
+                action()
+            }
+            throw error
+        }
+
         // 3. Validate dependencies (fail fast before any side effects)
         if let validator = dependencyValidator {
             let allDeps = service.units.flatMap(\.spec.dependencies)
@@ -172,6 +185,9 @@ public struct HavenExecutor: Sendable {
                                     }
                                 }
                             )
+                            rollbackActions.append {
+                                try? installer.uninstall(unitID: depUnitID)
+                            }
 
                             // Symlink all executables from installed artifact into bin/
                             if let contents = try? fileManager.contentsOfDirectory(
@@ -212,25 +228,12 @@ public struct HavenExecutor: Sendable {
 
                 let blockers = results.filter(\.isBlocker)
                 if !blockers.isEmpty {
-                    throw ExecutorError.dependencyMissing(
+                    try rollback(ExecutorError.dependencyMissing(
                         capabilityID: capabilityID,
                         dependencies: blockers.map(\.dependency.id)
-                    )
+                    ))
                 }
             }
-        }
-
-        // Rollback stack: closures executed in reverse on failure.
-        // Each step that creates side effects registers a cleanup closure.
-        var rollbackActions: [() -> Void] = []
-
-        /// Run all registered rollback actions in reverse order, then throw
-        /// the original error. Cleanup failures are silently ignored.
-        func rollback(_ error: Error) throws -> Never {
-            for action in rollbackActions.reversed() {
-                action()
-            }
-            throw error
         }
 
         // 3. Create directories

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Errors that can occur during backup or restore operations.
+/// Errors that can occur during backup operations.
 public enum BackupError: Error, Sendable, Equatable {
     /// The backup destination path has not been configured.
     case notConfigured
@@ -14,7 +14,7 @@ public enum BackupError: Error, Sendable, Equatable {
     /// A file operation failed for a specific capability.
     case capabilityBackupFailed(capabilityID: String, reason: String)
 
-    /// The manifest file is missing or unreadable at the restore source.
+    /// The manifest file is missing or unreadable at the backup destination.
     case manifestNotFound(path: String)
 
     /// The manifest version is newer than this Haven version supports.

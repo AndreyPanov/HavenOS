@@ -22,6 +22,21 @@ struct BackupEngineTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private func makeState(capability: String, bundleID: String, servicesDir: URL) -> StoredServiceState {
+        let layout = ServiceDirectoryLayout(servicesDirectory: servicesDir, capabilityID: capability)
+        return StoredServiceState(
+            capability: capability,
+            bundleID: bundleID,
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            status: .running,
+            resolvedSettings: ["content_paths": "/Library"],
+            portAssignments: [],
+            runtimeUnits: ["unit"],
+            directoryLayout: layout
+        )
+    }
+
     // MARK: - Backup
 
     @Test("backupCapability creates Books/ root with config/manifest.json")
@@ -147,49 +162,64 @@ struct BackupEngineTests {
         #expect(entry.status == .failed)
     }
 
-    // MARK: - Restore
-
-    @Test("restoreFiles copies backup data/ to library folder")
-    func restoreFilesToLibrary() throws {
-        let contentDir = try makeTempDir("Books")
+    @Test("Full backup includes content, config, state, service metadata, and credentials")
+    func fullBackupIncludesServiceSections() throws {
+        let root = try makeTempDir("service-root")
+        let servicesDir = root.appendingPathComponent("Services")
         let backupDir = try makeTempDir("backup")
-        let restoreDir = try makeTempDir("restored")
-        defer { cleanup(contentDir); cleanup(backupDir); cleanup(restoreDir) }
+        let contentDir = try makeTempDir("content")
+        defer { cleanup(root); cleanup(backupDir); cleanup(contentDir) }
 
-        try "epub data".write(
-            to: contentDir.appendingPathComponent("novel.epub"),
-            atomically: true, encoding: .utf8
-        )
-
-        let scope = CapabilityBackupScope(
-            capabilityID: "haven.capability.kavita",
+        let state = makeState(
+            capability: "haven.capability.kavita",
             bundleID: "haven.bundle.kavita",
-            contentPaths: [contentDir]
+            servicesDir: servicesDir
+        )
+        try FileManager.default.createDirectory(at: state.directoryLayout.config, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: state.directoryLayout.data, withIntermediateDirectories: true)
+        try "config".write(
+            to: state.directoryLayout.config.appendingPathComponent("settings.toml"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "db".write(
+            to: state.directoryLayout.data.appendingPathComponent("kavita.db"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "book".write(
+            to: contentDir.appendingPathComponent("book.epub"),
+            atomically: true,
+            encoding: .utf8
         )
 
-        _ = try engine.backupCapability(
+        let credentials = BackupCredentialSnapshot(values: [
+            "haven.kavita.username.haven.capability.kavita": .string("haven"),
+            "haven.kavita.customAccount.haven.capability.kavita": .bool(false),
+            "haven.kavita.libraryPaths.haven.capability.kavita": .stringArray(["/Books"]),
+        ])
+        let scope = CapabilityBackupScope(
+            capabilityID: state.capability,
+            bundleID: state.bundleID,
+            contentPaths: [contentDir],
+            configPaths: [state.directoryLayout.config],
+            statePaths: [state.directoryLayout.data],
+            serviceState: state
+        )
+
+        let entry = try engine.backupCapability(
             scope: scope,
             destination: backupDir,
-            displayName: "Books"
+            displayName: "Books",
+            credentials: credentials
         )
 
-        try engine.restoreFiles(from: backupDir, to: restoreDir, displayName: "Books")
-
-        let fm = FileManager.default
-        let restoredFile = restoreDir.appendingPathComponent("novel.epub")
-        #expect(fm.fileExists(atPath: restoredFile.path))
-        #expect(try String(contentsOf: restoredFile, encoding: .utf8) == "epub data")
-    }
-
-    @Test("restoreFiles throws for missing manifest")
-    func restoreMissingManifest() throws {
-        let emptyDir = try makeTempDir("empty")
-        let targetDir = try makeTempDir("target")
-        defer { cleanup(emptyDir); cleanup(targetDir) }
-
-        #expect(throws: BackupError.self) {
-            try engine.restoreFiles(from: emptyDir, to: targetDir)
-        }
+        #expect(entry.status == .complete)
+        #expect(FileManager.default.fileExists(atPath: backupDir.appendingPathComponent("Books/data/book.epub").path))
+        #expect(FileManager.default.fileExists(atPath: backupDir.appendingPathComponent("Books/config/config/settings.toml").path))
+        #expect(FileManager.default.fileExists(atPath: backupDir.appendingPathComponent("Books/state/data/kavita.db").path))
+        #expect(FileManager.default.fileExists(atPath: backupDir.appendingPathComponent("Books/state/service.json").path))
+        #expect(FileManager.default.fileExists(atPath: backupDir.appendingPathComponent("Books/credentials/credentials.json").path))
     }
 
     // MARK: - Multi-capability
@@ -509,32 +539,6 @@ struct BackupEngineTests {
         let dataRoot = backupDir.appendingPathComponent("Test/data")
         #expect(FileManager.default.fileExists(atPath: dataRoot.appendingPathComponent("a.txt").path))
         #expect(!FileManager.default.fileExists(atPath: dataRoot.appendingPathComponent("b.txt").path))
-    }
-
-    @Test("Restore after multi-folder backup contains all files")
-    func restoreAfterMultifolderBackup() throws {
-        let folderA = try makeTempDir("FolderA")
-        let folderB = try makeTempDir("FolderB")
-        let backupDir = try makeTempDir("backup")
-        let restoreDir = try makeTempDir("restored")
-        defer { cleanup(folderA); cleanup(folderB); cleanup(backupDir); cleanup(restoreDir) }
-
-        try "novel".write(to: folderA.appendingPathComponent("novel.epub"), atomically: true, encoding: .utf8)
-        try "comic".write(to: folderB.appendingPathComponent("comic.cbz"), atomically: true, encoding: .utf8)
-
-        let scope = CapabilityBackupScope(
-            capabilityID: "haven.capability.kavita",
-            bundleID: "haven.bundle.kavita",
-            contentPaths: [folderA, folderB]
-        )
-
-        _ = try engine.backupCapability(scope: scope, destination: backupDir, displayName: "Books")
-
-        try engine.restoreFiles(from: backupDir, to: restoreDir, displayName: "Books")
-
-        let fm = FileManager.default
-        #expect(fm.fileExists(atPath: restoreDir.appendingPathComponent("novel.epub").path))
-        #expect(fm.fileExists(atPath: restoreDir.appendingPathComponent("comic.cbz").path))
     }
 
     @Test("Multi-folder backup with one nonexistent source still backs up the other")

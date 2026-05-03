@@ -66,6 +66,27 @@ final class ArtifactResolverTests: XCTestCase {
         XCTAssertEqual(descriptor.format, .tarGz)
     }
 
+    func testResolveDarwinAmd64Aliases() throws {
+        let artifact = makeArtifact(
+            assets: [
+                ArtifactAsset(os: "darwin", arch: "amd64", file: "app-darwin-amd64.tar.gz")
+            ]
+        )
+        let platform = PlatformInfo(os: "macos", arch: "x86_64")
+
+        let descriptor = try ArtifactResolver.resolve(
+            artifact: artifact,
+            unitID: "u.1",
+            platform: platform
+        )
+
+        XCTAssertEqual(
+            descriptor.source,
+            .remote(URL(string: "https://github.com/owner/hello-service/releases/download/v1.0.0/app-darwin-amd64.tar.gz")!)
+        )
+        XCTAssertEqual(descriptor.format, .tarGz)
+    }
+
     // MARK: - Format Detection
 
     func testExplicitArchiveFormatOverridesFilename() throws {

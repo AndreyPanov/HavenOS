@@ -43,9 +43,8 @@ struct BooksHomeView: View {
             if !showingConnectSheet {
                 facade.refresh()
                 // If user just signed in during setup wizard, continue to folder picker
-                if facade.connectionState == .connected,
-                   let kavita = facade as? KavitaBooksFacade {
-                    kavita.continueSetupAfterLogin()
+                if facade.connectionState == .connected {
+                    facade.continueSetupAfterLogin()
                 }
             }
         }
@@ -234,21 +233,15 @@ struct BooksHomeView: View {
             icon: "books.vertical",
             facade: facade,
             onChooseManaged: {
-                if let kavita = facade as? KavitaBooksFacade {
-                    kavita.chooseManaged()
-                }
+                facade.chooseManaged()
             },
             onChooseCustom: {
-                if let kavita = facade as? KavitaBooksFacade {
-                    kavita.chooseCustom()
-                    showingConnectSheet = true
-                }
+                facade.chooseCustom()
+                showingConnectSheet = true
             },
             onPickFolder: {},
             onConfirmFolder: { path in
-                if let kavita = facade as? KavitaBooksFacade {
-                    Task { try? await kavita.confirmSetupFolder(path) }
-                }
+                Task { try? await facade.confirmSetupFolder(path) }
             }
         )
     }
@@ -258,12 +251,6 @@ struct BooksHomeView: View {
     private var emptyView: some View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
-
-            RestoreFromBackupSection(
-                capabilityID: facade.capabilityID,
-                libraryPath: facade.library?.libraryPath,
-                label: "Books"
-            )
 
             centeredCard {
                 Image(systemName: "books.vertical")

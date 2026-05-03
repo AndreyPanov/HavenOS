@@ -39,9 +39,8 @@ struct MoviesHomeView: View {
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
                 facade.refresh()
-                if facade.connectionState == .connected,
-                   let jellyfin = facade as? JellyfinMoviesFacade {
-                    jellyfin.continueSetupAfterLogin()
+                if facade.connectionState == .connected {
+                    facade.continueSetupAfterLogin()
                 }
             }
         }
@@ -222,20 +221,16 @@ struct MoviesHomeView: View {
             icon: "film",
             facade: facade,
             onChooseManaged: {
-                if let jellyfin = facade as? JellyfinMoviesFacade {
-                    jellyfin.chooseManaged()
-                }
+                facade.chooseManaged()
             },
             onChooseCustom: {
-                if let jellyfin = facade as? JellyfinMoviesFacade {
-                    jellyfin.chooseCustom()
-                    showingConnectSheet = true
-                }
+                facade.chooseCustom()
+                showingConnectSheet = true
             },
             onPickFolder: {},
             onConfirmFolder: { path in
                 Task {
-                    try? await facade.setLibraryPath(path, contentType: .moviesAndShows)
+                    try? await facade.confirmSetupFolder(path)
                 }
             }
         )
@@ -246,12 +241,6 @@ struct MoviesHomeView: View {
     private var emptyView: some View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
-
-            RestoreFromBackupSection(
-                capabilityID: facade.capabilityID,
-                libraryPath: facade.library?.libraryPath,
-                label: "Movies"
-            )
 
             centeredCard {
                 Image(systemName: "film")

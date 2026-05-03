@@ -1,14 +1,16 @@
 import Foundation
 import HavenCore
 
-/// Performs backup and restore operations for Haven capabilities.
+/// Performs backup operations for Haven capabilities.
 ///
-/// Backs up media files only — no databases, no credentials, no service config.
 /// Each capability backs up to its own user-chosen folder:
 /// ```
 /// /Volumes/NAS/Books/            (user-chosen for Books)
 ///   manifest.json
 ///   data/                        (user content — books, music, movies)
+///   config/                      (service configuration)
+///   state/                       (service-managed state + service.json)
+///   credentials/credentials.json (app credentials/settings)
 /// ```
 public struct BackupEngine: Sendable {
 
@@ -26,6 +28,7 @@ public struct BackupEngine: Sendable {
         scope: CapabilityBackupScope,
         destination: URL,
         displayName: String? = nil,
+        credentials: BackupCredentialSnapshot? = nil,
         progress: (@Sendable (String) -> Void)? = nil
     ) throws -> CapabilityBackupEntry {
         let name = displayName ?? scope.capabilityID
@@ -41,77 +44,72 @@ public struct BackupEngine: Sendable {
 
         var entryStatus: CapabilityBackupEntry.EntryStatus = .complete
 
-        if scope.contentPaths.isEmpty {
+        if scope.contentPaths.isEmpty,
+           scope.configPaths.isEmpty,
+           scope.statePaths.isEmpty,
+           scope.serviceState == nil,
+           credentials?.isEmpty != false {
             entryStatus = .failed
         }
 
-        // Step 1: Collect all items from all content folders into one flat list.
-        // If two folders contain the same filename, the last folder wins.
-        var allItems: [(name: String, source: URL)] = []
-        var seenNames = Set<String>()
-
-        for contentPath in scope.contentPaths {
-            guard fileManager.fileExists(atPath: contentPath.path) else { continue }
-            do {
-                let items = try fileManager.contentsOfDirectory(
-                    at: contentPath,
-                    includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
-                )
-                for item in items {
-                    let itemName = item.lastPathComponent
-                    if seenNames.contains(itemName) {
-                        allItems.removeAll { $0.name == itemName }
-                    }
-                    seenNames.insert(itemName)
-                    allItems.append((name: itemName, source: item))
-                }
-            } catch {
-                entryStatus = .partial
-            }
-        }
-
-        // Step 2: Remove backup items that no longer exist in any source folder.
-        if fileManager.fileExists(atPath: dataRoot.path) {
-            let destItems = try fileManager.contentsOfDirectory(
-                at: dataRoot, includingPropertiesForKeys: nil
-            )
-            for destItem in destItems where !seenNames.contains(destItem.lastPathComponent) {
-                try? fileManager.removeItem(at: destItem)
-            }
-        }
-
-        // Step 3: Copy new/changed items, skip unchanged ones.
-        let totalItems = allItems.count
-        let resourceKeys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
         var totalBytes: UInt64 = 0
-        var copiedCount = 0
-        var skippedCount = 0
-
-        for (index, entry) in allItems.enumerated() {
-            let destItem = dataRoot.appendingPathComponent(entry.name)
-
-            if fileManager.fileExists(atPath: destItem.path),
-               filesMatch(entry.source, destItem, keys: resourceKeys) {
-                skippedCount += 1
-                totalBytes += fileOrDirectorySize(at: destItem)
-                if totalItems > 5 {
-                    progress?("\(name): \(index + 1) of \(totalItems) — \(entry.name) (unchanged)")
-                }
-                continue
-            }
-
-            copiedCount += 1
-            progress?("\(name): Copying \(index + 1) of \(totalItems) — \(entry.name)")
-
-            if fileManager.fileExists(atPath: destItem.path) {
-                try fileManager.removeItem(at: destItem)
-            }
-            try fileManager.copyItem(at: entry.source, to: destItem)
-            totalBytes += fileOrDirectorySize(at: destItem)
+        do {
+            totalBytes += try syncFlattenedDirectories(
+                sources: scope.contentPaths,
+                to: dataRoot,
+                label: name,
+                progress: progress
+            )
+        } catch {
+            entryStatus = .partial
         }
 
-        if copiedCount == 0 && skippedCount > 0 {
-            progress?("\(name): All \(skippedCount) items up to date")
+        do {
+            let configRoot = capabilityRoot.appendingPathComponent("config")
+            totalBytes += try syncNamedPaths(
+                sources: scope.configPaths,
+                to: configRoot,
+                label: "\(name) config",
+                progress: progress
+            )
+            removeIfEmpty(configRoot)
+        } catch {
+            entryStatus = .partial
+        }
+
+        do {
+            let stateRoot = capabilityRoot.appendingPathComponent("state")
+            totalBytes += try syncNamedPaths(
+                sources: scope.statePaths,
+                to: stateRoot,
+                label: "\(name) state",
+                progress: progress
+            )
+            if let serviceState = scope.serviceState {
+                try ensureDestinationReachable(stateRoot)
+                let stateData = try encodeServiceState(serviceState)
+                let stateFile = stateRoot.appendingPathComponent("service.json")
+                try stateData.write(to: stateFile, options: .atomic)
+                totalBytes += UInt64(stateData.count)
+            }
+            removeIfEmpty(stateRoot)
+        } catch {
+            entryStatus = .partial
+        }
+
+        do {
+            let credentialsRoot = capabilityRoot.appendingPathComponent("credentials")
+            if let credentials, !credentials.isEmpty {
+                try ensureDestinationReachable(credentialsRoot)
+                let data = try credentials.encode()
+                let file = credentialsRoot.appendingPathComponent(BackupCredentialSnapshot.fileName)
+                try data.write(to: file, options: .atomic)
+                totalBytes += UInt64(data.count)
+            } else if fileManager.fileExists(atPath: credentialsRoot.path) {
+                try fileManager.removeItem(at: credentialsRoot)
+            }
+        } catch {
+            entryStatus = .partial
         }
 
         // Write manifest
@@ -137,6 +135,7 @@ public struct BackupEngine: Sendable {
         scopes: [CapabilityBackupScope],
         destinations: [String: URL],
         displayNames: [String: String] = [:],
+        credentials: [String: BackupCredentialSnapshot] = [:],
         progress: (@Sendable (String) -> Void)? = nil
     ) throws -> [CapabilityBackupEntry] {
         var entries: [CapabilityBackupEntry] = []
@@ -148,6 +147,7 @@ public struct BackupEngine: Sendable {
                 scope: scope,
                 destination: dest,
                 displayName: displayNames[scope.capabilityID],
+                credentials: credentials[scope.capabilityID],
                 progress: progress
             )
             entries.append(entry)
@@ -157,37 +157,9 @@ public struct BackupEngine: Sendable {
         return entries
     }
 
-    // MARK: - Restore
-
-    /// Copy media files from a backup back to a library folder.
-    ///
-    /// This is the simple restore: takes the data/ contents from the backup
-    /// and copies them into the user's chosen library path.
-    public func restoreFiles(
-        from backupDestination: URL,
-        to libraryPath: URL,
-        displayName: String? = nil,
-        progress: (@Sendable (String) -> Void)? = nil
-    ) throws {
-        let capRoot = try findCapabilityRoot(in: backupDestination)
-        let dataRoot = capRoot.appendingPathComponent("data")
-        let label = displayName ?? "Restore"
-
-        guard fileManager.fileExists(atPath: dataRoot.path) else {
-            throw BackupError.manifestNotFound(path: backupDestination.path)
-        }
-
-        try ensureDestinationReachable(libraryPath)
-        try copyDirectoryContentsWithProgress(
-            from: dataRoot, to: libraryPath, label: label, progress: progress
-        )
-
-        progress?("Restore of \(label) complete.")
-    }
-
     // MARK: - Read Manifest
 
-    /// Read the manifest from a backup destination without restoring.
+    /// Read the manifest from a backup destination.
     public func readManifest(from destination: URL) throws -> BackupManifest {
         let capRoot = try findCapabilityRoot(in: destination)
         let manifestFile = capRoot.appendingPathComponent(BackupManifest.fileName)
@@ -222,6 +194,156 @@ public struct BackupEngine: Sendable {
         }
 
         throw BackupError.manifestNotFound(path: destination.path)
+    }
+
+    private func syncFlattenedDirectories(
+        sources: [URL],
+        to destination: URL,
+        label: String,
+        progress: (@Sendable (String) -> Void)?
+    ) throws -> UInt64 {
+        try ensureDestinationReachable(destination)
+
+        // Collect all items from all content folders into one flat list.
+        // If two folders contain the same filename, the last folder wins.
+        var allItems: [(name: String, source: URL)] = []
+        var seenNames = Set<String>()
+
+        for source in sources {
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            let items = try fileManager.contentsOfDirectory(
+                at: source,
+                includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
+            )
+            for item in items {
+                let itemName = item.lastPathComponent
+                if seenNames.contains(itemName) {
+                    allItems.removeAll { $0.name == itemName }
+                }
+                seenNames.insert(itemName)
+                allItems.append((name: itemName, source: item))
+            }
+        }
+
+        if fileManager.fileExists(atPath: destination.path) {
+            let destItems = try fileManager.contentsOfDirectory(
+                at: destination,
+                includingPropertiesForKeys: nil
+            )
+            for destItem in destItems where !seenNames.contains(destItem.lastPathComponent) {
+                try? fileManager.removeItem(at: destItem)
+            }
+        }
+
+        return try copyItems(allItems, to: destination, label: label, progress: progress)
+    }
+
+    private func syncNamedPaths(
+        sources: [URL],
+        to destination: URL,
+        label: String,
+        progress: (@Sendable (String) -> Void)?
+    ) throws -> UInt64 {
+        let existingSources = sources.filter { fileManager.fileExists(atPath: $0.path) }
+        guard !existingSources.isEmpty else {
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            return 0
+        }
+
+        try ensureDestinationReachable(destination)
+        let expectedNames = Set(existingSources.map(\.lastPathComponent))
+        let destItems = try fileManager.contentsOfDirectory(
+            at: destination,
+            includingPropertiesForKeys: nil
+        )
+        for destItem in destItems where !expectedNames.contains(destItem.lastPathComponent) {
+            try? fileManager.removeItem(at: destItem)
+        }
+
+        var total: UInt64 = 0
+        for source in existingSources {
+            let target = destination.appendingPathComponent(source.lastPathComponent)
+            total += try syncSinglePath(source, to: target, label: label, progress: progress)
+        }
+        return total
+    }
+
+    private func syncSinglePath(
+        _ source: URL,
+        to destination: URL,
+        label: String,
+        progress: (@Sendable (String) -> Void)?
+    ) throws -> UInt64 {
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: source.path, isDirectory: &isDir) else { return 0 }
+
+        if isDir.boolValue {
+            try ensureDestinationReachable(destination)
+            return try copyDirectoryContentsWithProgress(
+                from: source,
+                to: destination,
+                label: label,
+                progress: progress
+            )
+        }
+
+        let parent = destination.deletingLastPathComponent()
+        try ensureDestinationReachable(parent)
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        if fileManager.fileExists(atPath: destination.path),
+           filesMatch(source, destination, keys: keys) {
+            return fileOrDirectorySize(at: destination)
+        }
+        progress?("\(label): Copying \(source.lastPathComponent)")
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: source, to: destination)
+        return fileOrDirectorySize(at: destination)
+    }
+
+    private func copyItems(
+        _ items: [(name: String, source: URL)],
+        to destination: URL,
+        label: String,
+        progress: (@Sendable (String) -> Void)?
+    ) throws -> UInt64 {
+        let totalItems = items.count
+        let resourceKeys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        var totalBytes: UInt64 = 0
+        var copiedCount = 0
+        var skippedCount = 0
+
+        for (index, entry) in items.enumerated() {
+            let destItem = destination.appendingPathComponent(entry.name)
+
+            if fileManager.fileExists(atPath: destItem.path),
+               filesMatch(entry.source, destItem, keys: resourceKeys) {
+                skippedCount += 1
+                totalBytes += fileOrDirectorySize(at: destItem)
+                if totalItems > 5 {
+                    progress?("\(label): \(index + 1) of \(totalItems) — \(entry.name) (unchanged)")
+                }
+                continue
+            }
+
+            copiedCount += 1
+            progress?("\(label): Copying \(index + 1) of \(totalItems) — \(entry.name)")
+
+            if fileManager.fileExists(atPath: destItem.path) {
+                try fileManager.removeItem(at: destItem)
+            }
+            try fileManager.copyItem(at: entry.source, to: destItem)
+            totalBytes += fileOrDirectorySize(at: destItem)
+        }
+
+        if copiedCount == 0 && skippedCount > 0 {
+            progress?("\(label): All \(skippedCount) items up to date")
+        }
+
+        return totalBytes
     }
 
     /// Incrementally sync directory contents with progress reporting.
@@ -287,6 +409,21 @@ public struct BackupEngine: Sendable {
         }
 
         return total
+    }
+
+    private func encodeServiceState(_ state: StoredServiceState) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(state)
+    }
+
+    private func removeIfEmpty(_ url: URL) {
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: url.path),
+              contents.isEmpty else {
+            return
+        }
+        try? fileManager.removeItem(at: url)
     }
 
     private func filesMatch(_ a: URL, _ b: URL, keys: Set<URLResourceKey>) -> Bool {

@@ -499,6 +499,54 @@ final class PlannerTests: XCTestCase {
         XCTAssertEqual(plan.service.units[1].port?.source, .autoAssigned)
     }
 
+    func testNamedPortSettingConflictUpdatesTemplates() throws {
+        let dbUnit = RuntimeUnit(
+            id: "unit.db", bundleID: "b", runtimeType: .native,
+            installSource: "/bin/db",
+            launchArguments: ["--port", "${db_port}"],
+            healthcheck: Healthcheck(type: .tcp, target: "localhost:${db_port}"),
+            port: 5432
+        )
+        let appUnit = RuntimeUnit(
+            id: "unit.app", bundleID: "b", runtimeType: .native,
+            installSource: "/bin/app",
+            launchArguments: ["--port", "${http_port}"],
+            healthcheck: Healthcheck(type: .http, target: "http://localhost:${http_port}/health"),
+            dependsOn: ["unit.db"],
+            port: 3000
+        )
+        let bundle = Bundle(
+            id: "b", name: "B",
+            capability: "cap",
+            runtimeUnits: ["unit.db", "unit.app"],
+            settings: [
+                SettingField(key: "db_port", label: "Database port", fieldType: .integer, defaultValue: "5432"),
+                SettingField(key: "http_port", label: "HTTP port", fieldType: .integer, defaultValue: "3000"),
+            ]
+        )
+        let registry = SpecRegistry(
+            capabilitiesByID: ["cap": Capability(id: "cap", name: "Cap", version: "1.0.0")],
+            bundlesByID: ["b": bundle],
+            runtimeUnitsByID: ["unit.db": dbUnit, "unit.app": appUnit]
+        )
+
+        let plan = try Planner.planInstall(
+            capabilityID: "cap",
+            registry: registry,
+            baseDirectory: baseDir,
+            usedPorts: [5432]
+        )
+
+        XCTAssertEqual(plan.service.units[0].port?.number, 5433)
+        XCTAssertEqual(plan.service.units[0].resolvedLaunchArguments, ["--port", "5433"])
+        XCTAssertEqual(plan.service.units[0].resolvedHealthcheck?.target, "localhost:5433")
+        XCTAssertEqual(plan.service.units[0].templateContext.values["db_port"], "5433")
+
+        XCTAssertEqual(plan.service.units[1].port?.number, 3000)
+        XCTAssertEqual(plan.service.units[1].resolvedLaunchArguments, ["--port", "3000"])
+        XCTAssertEqual(plan.service.units[1].resolvedHealthcheck?.target, "http://localhost:3000/health")
+    }
+
     // MARK: - Onboarding + Provision resolution
 
     func testOnboardingVariableResolution() throws {

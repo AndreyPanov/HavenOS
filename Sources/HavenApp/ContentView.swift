@@ -128,4 +128,5 @@ package struct ContentView: View {
     ContentView()
         .environment(HavenSettingsModel())
         .environment(ServiceManager())
+        .environment(AppUpdateModel())
 }

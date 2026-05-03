@@ -178,13 +178,27 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             throw error
         }
 
-        saveLibraryPaths([path])
         setupPhase = .scanning(progress: nil)
+        currentScanStatus = .scanning
+        saveLibraryPaths([path])
         updateLibrary()
-        rememberCurrentContentSignature()
 
-        // Start polling for scan completion
+        do {
+            try await triggerLibraryRefresh(client: client, token: token, reason: "setLibraryPath")
+        } catch {
+            log.warning("setLibraryPath: explicit library refresh failed: \(error.localizedDescription)")
+            currentScanStatus = .idle
+            setupPhase = .awaitingLibraryPath
+            updateLibrary()
+            throw error
+        }
+
+        rememberCurrentContentSignature()
         startScanPolling()
+    }
+
+    package func confirmSetupFolder(_ path: String) async throws {
+        try await setLibraryPath(path, contentType: .moviesAndShows)
     }
 
     package func addLibraryPath(_ path: String) async throws {
@@ -214,9 +228,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             log.info("addLibraryPath: library '\(lib.Name)' locations: \(lib.Locations ?? [])")
         }
 
-        // Explicitly trigger a full library refresh
-        try await client.refreshLibrary(token: token)
-        log.info("addLibraryPath: triggered library refresh")
+        try await triggerLibraryRefresh(client: client, token: token, reason: "addLibraryPath")
 
         paths.append(path)
         saveLibraryPaths(paths)
@@ -269,7 +281,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         updateLibrary()
 
         do {
-            try await client.refreshLibrary(token: token)
+            try await triggerLibraryRefresh(client: client, token: token, reason: "rescan")
             rememberCurrentContentSignature()
         } catch {
             log.warning("Refresh API failed: \(error.localizedDescription)")
@@ -279,6 +291,27 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         }
 
         startScanPolling()
+    }
+
+    private func triggerLibraryRefresh(
+        client: JellyfinAPIClient,
+        token: String,
+        reason: String
+    ) async throws {
+        for attempt in 1...3 {
+            do {
+                try await client.refreshLibrary(token: token)
+                log.info("\(reason): triggered library refresh")
+                return
+            } catch {
+                if attempt == 3 {
+                    throw error
+                }
+                log.warning("\(reason): library refresh attempt \(attempt)/3 failed: \(error.localizedDescription)")
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+        throw FacadeError.adapterError("Library refresh did not start")
     }
 
     // MARK: - Daily Change Scan

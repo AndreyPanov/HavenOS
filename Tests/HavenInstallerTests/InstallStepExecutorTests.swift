@@ -78,7 +78,7 @@ final class InstallStepExecutorTests: XCTestCase {
 
     func testCopyCopiesFile() throws {
         // Create a source file
-        let sourceFile = tmpDir.appendingPathComponent("source.bin")
+        let sourceFile = serviceRoot.appendingPathComponent("source.bin")
         try "binary-data".write(to: sourceFile, atomically: true, encoding: .utf8)
 
         let dest = serviceRoot.appendingPathComponent("bin/app").path
@@ -251,6 +251,54 @@ final class InstallStepExecutorTests: XCTestCase {
         ])
 
         XCTAssertThrowsError(try executor.execute(block: block, serviceRoot: serviceRoot))
+    }
+
+    func testRejectsSiblingPathWithMatchingPrefix() {
+        let sibling = URL(fileURLWithPath: serviceRoot.path + "-evil")
+        let escapedPath = sibling.appendingPathComponent("payload.txt").path
+        let block = InstallBlock(steps: [
+            InstallStep(action: .writeFile, path: escapedPath, content: "pwned")
+        ])
+
+        XCTAssertThrowsError(try executor.execute(block: block, serviceRoot: serviceRoot)) { error in
+            guard case .pathEscapesRoot = error as? InstallStepError else {
+                return XCTFail("Expected pathEscapesRoot, got \(error)")
+            }
+        }
+    }
+
+    func testRejectsCopySourceOutsideServiceRoot() throws {
+        let outsideSource = tmpDir.appendingPathComponent("outside-source.txt")
+        try "secret".write(to: outsideSource, atomically: true, encoding: .utf8)
+        let dest = serviceRoot.appendingPathComponent("copied.txt").path
+        let block = InstallBlock(steps: [
+            InstallStep(action: .copy, path: dest, source: outsideSource.path)
+        ])
+
+        XCTAssertThrowsError(try executor.execute(block: block, serviceRoot: serviceRoot)) { error in
+            guard case .pathEscapesRoot = error as? InstallStepError else {
+                return XCTFail("Expected pathEscapesRoot, got \(error)")
+            }
+        }
+    }
+
+    func testAllowsExplicitExternalSourcePath() throws {
+        let externalRoot = tmpDir.appendingPathComponent("external")
+        try fm.createDirectory(at: externalRoot, withIntermediateDirectories: true)
+        let source = externalRoot.appendingPathComponent("source.txt")
+        try "external".write(to: source, atomically: true, encoding: .utf8)
+        let dest = serviceRoot.appendingPathComponent("copied.txt").path
+        let block = InstallBlock(steps: [
+            InstallStep(action: .copy, path: dest, source: source.path)
+        ])
+
+        _ = try executor.execute(
+            block: block,
+            serviceRoot: serviceRoot,
+            allowedExternalPaths: [externalRoot.path]
+        )
+
+        XCTAssertEqual(try String(contentsOfFile: dest), "external")
     }
 
     // MARK: - Rollback

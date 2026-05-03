@@ -149,8 +149,9 @@ package final class ServiceManager {
     private(set) var backupStatus: String?
 
     private let backupEngine = BackupEngine()
+    private var backupScheduler: BackupScheduler?
 
-    /// Perform a backup of all configured capabilities (media files only).
+    /// Perform a backup of all configured capabilities.
     func performBackup(settings: BackupSettings) async {
         guard settings.isConfigured else { return }
 
@@ -176,6 +177,12 @@ package final class ServiceManager {
         let displayNames = Dictionary(
             uniqueKeysWithValues: installedServices.map { ($0.id, userFacingName(for: $0)) }
         )
+        let credentials = Dictionary(
+            uniqueKeysWithValues: configuredScopes.compactMap { scope -> (String, BackupCredentialSnapshot)? in
+                let snapshot = credentialSnapshot(for: scope.capabilityID)
+                return snapshot.isEmpty ? nil : (scope.capabilityID, snapshot)
+            }
+        )
 
         let engine = self.backupEngine
         let statusBox = Mutex<String?>(nil)
@@ -187,6 +194,7 @@ package final class ServiceManager {
                     scopes: configuredScopes,
                     destinations: destinations,
                     displayNames: displayNames,
+                    credentials: credentials,
                     progress: { msg in statusBox.withLock { $0 = msg } }
                 )
                 resultBox.withLock { $0 = .success(entries) }
@@ -244,25 +252,6 @@ package final class ServiceManager {
         isBackingUp = false
     }
 
-    /// Restore media files from a backup to a capability's library folder.
-    func restoreFiles(
-        for capabilityID: String,
-        from backupDestination: URL,
-        to libraryPath: URL
-    ) async throws {
-        let displayName = installedServices.first(where: { $0.id == capabilityID })
-            .map { userFacingName(for: $0) }
-        let engine = self.backupEngine
-
-        try await Task.detached {
-            try engine.restoreFiles(
-                from: backupDestination,
-                to: libraryPath,
-                displayName: displayName
-            )
-        }.value
-    }
-
     /// Recompute backup health from current state.
     func refreshBackupHealth(settings: BackupSettings) {
         let installedCaps = installedServices.map { (id: $0.id, name: userFacingName(for: $0)) }
@@ -282,6 +271,61 @@ package final class ServiceManager {
             installedCapabilities: installedCaps,
             manifests: manifests
         )
+    }
+
+    /// Start or refresh automatic backup scheduling with the latest settings.
+    func updateBackupScheduler(settings: BackupSettings) {
+        if backupScheduler == nil {
+            backupScheduler = BackupScheduler { @MainActor [weak self] in
+                guard let self else { return }
+                await self.performBackup(settings: BackupSettings.load())
+            }
+        }
+        backupScheduler?.start(settings: settings)
+    }
+
+    private func credentialSnapshot(for capabilityID: String) -> BackupCredentialSnapshot {
+        guard let prefix = credentialDefaultsPrefix(for: capabilityID) else {
+            return BackupCredentialSnapshot(values: [:])
+        }
+
+        let values = UserDefaults.standard.dictionaryRepresentation()
+            .filter { key, _ in
+                key.hasPrefix(prefix) && key.contains(capabilityID)
+            }
+            .compactMapValues { value -> BackupCredentialValue? in
+                if let value = value as? String {
+                    return .string(value)
+                }
+                if let value = value as? Bool {
+                    return .bool(value)
+                }
+                if let value = value as? [String] {
+                    return .stringArray(value)
+                }
+                if let value = value as? Int {
+                    return .int(value)
+                }
+                if let value = value as? Double {
+                    return .double(value)
+                }
+                return nil
+            }
+
+        return BackupCredentialSnapshot(values: values)
+    }
+
+    private func credentialDefaultsPrefix(for capabilityID: String) -> String? {
+        switch capabilityID {
+        case "haven.capability.kavita":
+            "haven.kavita."
+        case "haven.capability.navidrome":
+            "haven.navidrome."
+        case "haven.capability.jellyfin":
+            "haven.jellyfin."
+        default:
+            nil
+        }
     }
 
     // MARK: - Init
@@ -324,6 +368,7 @@ package final class ServiceManager {
         loadInstalledState()
         rebuildViewModels()
         refreshBackupHealth(settings: backupSettings)
+        updateBackupScheduler(settings: backupSettings)
     }
 
     /// Reload just the catalog from a (possibly changed) folder URL.

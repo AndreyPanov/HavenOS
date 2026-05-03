@@ -75,7 +75,17 @@ public struct DependencyValidator: Sendable {
             let path = "\(localBin)/\(dep.id)"
             if fileManager.isExecutableFile(atPath: path) {
                 log.info("[dependency] Found '\(dep.id)' in local bin: \(path)")
-                return DependencyResult(dependency: dep, status: .found(path: path))
+                if let command = dep.validateCommand {
+                    let fullCommand = resolveCommand(command, binaryPath: path)
+                    if commandRunner(fullCommand) {
+                        log.info("[dependency] Local validate command passed for '\(dep.id)'")
+                        return DependencyResult(dependency: dep, status: .found(path: path))
+                    } else {
+                        log.warning("[dependency] Local '\(dep.id)' failed validate command")
+                    }
+                } else {
+                    return DependencyResult(dependency: dep, status: .found(path: path))
+                }
             }
         }
 

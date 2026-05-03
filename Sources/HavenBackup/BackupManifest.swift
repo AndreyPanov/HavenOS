@@ -3,7 +3,7 @@ import Foundation
 /// Describes the contents of a Haven backup.
 ///
 /// Written as `manifest.json` at the root of the backup destination.
-/// Used during restore to detect available capabilities and verify integrity.
+/// Used to report backup contents and verify integrity.
 public struct BackupManifest: Codable, Equatable, Sendable {
 
     /// Manifest format version for future compatibility.
@@ -43,7 +43,7 @@ public struct CapabilityBackupEntry: Codable, Equatable, Sendable {
     /// The capability ID (e.g. "haven.capability.kavita").
     public let capabilityID: String
 
-    /// Human-readable name for display during restore.
+    /// Human-readable name for display.
     public let displayName: String
 
     /// The bundle ID that was installed.

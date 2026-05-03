@@ -108,4 +108,26 @@ public protocol ConnectableFacade: CapabilityFacade {
 
     /// Retry auto-connect.
     func autoConnect() async
+
+    /// Continue the setup wizard with a Haven-managed account.
+    func chooseManaged()
+
+    /// Continue the setup wizard with a user-managed account.
+    func chooseCustom()
+
+    /// Continue setup after a manual login succeeds.
+    func continueSetupAfterLogin()
+
+    /// Confirm a setup wizard folder selection.
+    func confirmSetupFolder(_ path: String) async throws
+}
+
+public extension ConnectableFacade {
+    func chooseManaged() {}
+
+    func chooseCustom() {}
+
+    func continueSetupAfterLogin() {}
+
+    func confirmSetupFolder(_ path: String) async throws {}
 }

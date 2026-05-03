@@ -33,6 +33,9 @@ Haven does not run services directly. It plans desired state, prepares artifacts
 | `HavenRuntimes` | Runtime adapter protocol + built-in adapters (native, Python) |
 | `HavenLaunchd` | launchd job modeling, plist generation, lifecycle management via launchctl |
 | `HavenInstaller` | Artifact fetch, cache, and placement into Haven-managed directories |
+| `HavenBackup` | Capability-aware backup, scheduling, health, and manifests |
+| `HavenAppKit` | SwiftUI app views, native capability facades, backup UI, and settings |
+| `HavenApp` | Thin SwiftUI app entry point |
 | `HavenCLIKit` | CLI command definitions (ArgumentParser) |
 | `HavenCLI` | Thin executable entry point (`havenctl`) |
 
@@ -56,6 +59,22 @@ You can also build the app wrapper from the command line:
 
 The command-line bundle is written to `.build/app/Haven.app` by default.
 
+### App Updates
+
+Haven uses Sparkle 2 for updating `Haven.app` itself. This is separate from Haven's service update system, which updates managed services such as Kavita, Navidrome, and Jellyfin.
+
+Development builds leave `SUFeedURL` and `SUPublicEDKey` empty in `Sources/HavenApp/Info.plist`, so the Settings update button is disabled with an explanatory message. Before shipping a public update-enabled build:
+
+1. Generate a Sparkle EdDSA key with Sparkle's `generate_keys` tool.
+2. Add the appcast URL to `SUFeedURL`.
+3. Add the public EdDSA key to `SUPublicEDKey`.
+4. Increment both `CFBundleShortVersionString` and `CFBundleVersion`.
+5. Build, Developer ID sign, notarize, and staple `Haven.app`.
+6. Archive the app with `ditto -c -k --sequesterRsrc --keepParent Haven.app Haven.zip`.
+7. Run Sparkle's `generate_appcast` over the release folder and upload the archive, deltas, release notes, and appcast.
+
+Users on builds before Sparkle integration need one manual update to a Sparkle-enabled `Haven.app`; later releases can update from Settings.
+
 ### Run the CLI
 
 ```bash
@@ -73,12 +92,12 @@ swift run havenctl list
 swift test
 ```
 
-316 tests across 8 test targets covering domain models, spec loading, planning, state persistence, runtime adapters, launchd job generation, artifact installation, executor lifecycle, rollback, and CLI parsing.
+The suite covers domain models, spec loading, planning, state persistence, runtime adapters, launchd job generation, artifact installation, executor lifecycle, rollback, capability facades, service updates, backups, and CLI parsing.
 
 ## Requirements
 
-- macOS 13+
-- Swift 5.9+
+- macOS 26+
+- Swift 6.2+
 
 ## Dependencies
 

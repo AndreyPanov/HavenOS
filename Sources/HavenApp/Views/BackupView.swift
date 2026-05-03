@@ -34,6 +34,7 @@ struct BackupView: View {
                     get: { settings.backupSettings.schedule },
                     set: { newValue in
                         settings.backupSettings.schedule = newValue
+                        serviceManager.updateBackupScheduler(settings: settings.backupSettings)
                     }
                 )) {
                     Text("Daily").tag(BackupSchedule.daily)
@@ -152,6 +153,7 @@ private struct CapabilityBackupRow: View {
                     Button {
                         settings.backupSettings.removeDestination(for: service.id)
                         serviceManager.refreshBackupHealth(settings: settings.backupSettings)
+                        serviceManager.updateBackupScheduler(settings: settings.backupSettings)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -182,6 +184,7 @@ private struct CapabilityBackupRow: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         settings.backupSettings.setDestination(url.path, for: service.id)
         serviceManager.refreshBackupHealth(settings: settings.backupSettings)
+        serviceManager.updateBackupScheduler(settings: settings.backupSettings)
     }
 }
 

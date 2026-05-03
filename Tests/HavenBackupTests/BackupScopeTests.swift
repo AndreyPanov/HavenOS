@@ -36,6 +36,9 @@ struct BackupScopeTests {
         let result = scope.scope(for: makeState())
 
         #expect(result.contentPaths.isEmpty)
+        #expect(result.configPaths.map(\.lastPathComponent) == ["config"])
+        #expect(result.statePaths.map(\.lastPathComponent) == ["data"])
+        #expect(result.serviceState?.capability == "haven.capability.kavita")
     }
 
     // MARK: - Unified content_paths Key
@@ -224,8 +227,8 @@ struct BackupScopeTests {
         #expect(contentNames.contains("content"))
     }
 
-    @Test("Non-userVisible storage policies are not included")
-    func nonUserVisibleExcluded() {
+    @Test("Persistent non-userVisible storage policies become service state")
+    func nonUserVisiblePersistentIncludedAsState() {
         let scope = BackupScope()
         let bundle = HavenCore.Bundle(
             id: "haven.bundle.test",
@@ -240,6 +243,33 @@ struct BackupScopeTests {
         let result = scope.scope(for: state, bundle: bundle)
 
         #expect(result.contentPaths.isEmpty)
+        let stateNames = result.statePaths.map(\.lastPathComponent)
+        #expect(stateNames.contains("data"))
+        #expect(!stateNames.contains("cache"))
+    }
+
+    @Test("Runtime logs and cache roles are excluded from service sections")
+    func runtimeRolesExcluded() {
+        let scope = BackupScope()
+        let bundle = HavenCore.Bundle(
+            id: "haven.bundle.test",
+            name: "Test",
+            capability: "haven.capability.test",
+            storage: [
+                "logs": StoragePolicy(persistent: true, userVisible: false),
+                "cache": StoragePolicy(persistent: true, userVisible: false),
+                "run": StoragePolicy(persistent: true, userVisible: false),
+                "metadata": StoragePolicy(persistent: true, userVisible: false),
+            ]
+        )
+        let state = makeState(capability: "haven.capability.test", bundleID: "haven.bundle.test")
+        let result = scope.scope(for: state, bundle: bundle)
+
+        let stateNames = result.statePaths.map(\.lastPathComponent)
+        #expect(stateNames.contains("metadata"))
+        #expect(!stateNames.contains("logs"))
+        #expect(!stateNames.contains("cache"))
+        #expect(!stateNames.contains("run"))
     }
 
     @Test("No duplicate paths when content_paths and policy both resolve to same dir")

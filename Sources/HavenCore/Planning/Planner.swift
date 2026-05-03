@@ -256,8 +256,10 @@ public enum Planner {
         let candidatePort: Int?
         let candidateSource: PlannedPort.Source
 
+        let portSettingKey = portSettingKey(for: unit, resolvedSettings: resolvedSettings)
         if let specPort = unit.port {
-            if let portOverride = resolvedSettings["port"].flatMap(Int.init),
+            if let portSettingKey,
+               let portOverride = resolvedSettings[portSettingKey].flatMap(Int.init),
                portOverride != specPort {
                 candidatePort = portOverride
                 candidateSource = .settingOverride
@@ -294,6 +296,9 @@ public enum Planner {
         contextValues["service_root"] = layout.serviceRoot.path
         if let port {
             contextValues["port"] = String(port.number)
+            if let portSettingKey {
+                contextValues[portSettingKey] = String(port.number)
+            }
         }
 
         // Expand spec-declared directories into template variables.
@@ -383,5 +388,63 @@ public enum Planner {
             if candidate > range.upperBound { candidate = range.lowerBound }
         } while candidate != initial
         throw PlanningError.noAvailablePorts(unitID: unitID)
+    }
+
+    /// Resolve which setting key controls a unit's port.
+    ///
+    /// The legacy single-unit convention is `port`. Multi-unit specs use
+    /// named settings such as `db_port` and `http_port`; we bind those by
+    /// looking for a referenced `*_port` key on the unit, falling back to a
+    /// single setting whose default value matches the unit's spec port.
+    private static func portSettingKey(
+        for unit: RuntimeUnit,
+        resolvedSettings: [String: String]
+    ) -> String? {
+        guard unit.port != nil else { return nil }
+        if resolvedSettings["port"].flatMap(Int.init) != nil {
+            return "port"
+        }
+
+        let portKeys = resolvedSettings.keys
+            .filter { $0.hasSuffix("_port") && resolvedSettings[$0].flatMap(Int.init) != nil }
+            .sorted()
+        let referenced = portKeys.filter { references(settingKey: $0, in: unit) }
+        if referenced.count == 1 {
+            return referenced[0]
+        }
+
+        if let specPort = unit.port {
+            let matchingDefaults = portKeys.filter {
+                resolvedSettings[$0].flatMap(Int.init) == specPort
+            }
+            if matchingDefaults.count == 1 {
+                return matchingDefaults[0]
+            }
+        }
+
+        return nil
+    }
+
+    private static func references(settingKey key: String, in unit: RuntimeUnit) -> Bool {
+        let token = "${\(key)}"
+        var strings = unit.launchArguments
+        strings.append(contentsOf: unit.environment.values)
+        strings.append(contentsOf: unit.directories.values)
+        if let install = unit.install {
+            strings.append(contentsOf: install.steps.flatMap { step in
+                [step.path, step.source, step.mode, step.content].compactMap { $0 }
+            })
+        }
+
+        if strings.contains(where: { $0.contains(token) }) {
+            return true
+        }
+        if unit.healthcheck?.target.contains(token) == true {
+            return true
+        }
+        if unit.readinessProbe?.target.contains(token) == true {
+            return true
+        }
+        return false
     }
 }

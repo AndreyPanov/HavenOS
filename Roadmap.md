@@ -25,7 +25,7 @@ Add → Start → Use (inside Haven)
 	•	Deterministic execution model
 	•	Python runtime support (venv, pip install, pinned versions)
 	•	Install DSL with 8 step actions + rollback (InstallStepExecutor)
-	•	Dependency model (spec-level, not yet runtime-validated)
+	•	Dependency model with runtime validation and optional auto-install artifacts
 	•	Storage policies on Bundle (persistent, userVisible)
 	•	Directory roles with template expansion
 	•	Settings model (string/integer/boolean/path)
@@ -86,7 +86,7 @@ Phase	Focus	Outcome	Status
 14	Music (Navidrome)	Second capability — validate pattern scales	✅ DONE
 14.5	Platform Hardening	Shared protocols, zero downcasts, lifecycle tests	✅ DONE
 15	Movies (Jellyfin)	Third capability — video streaming	✅ DONE
-16	Backup & Sync	Trust milestone — capability-aware backup/restore	🔶 In progress
+16	Backup & Sync	Trust milestone — capability-aware backup	✅ DONE
 17	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
 18	Service Updates	Version discovery + safe atomic updates	⬜ Not started
 19	macOS Topbar Menu	Always-present menu bar control surface	🔶 In progress
@@ -776,34 +776,27 @@ Think: Time Machine for your personal cloud — not a manual sysadmin backup wor
 	•	DO NOT BACK UP: binaries, downloaded artifacts, temporary caches, generated runtime files, re-installable dependencies — those are recreated automatically
 	•	This is the core product differentiator
 
-5. Restore Flow
-	•	"Restore from Backup" — simple guided flow:
-	  Choose backup location → Haven detects available capabilities → Select what to restore → Done
-	•	No manual recovery steps, no reading documentation
-	•	Must feel like: "Move my personal cloud to a new machine"
-
-6. Backup Health Visibility
+5. Backup Health Visibility
 	•	Clear backup status always visible: last backup date, status (Healthy/Warning/Failed), destination
 	•	Users need confidence, not hidden background jobs
 
-7. Failure Visibility
+6. Failure Visibility
 	•	If backup fails: show reason + suggested fix
 	•	Example: "Backup hasn't run for 7 days — NAS unavailable"
 	•	Silent backup failure is unacceptable
 
-8. Protection Status (Product Feature)
+7. Protection Status (Product Feature)
 	•	Protection Score (e.g. "Protection Status: 82%")
 	•	Per-capability breakdown: Books protected ✅, Music protected ✅, Smart Home not protected ⚠️
 	•	Encourages setup completion, creates strong product experience
 
-9. Future Extension — Snapshot Recovery (not MVP)
+8. Future Extension — Snapshot Recovery (not MVP)
 	•	Last 7 days, accidental deletion rollback, previous-state recovery
-	•	Versioned restore — not required for v1
 
 ⸻
 
 ⚠️ Product Constraints
-	•	DO: capability-aware backup, user-facing language, simple guided restore, visible trust indicators
+	•	DO: capability-aware backup, user-facing language, visible trust indicators
 	•	DO NOT: expose rsync, expose cron, expose shell scripts, expose Docker backup docs, expose backend-specific backup mechanics
 	•	Never make users think like sysadmins
 
@@ -812,7 +805,6 @@ Think: Time Machine for your personal cloud — not a manual sysadmin backup wor
 ✅ Acceptance Criteria
 	•	User can choose a backup destination in < 1 minute
 	•	User can understand what is protected without technical knowledge
-	•	User can restore Books/Music/Movies to a new machine without manual steps
 	•	User can trust Haven as their long-term personal cloud platform
 	•	Backup status is always visible
 	•	Failure is never silent
@@ -826,7 +818,7 @@ Backup proves: Haven can be trusted with them.
 
 This is the trust milestone before Files.
 
-🔥 One-liner: If Install → Start → Use made Haven useful, Backup → Restore → Trust makes Haven permanent.
+🔥 One-liner: If Install → Start → Use made Haven useful, Backup → Trust makes Haven permanent.
 
 ⸻
 
@@ -841,17 +833,18 @@ This is the trust milestone before Files.
 	•	Tests: scope produces correct paths, manifest round-trips, settings persist
 
 16.2 — Backup Engine (Core Logic) ✅
-	•	BackupEngine: performs backup (copy dirs → export credentials → write manifest) and restore
-	•	Per-capability named root folders (Books/, Music/, Movies/) with config/ + data/ layout
+	•	BackupEngine: performs backup (copy content/config/state → export credentials → write manifest)
+	•	Per-capability named root folders (Books/, Music/, Movies/) with data/ + config/ + state/ + credentials/ layout
 	•	Incremental media sync: compares size + modification date, skips unchanged, removes orphans
-	•	Credentials: export UserDefaults keys as credentials.json sidecar
+	•	Credentials: export typed UserDefaults keys as credentials.json sidecar
 	•	Atomic per-capability: finish one before starting next; partial backup is valid
 	•	Per-file progress reporting for media content
-	•	Tests: backup → restore round-trip with temp dirs (14 tests)
+	•	Tests: backup layout, incremental sync, manifests, config/state/credentials
 
 16.3 — Backup Scheduler ✅
 	•	In-process Timer (checks on launch + hourly)
-	•	Triggers BackupEngine.backup() in background Task when overdue
+	•	Wired into ServiceManager on app load and backup settings changes
+	•	Triggers BackupEngine.backupAll() in background Task when overdue
 	•	Tests: fires when overdue, skips when not due, manual-only never auto-fires
 
 16.4 — Settings UI ✅
@@ -867,13 +860,9 @@ This is the trust milestone before Files.
 	•	BackupHealthBanner: compact banner on HomeView (warnings/failures only, taps to Backup tab)
 	•	Sidebar badge on Backup tab for overdue/warning/failure states
 
-16.6 — Restore Flow ✅
-	•	RestoreFlowView: multi-step sheet (choose folder → detect capabilities → select → progress → done)
-	•	BackupEngine.scanForBackups(): discovers all capability backups in a folder
-	•	Multi-capability restore: findCapabilityRoot filters by capabilityID to avoid first-match bug
-	•	Restore does NOT auto-install (no artifact download) — restores state + data only
-	•	Re-adding capability finds existing config/data, skips setup wizard
-	•	"Restore" button in Backup tab, disabled during backup/restore
+16.6 — Restore Flow ❌ REMOVED
+	•	Restore UI and engine restore APIs removed from MVP scope
+	•	Backup remains focused on protection status, scheduled copies, and clear failure visibility
 
 16.7 — Failure Visibility
 	•	Error categorization: destination unreachable, disk full, permission denied, partial failure
@@ -970,7 +959,30 @@ Critical rule: Never leave partial state.
 
 ⸻
 
-🖥️ Phase 19 — macOS Topbar Menu
+🚀 Phase 19 — Haven App Updates
+
+🎯 Goal
+
+Let installed users receive new Haven releases from inside the app instead of manually replacing Haven.app.
+
+🔧 Deliverables
+	•	Add Sparkle 2 as the macOS app update framework
+	•	Add a Settings action for user-initiated "Check for Updates"
+	•	Read update availability from a signed appcast feed
+	•	Require Developer ID signing, notarization, and Sparkle EdDSA signatures for public releases
+	•	Keep service updates separate from Haven app updates
+	•	Document the release process: bump version/build, build, sign, notarize, archive, generate appcast, upload
+
+✅ Acceptance Criteria
+	•	Settings shows whether app updates are configured
+	•	"Check for Updates" is enabled only when Sparkle can check
+	•	The app fails softly in development builds without production appcast credentials
+	•	Public releases can update from one signed/notarized Haven.app to the next
+	•	Current pre-Sparkle installs have a documented one-time manual update path
+
+⸻
+
+🖥️ Phase 20 — macOS Topbar Menu
 
 🎯 Goal
 
@@ -996,7 +1008,7 @@ Make Haven feel resident on macOS: closing the main window should not stop Haven
 
 ⸻
 
-📁 Phase 20 — Files
+📁 Phase 21 — Files
 
 🎯 Goal
 
@@ -1026,7 +1038,7 @@ Files	File Browser	HTTP	⬜ Deferred
 
 Execution Strategy
 
-Books → Music → Movies → Backup → Updates → Topbar → Files
+Books → Music → Movies → Backup → Service Updates → App Updates → Topbar → Files
 Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
@@ -1049,4 +1061,4 @@ private Netflix + Spotify + Kindle
 Install → Start → Use (inside Haven)
 
 ⸻
-UPDATED 03.05.26 (Phase 19 macOS Topbar Menu added; Files moved to 20)
+UPDATED 03.05.26 (Phase 19 App Updates added; Topbar moved to 20; Files moved to 21)

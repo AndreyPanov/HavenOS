@@ -111,9 +111,10 @@ public struct InstallStepExecutor: Sendable {
                             action: step.action.rawValue, path: step.path
                         )
                     }
+                    let sourceURL = try validatedURL(path: source, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     let destURL = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeCopy(
-                        source: source, destination: destURL,
+                        source: sourceURL, destination: destURL,
                         rollback: &rollbackActions
                     )
 
@@ -123,9 +124,10 @@ public struct InstallStepExecutor: Sendable {
                             action: step.action.rawValue, path: step.path
                         )
                     }
+                    let sourceURL = try validatedURL(path: source, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     let destURL = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeMove(
-                        source: source, destination: destURL,
+                        source: sourceURL, destination: destURL,
                         rollback: &rollbackActions
                     )
 
@@ -149,9 +151,10 @@ public struct InstallStepExecutor: Sendable {
                             action: step.action.rawValue, path: step.path
                         )
                     }
+                    let sourceURL = try validatedURL(path: source, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     let linkURL = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeSymlink(
-                        source: source, link: linkURL,
+                        source: sourceURL, link: linkURL,
                         rollback: &rollbackActions
                     )
 
@@ -195,9 +198,9 @@ public struct InstallStepExecutor: Sendable {
 
         // Must be inside service root OR match an allowed external path
         let normalized = url.path
-        if !normalized.hasPrefix(root) {
+        if !isPath(normalized, insideOrEqualTo: root) {
             let isAllowed = allowedExternalPaths.contains { allowed in
-                normalized == allowed || normalized.hasPrefix(allowed + "/")
+                isPath(normalized, insideOrEqualTo: allowed)
             }
             guard isAllowed else {
                 throw InstallStepError.pathEscapesRoot(path: path, root: root)
@@ -205,6 +208,10 @@ public struct InstallStepExecutor: Sendable {
         }
 
         return url
+    }
+
+    private func isPath(_ path: String, insideOrEqualTo root: String) -> Bool {
+        path == root || path.hasPrefix(root + "/")
     }
 
     // MARK: - Step Implementations
@@ -223,37 +230,35 @@ public struct InstallStepExecutor: Sendable {
     }
 
     private func executeCopy(
-        source: String, destination: URL,
+        source: URL, destination: URL,
         rollback: inout [() -> Void]
     ) throws {
-        let sourceURL = URL(fileURLWithPath: source)
         // Ensure parent exists
         let parent = destination.deletingLastPathComponent()
         try? fileManager.createDirectory(
             at: parent, withIntermediateDirectories: true
         )
-        try fileManager.copyItem(at: sourceURL, to: destination)
+        try fileManager.copyItem(at: source, to: destination)
         rollback.append { [fileManager] in
             try? fileManager.removeItem(at: destination)
         }
-        log.debug("[install-steps] copy: \(source) -> \(destination.path)")
+        log.debug("[install-steps] copy: \(source.path) -> \(destination.path)")
     }
 
     private func executeMove(
-        source: String, destination: URL,
+        source: URL, destination: URL,
         rollback: inout [() -> Void]
     ) throws {
-        let sourceURL = URL(fileURLWithPath: source)
         let parent = destination.deletingLastPathComponent()
         try? fileManager.createDirectory(
             at: parent, withIntermediateDirectories: true
         )
-        try fileManager.moveItem(at: sourceURL, to: destination)
+        try fileManager.moveItem(at: source, to: destination)
         // Rollback: move back
         rollback.append { [fileManager] in
-            try? fileManager.moveItem(at: destination, to: sourceURL)
+            try? fileManager.moveItem(at: destination, to: source)
         }
-        log.debug("[install-steps] move: \(source) -> \(destination.path)")
+        log.debug("[install-steps] move: \(source.path) -> \(destination.path)")
     }
 
     private func executeChmod(
@@ -322,16 +327,16 @@ public struct InstallStepExecutor: Sendable {
     }
 
     private func executeSymlink(
-        source: String, link: URL,
+        source: URL, link: URL,
         rollback: inout [() -> Void]
     ) throws {
         try fileManager.createSymbolicLink(
-            at: link, withDestinationURL: URL(fileURLWithPath: source)
+            at: link, withDestinationURL: source
         )
         rollback.append { [fileManager] in
             try? fileManager.removeItem(at: link)
         }
-        log.debug("[install-steps] symlink: \(link.path) -> \(source)")
+        log.debug("[install-steps] symlink: \(link.path) -> \(source.path)")
     }
 
     private func executeGenerateSecret(step: InstallStep) throws -> String {

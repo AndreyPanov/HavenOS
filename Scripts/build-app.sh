@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Build Haven.app from Swift Package
-# Usage: ./Scripts/build-app.sh [--configuration debug|release] [--output /path/Haven.app] [--sign]
+# Usage: ./Scripts/build-app.sh [--configuration debug|release] [--output /path/Haven.app] [--sign] [--sign-identity "Developer ID Application: ..."]
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -18,6 +18,10 @@ while [[ $# -gt 0 ]]; do
             SHOULD_SIGN=true
             shift
             ;;
+        --sign-identity)
+            SIGN_IDENTITY="${2:-}"
+            shift 2
+            ;;
         --configuration)
             CONFIGURATION="${2:-}"
             shift 2
@@ -28,7 +32,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "ERROR: Unknown argument: $1"
-            echo "Usage: $0 [--configuration debug|release] [--output /path/Haven.app] [--sign]"
+            echo "Usage: $0 [--configuration debug|release] [--output /path/Haven.app] [--sign] [--sign-identity \"Developer ID Application: ...\"]"
             exit 1
             ;;
     esac
@@ -49,6 +53,7 @@ esac
 BUILD_DIR="$(dirname "$APP_BUNDLE")"
 CONTENTS="$APP_BUNDLE/Contents"
 MACOS="$CONTENTS/MacOS"
+FRAMEWORKS="$CONTENTS/Frameworks"
 
 echo "==> Building Haven ($SWIFT_CONFIGURATION)..."
 cd "$REPO_ROOT"
@@ -73,6 +78,25 @@ cp "$BINARY" "$MACOS/Haven"
 # Copy Info.plist
 cp "$REPO_ROOT/Sources/HavenApp/Info.plist" "$CONTENTS/Info.plist"
 
+# Copy Sparkle if the executable links against it. SwiftPM keeps binary
+# artifacts under .build, and ditto preserves the framework symlinks.
+if otool -L "$BINARY" | grep -q "Sparkle.framework"; then
+    SPARKLE_FRAMEWORK="$(find "$REPO_ROOT/.build" -name Sparkle.framework -type d -print -quit)"
+    if [ -z "$SPARKLE_FRAMEWORK" ]; then
+        echo "ERROR: Haven links Sparkle, but Sparkle.framework was not found in .build"
+        exit 1
+    fi
+
+    echo "==> Copying Sparkle.framework..."
+    mkdir -p "$FRAMEWORKS"
+    ditto --norsrc "$SPARKLE_FRAMEWORK" "$FRAMEWORKS/Sparkle.framework"
+    xattr -cr "$FRAMEWORKS/Sparkle.framework"
+
+    if ! otool -l "$MACOS/Haven" | grep -q "@executable_path/../Frameworks"; then
+        install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/Haven"
+    fi
+fi
+
 # Create minimal entitlements (network client for API calls)
 cat > "$BUILD_DIR/Haven.entitlements" <<'ENTITLEMENTS'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -90,6 +114,11 @@ ENTITLEMENTS
 # Sign if requested
 if [ "$SHOULD_SIGN" = true ]; then
     echo "==> Signing with $SIGN_IDENTITY (Team: $TEAM_ID)..."
+    if [ -d "$FRAMEWORKS/Sparkle.framework" ]; then
+        codesign --force --deep --sign "$SIGN_IDENTITY" \
+            --options runtime \
+            "$FRAMEWORKS/Sparkle.framework"
+    fi
     codesign --force --sign "$SIGN_IDENTITY" \
         --entitlements "$BUILD_DIR/Haven.entitlements" \
         --options runtime \
@@ -98,6 +127,10 @@ if [ "$SHOULD_SIGN" = true ]; then
     codesign --verify --verbose "$APP_BUNDLE"
 else
     echo "==> Ad-hoc signing..."
+    if [ -d "$FRAMEWORKS/Sparkle.framework" ]; then
+        codesign --force --deep --sign - \
+            "$FRAMEWORKS/Sparkle.framework"
+    fi
     codesign --force --sign - \
         --entitlements "$BUILD_DIR/Haven.entitlements" \
         "$APP_BUNDLE"

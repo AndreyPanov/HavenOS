@@ -15,12 +15,14 @@ struct HavenApp: App {
     @State private var settings: HavenSettingsModel
     @State private var serviceManager: ServiceManager
     @State private var loginItemManager: LoginItemManager
+    @State private var appUpdateModel: AppUpdateModel
 
     @MainActor
     init() {
         let settings = HavenSettingsModel()
         let serviceManager = ServiceManager()
         let loginItemManager = LoginItemManager()
+        let appUpdateModel = AppUpdateModel()
 
         serviceManager.load(
             catalogURL: settings.catalogFolderURL,
@@ -30,6 +32,7 @@ struct HavenApp: App {
         _settings = State(initialValue: settings)
         _serviceManager = State(initialValue: serviceManager)
         _loginItemManager = State(initialValue: loginItemManager)
+        _appUpdateModel = State(initialValue: appUpdateModel)
 
         // Ensure the app runs as a regular GUI application with dock icon and menu bar,
         // even when launched as a bare executable outside a .app bundle.
@@ -46,6 +49,7 @@ struct HavenApp: App {
             ContentView()
                 .environment(settings)
                 .environment(serviceManager)
+                .environment(appUpdateModel)
         }
         .defaultSize(width: 1100, height: 700)
 

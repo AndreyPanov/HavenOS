@@ -125,6 +125,61 @@ final class DependencyValidatorTests: XCTestCase {
         }
     }
 
+    func testLocalBinaryRunsValidateCommand() {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-dep-local-test-\(UUID().uuidString)")
+        let binDir = tmpDir.appendingPathComponent("bin")
+        try? FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let binary = binDir.appendingPathComponent("ffmpeg")
+        FileManager.default.createFile(atPath: binary.path, contents: nil)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+
+        let validator = DependencyValidator(
+            commandRunner: { command in
+                command == "\(binary.path) -version"
+            }
+        )
+        let dep = Dependency(
+            id: "ffmpeg",
+            kind: .helperBinary,
+            required: true,
+            validateCommand: "ffmpeg -version"
+        )
+
+        let results = validator.validate(dependencies: [dep], localBinPath: binDir.path)
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].status, .found(path: binary.path))
+    }
+
+    func testLocalBinaryFailingValidateCommandIsMissing() {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("haven-dep-local-fail-test-\(UUID().uuidString)")
+        let binDir = tmpDir.appendingPathComponent("bin")
+        try? FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let binary = binDir.appendingPathComponent("ffmpeg")
+        FileManager.default.createFile(atPath: binary.path, contents: nil)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+
+        let validator = DependencyValidator(commandRunner: { _ in false })
+        let dep = Dependency(
+            id: "ffmpeg",
+            kind: .helperBinary,
+            required: true,
+            validateCommand: "ffmpeg -version"
+        )
+
+        let results = validator.validate(dependencies: [dep], localBinPath: binDir.path)
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].status, .missing)
+        XCTAssertTrue(results[0].isBlocker)
+    }
+
     // MARK: - Deduplication
 
     func testDeduplicatesByID() {

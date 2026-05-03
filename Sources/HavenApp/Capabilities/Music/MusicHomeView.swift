@@ -38,9 +38,8 @@ struct MusicHomeView: View {
         .onChange(of: showingConnectSheet) {
             if !showingConnectSheet {
                 facade.refresh()
-                if facade.connectionState == .connected,
-                   let navidrome = facade as? NavidromeMusicFacade {
-                    navidrome.continueSetupAfterLogin()
+                if facade.connectionState == .connected {
+                    facade.continueSetupAfterLogin()
                 }
             }
         }
@@ -221,15 +220,11 @@ struct MusicHomeView: View {
             icon: "music.note.house",
             facade: facade,
             onChooseManaged: {
-                if let navidrome = facade as? NavidromeMusicFacade {
-                    navidrome.chooseManaged()
-                }
+                facade.chooseManaged()
             },
             onChooseCustom: {
-                if let navidrome = facade as? NavidromeMusicFacade {
-                    navidrome.chooseCustom()
-                    showingConnectSheet = true
-                }
+                facade.chooseCustom()
+                showingConnectSheet = true
             },
             onPickFolder: {},
             onConfirmFolder: { _ in },
@@ -242,12 +237,6 @@ struct MusicHomeView: View {
     private var emptyView: some View {
         VStack(alignment: .leading, spacing: 24) {
             libraryCard
-
-            RestoreFromBackupSection(
-                capabilityID: facade.capabilityID,
-                libraryPath: facade.library?.libraryPath,
-                label: "Music"
-            )
 
             centeredCard {
                 Image(systemName: "music.note.house")
