@@ -468,12 +468,23 @@ public struct HavenExecutor: Sendable {
                     (plannedUnit.templateContext.values).values
                         .filter { $0.hasPrefix("/") && !$0.hasPrefix(rootPath) }
                 )
+                var installContextValues = plannedUnit.templateContext.values
+                installContextValues["executable_path"] = resolvedUnit.installSource
+                installContextValues["install_dir"] = URL(fileURLWithPath: resolvedUnit.installSource)
+                    .deletingLastPathComponent()
+                    .path
+                let installContext = TemplateContext(values: installContextValues)
+                let installExternalPaths = Set(
+                    installContextValues.values
+                        .filter { $0.hasPrefix("/") && !$0.hasPrefix(rootPath) }
+                )
+
                 do {
                     let stepResult = try stepExecutor.execute(
                         block: installBlock,
                         serviceRoot: serviceLayout.serviceRoot,
-                        templateContext: plannedUnit.templateContext,
-                        allowedExternalPaths: externalPaths
+                        templateContext: installContext,
+                        allowedExternalPaths: externalPaths.union(installExternalPaths)
                     )
                     if !stepResult.generatedSecrets.isEmpty {
                         log.info("[install] Generated \(stepResult.generatedSecrets.count) secrets for \(unit.id)")

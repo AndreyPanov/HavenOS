@@ -16,6 +16,21 @@
             "label": "Port",
             "fieldType": "integer",
             "defaultValue": "8080"
+        },
+        {
+            "key": "files_username",
+            "label": "Managed username",
+            "fieldType": "string",
+            "defaultValue": "haven",
+            "required": true,
+            "sensitive": true
+        },
+        {
+            "key": "files_password",
+            "label": "Managed password",
+            "fieldType": "string",
+            "required": true,
+            "sensitive": true
         }
     ],
     "storage": {
@@ -32,7 +47,7 @@
             {
                 "type": "action",
                 "title": "Open File Browser",
-                "body": "File Browser is ready — no login required. Open it to start browsing your files.",
+                "body": "Use Haven-managed credentials to open it from another device.",
                 "url": "http://localhost:${port}"
             },
             {

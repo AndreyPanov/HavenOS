@@ -25,8 +25,10 @@ struct FileBrowserSpecTests {
 
         #expect(username?.defaultValue == "haven")
         #expect(username?.required == true)
+        #expect(username?.sensitive == true)
         #expect(password?.defaultValue == nil)
         #expect(password?.required == true)
+        #expect(password?.sensitive == true)
     }
 
     @Test("Runtime uses authentication, not noauth")
@@ -35,11 +37,32 @@ struct FileBrowserSpecTests {
         let args = units[0].launchArguments
 
         #expect(!args.contains("--noauth"))
-        #expect(args.contains("--username"))
-        #expect(args.contains("${files_username}"))
-        #expect(args.contains("--password"))
-        #expect(args.contains("${files_password}"))
+        #expect(!args.contains("--username"))
+        #expect(!args.contains("--password"))
+        #expect(!args.contains("${files_username}"))
+        #expect(!args.contains("${files_password}"))
         #expect(args.contains("--disableExec"))
+    }
+
+    @Test("Install steps create secure File Browser database")
+    func installStepsCreateSecureDatabase() {
+        let (_, _, units) = BuiltInCatalog.filebrowser
+        let steps = units[0].install?.steps ?? []
+
+        #expect(steps.count == 4)
+        #expect(steps[0].action == .mkdir)
+        #expect(steps[1].action == .mkdir)
+        #expect(steps[2].action == .exec)
+        #expect(steps[2].path == "${executable_path}")
+        #expect(steps[2].arguments?.contains("config") == true)
+        #expect(steps[2].arguments?.contains("init") == true)
+        #expect(steps[2].arguments?.contains("--disableExec") == true)
+        #expect(steps[3].action == .exec)
+        #expect(steps[3].arguments?.contains("users") == true)
+        #expect(steps[3].arguments?.contains("add") == true)
+        #expect(steps[3].arguments?.contains("${files_username}") == true)
+        #expect(steps[3].arguments?.contains("${files_password}") == true)
+        #expect(steps[3].arguments?.contains("--perm.admin") == true)
     }
 
     @Test("Runtime uses GitHub release artifact")
@@ -53,8 +76,8 @@ struct FileBrowserSpecTests {
         #expect(artifact?.archive?.format == "tar.gz")
     }
 
-    @Test("Planner expands secure launch arguments")
-    func plannerExpandsSecureLaunchArguments() throws {
+    @Test("Planner keeps credentials out of launch arguments")
+    func plannerKeepsCredentialsOutOfLaunchArguments() throws {
         let registry = BuiltInCatalog.makeRegistry()
 
         let plan = try Planner.planInstall(
@@ -73,12 +96,20 @@ struct FileBrowserSpecTests {
 
         #expect(planned.resolvedDirectories["data"] == "\(serviceRoot)/data")
         #expect(planned.resolvedDirectories["content"] == "/Volumes/Files")
+        #expect(plan.service.resolvedSettings["files_username"] == nil)
+        #expect(plan.service.resolvedSettings["files_password"] == nil)
         #expect(planned.resolvedLaunchArguments.contains("0.0.0.0"))
         #expect(planned.resolvedLaunchArguments.contains("/Volumes/Files"))
         #expect(planned.resolvedLaunchArguments.contains("\(serviceRoot)/data/filebrowser.db"))
-        #expect(planned.resolvedLaunchArguments.contains("haven"))
-        #expect(planned.resolvedLaunchArguments.contains("secret-pass"))
+        #expect(!planned.resolvedLaunchArguments.contains("haven"))
+        #expect(!planned.resolvedLaunchArguments.contains("secret-pass"))
         #expect(!planned.resolvedLaunchArguments.contains("--noauth"))
+
+        let install = try #require(planned.resolvedInstall)
+        #expect(install.steps[2].arguments?.contains("\(serviceRoot)/data/filebrowser.db") == true)
+        #expect(install.steps[2].arguments?.contains("/Volumes/Files") == true)
+        #expect(install.steps[3].arguments?.contains("haven") == true)
+        #expect(install.steps[3].arguments?.contains("secret-pass") == true)
     }
 
     @Test("Planner requires managed password")

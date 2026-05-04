@@ -166,6 +166,13 @@ public struct InstallStepExecutor: Sendable {
                     updatedValues[step.path] = secret
                     currentContext = TemplateContext(values: updatedValues)
 
+                case .exec:
+                    let executable = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
+                    try executeExec(
+                        executable: executable,
+                        arguments: step.arguments ?? []
+                    )
+
                 case .cleanup:
                     let url = try validatedURL(path: step.path, root: rootPath, allowedExternalPaths: allowedExternalPaths)
                     try executeCleanup(url: url)
@@ -369,6 +376,58 @@ public struct InstallStepExecutor: Sendable {
         log.debug("[install-steps] generateSecret: \(step.path) (\(byteLength) bytes, \(step.mode ?? "hex"))")
         // No rollback needed — secrets are ephemeral template variables
         return encoded
+    }
+
+    private func executeExec(executable: URL, arguments: [String]) throws {
+        guard fileManager.isExecutableFile(atPath: executable.path) else {
+            throw InstallStepError.stepFailed(
+                action: "exec",
+                path: executable.path,
+                detail: "Executable does not exist or is not executable."
+            )
+        }
+
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw InstallStepError.stepFailed(
+                action: "exec",
+                path: executable.path,
+                detail: error.localizedDescription
+            )
+        }
+
+        let stdout = String(
+            data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        let stderr = String(
+            data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            let detail = [stderr, stdout]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty } ?? "Exited with status \(process.terminationStatus)."
+            throw InstallStepError.stepFailed(
+                action: "exec",
+                path: executable.path,
+                detail: detail
+            )
+        }
+
+        log.debug("[install-steps] exec: \(executable.path) (\(arguments.count) args)")
     }
 
     private func executeCleanup(url: URL) throws {

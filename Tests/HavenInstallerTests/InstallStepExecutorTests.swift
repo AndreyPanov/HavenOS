@@ -403,6 +403,36 @@ final class InstallStepExecutorTests: XCTestCase {
         XCTAssertEqual(content, "port: 8080")
     }
 
+    // MARK: - exec
+
+    func testExecRunsExecutableWithArguments() throws {
+        let output = serviceRoot.appendingPathComponent("exec-created.txt").path
+        let context = TemplateContext(values: ["output": output])
+        let block = InstallBlock(steps: [
+            InstallStep(action: .exec, path: "/usr/bin/touch", arguments: ["${output}"])
+        ])
+
+        _ = try executor.execute(
+            block: block,
+            serviceRoot: serviceRoot,
+            templateContext: context,
+            allowedExternalPaths: ["/usr/bin/touch"]
+        )
+
+        XCTAssertTrue(fm.fileExists(atPath: output))
+    }
+
+    func testExecPathMustBeAllowed() throws {
+        let block = InstallBlock(steps: [
+            InstallStep(action: .exec, path: "/bin/echo", arguments: ["blocked"])
+        ])
+
+        XCTAssertThrowsError(try executor.execute(block: block, serviceRoot: serviceRoot)) { error in
+            let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+            XCTAssertTrue(message.contains("escapes root"))
+        }
+    }
+
     // MARK: - Empty Block
 
     func testEmptyBlockSucceeds() throws {

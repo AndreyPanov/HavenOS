@@ -22,6 +22,17 @@ final class FileBrowserSpecTests: XCTestCase {
         return try XCTUnwrap(result.registry)
     }
 
+    private func settings(rootPath: String? = "/Volumes/Files") -> [String: String] {
+        var values = [
+            "files_username": "haven",
+            "files_password": "secret-pass"
+        ]
+        if let rootPath {
+            values["root_path"] = rootPath
+        }
+        return values
+    }
+
     // MARK: - Spec Loading
 
     func testSpecLoadsWithoutIssues() throws {
@@ -48,7 +59,7 @@ final class FileBrowserSpecTests: XCTestCase {
         XCTAssertEqual(bundle.runtimeUnits, ["haven.unit.filebrowser"])
 
         // Settings
-        XCTAssertEqual(bundle.settings.count, 2)
+        XCTAssertEqual(bundle.settings.count, 4)
         let rootSetting = try XCTUnwrap(bundle.settings.first { $0.key == "root_path" })
         XCTAssertEqual(rootSetting.fieldType, .path)
         XCTAssertTrue(rootSetting.required)
@@ -57,6 +68,16 @@ final class FileBrowserSpecTests: XCTestCase {
         let portSetting = try XCTUnwrap(bundle.settings.first { $0.key == "port" })
         XCTAssertEqual(portSetting.fieldType, .integer)
         XCTAssertEqual(portSetting.defaultValue, "8080")
+
+        let usernameSetting = try XCTUnwrap(bundle.settings.first { $0.key == "files_username" })
+        XCTAssertEqual(usernameSetting.defaultValue, "haven")
+        XCTAssertTrue(usernameSetting.required)
+        XCTAssertTrue(usernameSetting.sensitive)
+
+        let passwordSetting = try XCTUnwrap(bundle.settings.first { $0.key == "files_password" })
+        XCTAssertNil(passwordSetting.defaultValue)
+        XCTAssertTrue(passwordSetting.required)
+        XCTAssertTrue(passwordSetting.sensitive)
 
         // Storage
         XCTAssertEqual(bundle.storage["data"]?.persistent, true)
@@ -91,10 +112,12 @@ final class FileBrowserSpecTests: XCTestCase {
         XCTAssertEqual(unit.directories["data"], "data")
         XCTAssertEqual(unit.directories["content"], "${root_path}")
 
-        // Install steps — minimal: just 2 mkdirs
-        XCTAssertEqual(unit.install?.steps.count, 2)
+        // Install steps initialize the database and managed account.
+        XCTAssertEqual(unit.install?.steps.count, 4)
         XCTAssertEqual(unit.install?.steps[0].action, .mkdir)
         XCTAssertEqual(unit.install?.steps[1].action, .mkdir)
+        XCTAssertEqual(unit.install?.steps[2].action, .exec)
+        XCTAssertEqual(unit.install?.steps[3].action, .exec)
 
         // No dependencies
         XCTAssertTrue(unit.dependencies.isEmpty)
@@ -112,12 +135,14 @@ final class FileBrowserSpecTests: XCTestCase {
         let plan = try Planner.planInstall(
             capabilityID: "haven.capability.filebrowser",
             registry: registry,
-            settings: ["root_path": "/Volumes/Files"],
+            settings: settings(),
             baseDirectory: URL(fileURLWithPath: "/tmp/haven-test")
         )
 
         let service = plan.service
         XCTAssertEqual(service.units.count, 1)
+        XCTAssertNil(service.resolvedSettings["files_username"])
+        XCTAssertNil(service.resolvedSettings["files_password"])
 
         let planned = service.units[0]
         let serviceRoot = "/tmp/haven-test/Services/haven.capability.filebrowser"
@@ -127,11 +152,13 @@ final class FileBrowserSpecTests: XCTestCase {
 
         // Launch args expanded
         XCTAssertEqual(planned.resolvedLaunchArguments, [
+            "--address", "0.0.0.0",
             "--port", "8080",
             "--root", "/Volumes/Files",
             "--database", "\(serviceRoot)/data/filebrowser.db",
-            "--noauth"
+            "--disableExec"
         ])
+        XCTAssertFalse(planned.resolvedLaunchArguments.contains("secret-pass"))
 
         // Directories resolved
         XCTAssertEqual(planned.resolvedDirectories["data"], "\(serviceRoot)/data")
@@ -147,16 +174,22 @@ final class FileBrowserSpecTests: XCTestCase {
         let plan = try Planner.planInstall(
             capabilityID: "haven.capability.filebrowser",
             registry: registry,
-            settings: ["root_path": "/Volumes/Files"],
+            settings: settings(),
             baseDirectory: URL(fileURLWithPath: "/tmp/haven-test")
         )
 
         let install = try XCTUnwrap(plan.service.units[0].resolvedInstall)
         let serviceRoot = "/tmp/haven-test/Services/haven.capability.filebrowser"
 
-        XCTAssertEqual(install.steps.count, 2)
+        XCTAssertEqual(install.steps.count, 4)
         XCTAssertEqual(install.steps[0].path, "\(serviceRoot)/data")
         XCTAssertEqual(install.steps[1].path, "/Volumes/Files")
+        XCTAssertEqual(install.steps[2].path, "${executable_path}")
+        XCTAssertEqual(install.steps[2].arguments?[0], "config")
+        XCTAssertEqual(install.steps[2].arguments?[1], "init")
+        XCTAssertEqual(install.steps[2].arguments?.contains("\(serviceRoot)/data/filebrowser.db"), true)
+        XCTAssertEqual(install.steps[3].arguments?.contains("haven"), true)
+        XCTAssertEqual(install.steps[3].arguments?.contains("secret-pass"), true)
     }
 
     func testDefaultRootPathExpandsTilde() throws {
@@ -165,7 +198,7 @@ final class FileBrowserSpecTests: XCTestCase {
         let plan = try Planner.planInstall(
             capabilityID: "haven.capability.filebrowser",
             registry: registry,
-            settings: [:],
+            settings: settings(rootPath: nil),
             baseDirectory: URL(fileURLWithPath: "/tmp/haven-test")
         )
 
@@ -180,7 +213,7 @@ final class FileBrowserSpecTests: XCTestCase {
         let plan = try Planner.planInstall(
             capabilityID: "haven.capability.filebrowser",
             registry: registry,
-            settings: ["root_path": "/Volumes/Files"],
+            settings: settings(),
             baseDirectory: URL(fileURLWithPath: "/tmp/haven-test")
         )
 

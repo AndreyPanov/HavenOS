@@ -30,18 +30,23 @@ public struct SettingField: Codable, Equatable, Sendable {
     /// Whether the user must supply a value.
     public let required: Bool
 
+    /// Whether this value should be omitted from persisted service state.
+    public let sensitive: Bool
+
     public init(
         key: String,
         label: String,
         fieldType: FieldType,
         defaultValue: String? = nil,
-        required: Bool = false
+        required: Bool = false,
+        sensitive: Bool = false
     ) {
         self.key = key
         self.label = label
         self.fieldType = fieldType
         self.defaultValue = defaultValue
         self.required = required
+        self.sensitive = sensitive
     }
 
     public init(from decoder: Decoder) throws {
@@ -51,6 +56,7 @@ public struct SettingField: Codable, Equatable, Sendable {
         fieldType = try c.decode(FieldType.self, forKey: .fieldType)
         defaultValue = try c.decodeIfPresent(String.self, forKey: .defaultValue)
         required = try c.decodeIfPresent(Bool.self, forKey: .required) ?? false
+        sensitive = try c.decodeIfPresent(Bool.self, forKey: .sensitive) ?? false
     }
 
     // MARK: - Validation

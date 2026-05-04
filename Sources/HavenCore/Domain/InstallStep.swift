@@ -24,6 +24,9 @@ public struct InstallStep: Codable, Equatable, Sendable {
         /// `path` is the variable name (e.g. `"api_key"`), `mode` is the encoding
         /// (`"hex"` or `"base64"`), `content` is the byte length as a string (e.g. `"32"`).
         case generateSecret
+        /// Execute a local binary without a shell.
+        /// `path` is the executable; `arguments` are passed as argv values.
+        case exec
         /// Remove a file or empty directory created during install.
         /// Used for post-install cleanup (e.g. removing downloaded archives).
         case cleanup
@@ -47,6 +50,9 @@ public struct InstallStep: Codable, Equatable, Sendable {
     /// For `generateSecret`, the byte length as a string (e.g. `"32"`).
     public let content: String?
 
+    /// Command-line arguments for `exec`. Supports `${var}` template expansion.
+    public let arguments: [String]?
+
     /// When `true`, skip this step if the target path already exists.
     /// Useful for `writeFile` and `generateSecret` to preserve existing
     /// config files and secrets across reinstalls/upgrades.
@@ -58,6 +64,7 @@ public struct InstallStep: Codable, Equatable, Sendable {
         source: String? = nil,
         mode: String? = nil,
         content: String? = nil,
+        arguments: [String]? = nil,
         ifNotExists: Bool = false
     ) {
         self.action = action
@@ -65,13 +72,14 @@ public struct InstallStep: Codable, Equatable, Sendable {
         self.source = source
         self.mode = mode
         self.content = content
+        self.arguments = arguments
         self.ifNotExists = ifNotExists
     }
 
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
-        case action, path, source, mode, content, ifNotExists
+        case action, path, source, mode, content, arguments, ifNotExists
     }
 
     public init(from decoder: Decoder) throws {
@@ -81,6 +89,7 @@ public struct InstallStep: Codable, Equatable, Sendable {
         source = try c.decodeIfPresent(String.self, forKey: .source)
         mode = try c.decodeIfPresent(String.self, forKey: .mode)
         content = try c.decodeIfPresent(String.self, forKey: .content)
+        arguments = try c.decodeIfPresent([String].self, forKey: .arguments)
         ifNotExists = try c.decodeIfPresent(Bool.self, forKey: .ifNotExists) ?? false
     }
 
@@ -106,7 +115,7 @@ public struct InstallStep: Codable, Equatable, Sendable {
             if let length = content.flatMap({ Int($0) }), length <= 0 {
                 throw ValidationError("InstallStep 'generateSecret' requires a positive byte length.")
             }
-        case .mkdir, .cleanup:
+        case .mkdir, .exec, .cleanup:
             break
         }
     }

@@ -53,6 +53,9 @@ public enum Planner {
             bundle: bundle,
             userSettings: settings
         )
+        let persistedSettings = resolvedSettings.filter { key, _ in
+            bundle.settings.first { $0.key == key }?.sensitive != true
+        }
 
         // 5. Directory layout
         let layout = ServiceDirectoryLayout(
@@ -154,7 +157,7 @@ public enum Planner {
             capability: capability,
             bundle: bundle,
             units: plannedUnits,
-            resolvedSettings: resolvedSettings,
+            resolvedSettings: persistedSettings,
             directoryLayout: layout,
             resolvedOnboarding: resolvedOnboarding,
             resolvedProvisions: resolvedProvisions

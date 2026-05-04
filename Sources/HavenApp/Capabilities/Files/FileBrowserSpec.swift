@@ -58,13 +58,15 @@ extension BuiltInCatalog {
                     label: "Managed username",
                     fieldType: .string,
                     defaultValue: "haven",
-                    required: true
+                    required: true,
+                    sensitive: true
                 ),
                 SettingField(
                     key: "files_password",
                     label: "Managed password",
                     fieldType: .string,
-                    required: true
+                    required: true,
+                    sensitive: true
                 ),
             ],
             onboarding: Onboarding(steps: [
@@ -104,8 +106,6 @@ extension BuiltInCatalog {
                 "--port", "${port}",
                 "--root", "${content_dir}",
                 "--database", "${data_dir}/filebrowser.db",
-                "--username", "${files_username}",
-                "--password", "${files_password}",
                 "--disableExec",
             ],
             healthcheck: Healthcheck(
@@ -134,6 +134,29 @@ extension BuiltInCatalog {
             install: InstallBlock(steps: [
                 InstallStep(action: .mkdir, path: "${data_dir}"),
                 InstallStep(action: .mkdir, path: "${content_dir}"),
+                InstallStep(
+                    action: .exec,
+                    path: "${executable_path}",
+                    arguments: [
+                        "config", "init",
+                        "--database", "${data_dir}/filebrowser.db",
+                        "--root", "${content_dir}",
+                        "--address", "0.0.0.0",
+                        "--port", "${port}",
+                        "--disableExec",
+                    ]
+                ),
+                InstallStep(
+                    action: .exec,
+                    path: "${executable_path}",
+                    arguments: [
+                        "users", "add",
+                        "${files_username}", "${files_password}",
+                        "--database", "${data_dir}/filebrowser.db",
+                        "--scope", ".",
+                        "--perm.admin",
+                    ]
+                ),
             ])
         )
 

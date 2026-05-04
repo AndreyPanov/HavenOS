@@ -137,7 +137,8 @@ extension StrictJSONDecoder {
     ]
 
     static let installStepKeys: Set<String> = [
-        "action", "path", "source", "mode", "content", "ifNotExists"
+        "action", "path", "source", "mode", "content", "arguments",
+        "ifNotExists"
     ]
 
     static let dependencyKeys: Set<String> = [

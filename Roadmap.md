@@ -1009,7 +1009,7 @@ Make Haven feel resident on macOS: closing the main window should not stop Haven
 
 ⸻
 
-📁 Phase 21 — Files ⬜ NEXT
+📁 Phase 21 — Files 🔄 ACTIVE
 
 🎯 Goal
 
@@ -1023,13 +1023,16 @@ Until then: keep scope intentionally small.
 
 🛠️ Implementation Sub-phases
 
-21.1 — Secure File Browser Foundation 🔄
+21.1 — Secure File Browser Foundation ✅ COMPLETE
 	•	Built-in File Browser spec using GitHub release artifact
 	•	No unauthenticated LAN access — Haven provisions managed credentials
+	•	File Browser database bootstrap creates the managed user before launchd starts the server
+	•	Credentials are omitted from launch arguments and sensitive planner settings are not persisted in service state
 	•	FilesFacade exposes roots, current folder, file items, and safe file actions
 	•	Native FilesHomeView: folder list, breadcrumb, open folder, new folder, rename, move to Trash
 	•	Device access section: server address, username, password copy/reveal, QR code
 	•	Backup scope includes the selected files root as user-visible content
+	•	Verified against File Browser v2.63.2 quick setup and login flow
 	•	Acceptance criteria:
 	  - User can add Files and get a native Files tab
 	  - User can browse the configured folder inside Haven
@@ -1037,7 +1040,7 @@ Until then: keep scope intentionally small.
 	  - File Browser is available for browser/device access with Haven-managed credentials
 	  - No `--noauth`, no terminal steps, no access outside selected roots
 
-21.2 — Multi-Root Files Access ⬜
+21.2 — Multi-Root Files Access ⬜ NEXT
 	•	Add/remove additional roots with a clear served-folder model
 	•	Keep native UI, File Browser device access, and backup scope in sync
 
@@ -1089,3 +1092,4 @@ Install → Start → Use (inside Haven)
 ⸻
 UPDATED 03.05.26 (Phase 19 App Updates added; Topbar moved to 20; Files moved to 21)
 UPDATED 04.05.26 (Phase 19 App Updates and Phase 20 Topbar complete; Phase 21 Files is next)
+UPDATED 04.05.26 (Phase 21.1 Secure File Browser Foundation complete; Phase 21.2 Multi-Root Files Access is next)
