@@ -122,6 +122,85 @@ struct FileBrowserFilesFacadeTests {
         }
     }
 
+    @Test("First run starts at account choice and managed choice advances to folder step")
+    @MainActor func managedSetupChoiceAdvancesToFolderStep() throws {
+        let root = try makeDirectory(named: "Root")
+        let capabilityID = "haven.capability.filebrowser.\(UUID().uuidString)"
+        let (manager, _, cleanup) = try makeServiceManager(
+            capabilityID: capabilityID,
+            resolvedSettings: ["root_path": root.path]
+        )
+        defer {
+            cleanup()
+            cleanupDefaults(for: capabilityID)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        manager.refresh()
+        let facade = FileBrowserFilesFacade(
+            capabilityID: capabilityID,
+            serviceManager: manager
+        )
+
+        #expect(facade.setupPhase == .awaitingAccountChoice)
+
+        facade.chooseManaged()
+
+        #expect(facade.isManagedByHaven)
+        #expect(facade.connectionState == .connected)
+        #expect(facade.setupPhase == .awaitingLibraryPath)
+    }
+
+    @Test("Confirming setup folder replaces initial root and completes setup")
+    @MainActor func confirmSetupFolderReplacesRoot() async throws {
+        let rootA = try makeDirectory(named: "RootA")
+        let rootB = try makeDirectory(named: "RootB")
+        let capabilityID = "haven.capability.filebrowser.\(UUID().uuidString)"
+        let (manager, layout, cleanup) = try makeServiceManager(
+            capabilityID: capabilityID,
+            resolvedSettings: ["root_path": rootA.path]
+        )
+        defer {
+            cleanup()
+            cleanupDefaults(for: capabilityID)
+            try? FileManager.default.removeItem(at: rootA)
+            try? FileManager.default.removeItem(at: rootB)
+        }
+
+        UserDefaults.standard.set("haven", forKey: "haven.filebrowser.username.\(capabilityID)")
+        UserDefaults.standard.set("secret", forKey: "haven.filebrowser.password.\(capabilityID)")
+        manager.refresh()
+        let facade = FileBrowserFilesFacade(
+            capabilityID: capabilityID,
+            serviceManager: manager
+        )
+        facade.setupPhase = .awaitingLibraryPath
+
+        try await facade.confirmSetupFolder(rootB.path)
+
+        #expect(facade.setupPhase == nil)
+        #expect(facade.connectionState == .connected)
+        #expect(facade.roots.map(\.path) == [rootB.path])
+        #expect(
+            manager.storedState(for: capabilityID)?
+                .resolvedSettings["root_path"] == rootB.path
+        )
+        #expect(
+            manager.storedState(for: capabilityID)?
+                .resolvedSettings["content_paths"] == rootB.path
+        )
+        #expect(
+            try FileManager.default.destinationOfSymbolicLink(
+                atPath: layout.data.appendingPathComponent("served-roots/RootB").path
+            ) == rootB.path
+        )
+        #expect(
+            UserDefaults.standard.bool(
+                forKey: "haven.filebrowser.setupComplete.\(capabilityID)"
+            )
+        )
+    }
+
     private func makeDirectory(named name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("haven-files-\(UUID().uuidString)")
@@ -131,6 +210,20 @@ struct FileBrowserFilesFacadeTests {
             withIntermediateDirectories: true
         )
         return url.standardizedFileURL
+    }
+
+    private func cleanupDefaults(for capabilityID: String) {
+        let defaults = UserDefaults.standard
+        for suffix in [
+            "username",
+            "password",
+            "managedUser",
+            "managedPass",
+            "customAccount",
+            "setupComplete",
+        ] {
+            defaults.removeObject(forKey: "haven.filebrowser.\(suffix).\(capabilityID)")
+        }
     }
 
     @MainActor

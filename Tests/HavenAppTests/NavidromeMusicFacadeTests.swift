@@ -312,14 +312,14 @@ struct NavidromeMusicFacadeTests {
         #expect(f.isManagedByHaven == true)
     }
 
-    @Test("continueSetupAfterLogin: clears setupPhase (no folder step)")
-    @MainActor func continueSetupAfterLoginClearsPhase() async {
+    @Test("continueSetupAfterLogin: transitions to folder step")
+    @MainActor func continueSetupAfterLoginShowsFolderStep() async {
         let (f, id) = makeFacade()
         defer { cleanupDefaults(for: id) }
 
         f.setupPhase = .awaitingAccountChoice
         f.continueSetupAfterLogin()
-        #expect(f.setupPhase == nil)
+        #expect(f.setupPhase == .awaitingLibraryPath)
     }
 
     @Test("disconnect clears setupPhase")

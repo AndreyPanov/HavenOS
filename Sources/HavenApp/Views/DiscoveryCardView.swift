@@ -101,7 +101,9 @@ struct CapabilityCardView: View {
                     }
                 } else {
                     Button("Add") {
-                        Task { await serviceManager.installService(capabilityID: plugin.id) }
+                        Task {
+                            await serviceManager.installService(capabilityID: plugin.id)
+                        }
                     }
                     .buttonStyle(.glassProminent)
                     .controlSize(.small)

@@ -227,8 +227,9 @@ struct MusicHomeView: View {
                 showingConnectSheet = true
             },
             onPickFolder: {},
-            onConfirmFolder: { _ in },
-            showFolderStep: false  // Navidrome uses configured music_path
+            onConfirmFolder: { path in
+                Task { try? await facade.confirmSetupFolder(path) }
+            }
         )
     }
 

@@ -34,15 +34,16 @@ package final class FileBrowserFilesFacade: FilesFacade {
     package var scanErrors: [String] { [] }
 
     package var setupState: BackendSetupState {
+        if setupPhase != nil { return .settingUp }
         switch connectionState {
         case .connected:
-            .ready
+            return .ready
         case .connecting:
-            .settingUp
+            return .settingUp
         case .disconnected:
-            .needsSetup(message: "Connect to see browser access credentials")
+            return .needsSetup(message: "Connect to see browser access credentials")
         case .failed(let message):
-            .failed(message)
+            return .failed(message)
         }
     }
 
@@ -123,8 +124,13 @@ package final class FileBrowserFilesFacade: FilesFacade {
         persistRootPathsIfNeeded(roots.map(\.path))
         syncServedRoots()
 
-        if UserDefaults.standard.string(forKey: usernameKey) != nil,
-           UserDefaults.standard.string(forKey: passwordKey) != nil {
+        if state == .ready && !isSetupComplete && setupPhase == nil {
+            setupPhase = .awaitingAccountChoice
+        }
+
+        let hasCredentials = UserDefaults.standard.string(forKey: usernameKey) != nil
+            && UserDefaults.standard.string(forKey: passwordKey) != nil
+        if hasCredentials && (isSetupComplete || setupPhase == .awaitingLibraryPath) {
             connectionState = .connected
             autoConnectExhausted = false
         } else {
@@ -247,12 +253,55 @@ package final class FileBrowserFilesFacade: FilesFacade {
     // MARK: - Auth
 
     package func createAccount(username: String, password: String) async throws {
+        try await addBackendUser(username: username, password: password)
         saveCredentials(username: username, password: password, managed: false)
         connectionState = .connected
     }
 
     package func connect(username: String, password: String) async throws {
         saveCredentials(username: username, password: password, managed: false)
+        connectionState = .connected
+    }
+
+    package func chooseManaged() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = true
+        setupPhase = .creatingAccount
+
+        let username = UserDefaults.standard.string(forKey: managedUserKey) ?? "haven"
+        let password = UserDefaults.standard.string(forKey: managedPassKey)
+            ?? Self.generatePassword()
+        saveCredentials(username: username, password: password, managed: true)
+        connectionState = .connected
+        setupPhase = .awaitingLibraryPath
+    }
+
+    package func chooseCustom() {
+        guard setupPhase == .awaitingAccountChoice else { return }
+        isManagedByHaven = false
+    }
+
+    package func continueSetupAfterLogin() {
+        guard connectionState == .connected else { return }
+        if setupPhase == .awaitingAccountChoice || setupPhase == nil {
+            setupPhase = .awaitingLibraryPath
+        }
+    }
+
+    package func confirmSetupFolder(_ path: String) async throws {
+        guard setupPhase == .awaitingLibraryPath else { return }
+        setupPhase = .creatingLibrary
+        let normalizedPath = try normalizedDirectoryPath(path)
+        persistRootPaths([normalizedPath])
+        roots = makeRoots(from: [normalizedPath])
+        syncServedRoots()
+
+        if let root = roots.first {
+            setFolder(root: root, path: root.path)
+        }
+
+        UserDefaults.standard.set(true, forKey: setupCompleteKey)
+        setupPhase = nil
         connectionState = .connected
     }
 
@@ -563,11 +612,94 @@ package final class FileBrowserFilesFacade: FilesFacade {
         }
     }
 
+    private func addBackendUser(username: String, password: String) async throws {
+        guard let executableURL = fileBrowserExecutableURL,
+              let databaseURL = databaseURL else {
+            return
+        }
+
+        try await Task.detached {
+            let process = Process()
+            process.executableURL = executableURL
+            process.arguments = [
+                "users", "add",
+                username, password,
+                "--database", databaseURL.path,
+                "--scope", ".",
+                "--perm.admin",
+            ]
+
+            let pipe = Pipe()
+            process.standardError = pipe
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let message = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                throw FilesFacadeError.accountCreationFailed(
+                    message?.isEmpty == false ? message! : "Could not create File Browser account."
+                )
+            }
+        }.value
+    }
+
+    private var fileBrowserExecutableURL: URL? {
+        guard let artifact = serviceManager?.storedState(for: capabilityID)?
+            .artifactInfo
+            .first(where: { $0.unitID == "haven.unit.filebrowser" }) else {
+            return nil
+        }
+
+        let entrypoint = artifact.entrypoint ?? "filebrowser"
+        if entrypoint.hasPrefix("/") {
+            return URL(fileURLWithPath: entrypoint)
+        }
+
+        let relative = entrypoint.hasPrefix("./")
+            ? String(entrypoint.dropFirst(2))
+            : entrypoint
+        return URL(fileURLWithPath: artifact.installDirectory)
+            .appendingPathComponent(relative)
+    }
+
+    private var databaseURL: URL? {
+        serviceManager?.storedState(for: capabilityID)?
+            .directoryLayout
+            .data
+            .appendingPathComponent("filebrowser.db")
+    }
+
+    private var isSetupComplete: Bool {
+        UserDefaults.standard.bool(forKey: setupCompleteKey)
+    }
+
     private var usernameKey: String { "haven.filebrowser.username.\(capabilityID)" }
     private var passwordKey: String { "haven.filebrowser.password.\(capabilityID)" }
     private var managedUserKey: String { "haven.filebrowser.managedUser.\(capabilityID)" }
     private var managedPassKey: String { "haven.filebrowser.managedPass.\(capabilityID)" }
     private var customAccountKey: String { "haven.filebrowser.customAccount.\(capabilityID)" }
+    private var setupCompleteKey: String { "haven.filebrowser.setupComplete.\(capabilityID)" }
+
+    private static func generatePassword() -> String {
+        let letters = "abcdefghijklmnopqrstuvwxyz"
+        let upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let digits = "0123456789"
+        let special = "!@#$%^&*"
+        var chars: [Character] = [
+            letters.randomElement()!,
+            upper.randomElement()!,
+            digits.randomElement()!,
+            special.randomElement()!,
+        ]
+        let all = letters + upper + digits + special
+        for _ in 0..<12 {
+            chars.append(all.randomElement()!)
+        }
+        chars.shuffle()
+        return String(chars)
+    }
 }
 
 private enum FilesFacadeError: LocalizedError {
@@ -578,6 +710,7 @@ private enum FilesFacadeError: LocalizedError {
     case duplicateRoot
     case lastRoot
     case outsideRoot
+    case accountCreationFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -595,6 +728,8 @@ private enum FilesFacadeError: LocalizedError {
             "Files needs at least one folder."
         case .outsideRoot:
             "That item is outside the selected Files folder."
+        case .accountCreationFailed(let message):
+            message
         }
     }
 }

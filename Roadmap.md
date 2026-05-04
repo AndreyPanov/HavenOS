@@ -887,7 +887,7 @@ Every capability should have the same setup flow, the same folder management, an
 	•	SetupWizardView is reusable and drives Books, Music, and Movies progressive setup
 	•	Managed vs custom account choice exists for Books, Music, and Movies
 	•	Wizard steps supported: Server ready → Account choice → Account created → Choose folder → Scanning
-	•	Follow-up: move first-install content folder selection before service install where runtime config requires it
+	•	Music first-run folder selection now runs in the shared setup wizard instead of being skipped
 
 17.2 — Multi-Folder for All ✅
 	•	BooksLibrary and MoviesLibrary have libraryPaths: [String]
@@ -1043,6 +1043,7 @@ Until then: keep scope intentionally small.
 21.2 — Multi-Root Files Access ✅ COMPLETE
 	•	Add/remove additional roots with a clear served-folder model
 	•	Keep native UI, File Browser device access, and backup scope in sync
+	•	Files setup wizard now asks managed vs custom account first, then prompts for the first served folder
 	•	FilesFacade supports addRoot/removeRoot and persists the unified `content_paths` list
 	•	Native Files UI exposes root switching, add-folder, and remove-folder actions
 	•	File Browser serves a Haven-managed `data/served-roots` directory with one symlink per selected root
@@ -1099,3 +1100,4 @@ UPDATED 03.05.26 (Phase 19 App Updates added; Topbar moved to 20; Files moved to
 UPDATED 04.05.26 (Phase 19 App Updates and Phase 20 Topbar complete; Phase 21 Files is next)
 UPDATED 04.05.26 (Phase 21.1 Secure File Browser Foundation complete; Phase 21.2 Multi-Root Files Access is next)
 UPDATED 04.05.26 (Phase 21.2 Multi-Root Files Access complete; Phase 21.3 Sharing & Recovery is next)
+UPDATED 04.05.26 (Files and Music folder/account setup aligned with the shared setup wizard; Phase 21.3 remains next)

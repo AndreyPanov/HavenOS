@@ -16,12 +16,15 @@ struct SetupWizardView: View {
     var onPickFolder: () -> Void
     var onConfirmFolder: (String) -> Void
     var showFolderStep: Bool = true
+    var setupTitle: String?
+    var folderTitle: String?
+    var folderDescription: String?
 
     @State private var selectedPath = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Setting up your \(contentLabel.lowercased()) library")
+            Text(setupTitle ?? "Setting up your \(contentLabel.lowercased()) library")
                 .font(.headline)
             Text("Haven is configuring everything for you.")
                 .font(.subheadline)
@@ -76,7 +79,7 @@ struct SetupWizardView: View {
                     stepCard(
                         icon: phase == .awaitingLibraryPath ? "folder.badge.questionmark" : "checkmark.circle.fill",
                         iconColor: phase == .awaitingLibraryPath ? .blue : .green,
-                        title: "Where is your \(contentLabel.lowercased())?",
+                        title: folderTitle ?? "Where is your \(contentLabel.lowercased())?",
                         completed: phase != .awaitingLibraryPath
                     ) {
                         if phase == .awaitingLibraryPath {
@@ -154,7 +157,10 @@ struct SetupWizardView: View {
 
     private var folderPickerContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Choose the folder where your \(contentLabel.lowercased()) files are stored.")
+            Text(
+                folderDescription
+                    ?? "Choose the folder where your \(contentLabel.lowercased()) files are stored."
+            )
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

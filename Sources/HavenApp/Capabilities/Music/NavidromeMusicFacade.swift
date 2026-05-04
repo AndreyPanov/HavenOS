@@ -263,6 +263,9 @@ package final class NavidromeMusicFacade: MusicFacade {
             await self.fetchLibraryStats()
             self.currentScanStatus = .idle
             self.updateLibrary()
+            if case .scanning = self.setupPhase {
+                self.setupPhase = nil
+            }
             log.info("Rescan finished")
         }
     }
@@ -340,11 +343,8 @@ package final class NavidromeMusicFacade: MusicFacade {
                 }
             }
 
-            // Navidrome uses a configured music_path from the spec,
-            // so we skip the folder picker and go straight to scanning.
-            setupPhase = nil
-            await fetchLibraryStats()
-            log.info("Setup wizard: complete")
+            setupPhase = .awaitingLibraryPath
+            log.info("Setup wizard: awaiting library path")
         }
     }
 
@@ -357,8 +357,54 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     /// Called after manual connect() to finish setup.
     package func continueSetupAfterLogin() {
-        setupPhase = nil
-        log.info("Setup wizard: manual login succeeded, setup complete")
+        if setupPhase == .awaitingAccountChoice || setupPhase == nil {
+            setupPhase = .awaitingLibraryPath
+            log.info("Setup wizard: manual login succeeded, awaiting library path")
+        }
+    }
+
+    /// User confirmed a music folder during setup.
+    package func confirmSetupFolder(_ path: String) async throws {
+        guard setupPhase == .awaitingLibraryPath else { return }
+        let expandedPath = (path as NSString).expandingTildeInPath
+        guard !expandedPath.isEmpty else {
+            throw FacadeError.adapterError("Choose a music folder.")
+        }
+
+        setupPhase = .creatingLibrary
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: expandedPath) {
+            try fm.createDirectory(atPath: expandedPath, withIntermediateDirectories: true)
+        }
+
+        if let client = apiClient, let token = authToken {
+            do {
+                try await ensureLibraryExists(
+                    path: expandedPath,
+                    client: client,
+                    token: token
+                )
+            } catch {
+                setupPhase = .awaitingLibraryPath
+                throw error
+            }
+        }
+
+        saveLibraryPaths([expandedPath])
+        updateLibrary()
+
+        guard connectionState == .connected else {
+            setupPhase = nil
+            return
+        }
+
+        setupPhase = .scanning(progress: nil)
+        do {
+            try await rescan()
+        } catch {
+            setupPhase = nil
+            throw error
+        }
     }
 
     /// Try all saved credential methods. Returns true if connected.
@@ -416,6 +462,26 @@ package final class NavidromeMusicFacade: MusicFacade {
         } catch {
             return false
         }
+    }
+
+    private func ensureLibraryExists(
+        path: String,
+        client: NavidromeAPIClient,
+        token: String
+    ) async throws {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        let libraries = try await client.getLibraries(token: token)
+        let hasLibrary = libraries.contains { library in
+            guard let libraryPath = library.path else { return false }
+            return (libraryPath as NSString).expandingTildeInPath == expandedPath
+        }
+        guard !hasLibrary else { return }
+
+        try await client.createLibrary(
+            name: libraryName(for: expandedPath),
+            path: expandedPath,
+            token: token
+        )
     }
 
     private func generatePassword() -> String {

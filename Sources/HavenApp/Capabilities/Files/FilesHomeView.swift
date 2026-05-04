@@ -8,6 +8,7 @@ struct FilesHomeView: View {
 
     @State private var activeSheet: ActiveSheet?
     @State private var pendingTrashItem: FilesItem?
+    @State private var showingConnectSheet = false
     @State private var lastError: String?
 
     private enum ActiveSheet: Identifiable {
@@ -38,6 +39,21 @@ struct FilesHomeView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 advancedMenu
+            }
+        }
+        .sheet(isPresented: $showingConnectSheet) {
+            ConnectSheet(
+                facade: facade,
+                icon: "folder",
+                libraryLabel: "file access"
+            )
+        }
+        .onChange(of: showingConnectSheet) {
+            if !showingConnectSheet {
+                facade.refresh()
+                if facade.connectionState == .connected {
+                    facade.continueSetupAfterLogin()
+                }
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -159,7 +175,11 @@ struct FilesHomeView: View {
             stoppedView
         case .starting:
             startingView
-        case .needsSetup, .settingUp, .setupWizard:
+        case .setupWizard(let phase):
+            setupWizardView(phase: phase)
+        case .needsSetup:
+            needsSetupView
+        case .settingUp:
             settingUpView
         case .empty, .ready, .updating:
             readyView
@@ -205,6 +225,56 @@ struct FilesHomeView: View {
             Text("Preparing file access…")
                 .font(.headline)
         }
+    }
+
+    private var needsSetupView: some View {
+        centeredCard {
+            Image(systemName: "person.crop.circle.badge.questionmark")
+                .font(.system(size: 48))
+                .foregroundStyle(.tertiary)
+            Text("Connect to Files")
+                .font(.headline)
+            Text("Sign in to show browser access credentials.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button("Sign In") {
+                showingConnectSheet = true
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+        }
+    }
+
+    private func setupWizardView(phase: SetupPhase) -> some View {
+        SetupWizardView(
+            phase: phase,
+            contentLabel: "Files",
+            icon: "folder",
+            facade: facade,
+            onChooseManaged: {
+                facade.chooseManaged()
+            },
+            onChooseCustom: {
+                facade.chooseCustom()
+                showingConnectSheet = true
+            },
+            onPickFolder: {},
+            onConfirmFolder: { path in
+                Task {
+                    do {
+                        try await facade.confirmSetupFolder(path)
+                        lastError = nil
+                    } catch {
+                        lastError = error.localizedDescription
+                    }
+                }
+            },
+            setupTitle: "Setting up file access",
+            folderTitle: "Which folder should Files serve?",
+            folderDescription: "Choose the folder Haven should expose in Files."
+        )
     }
 
     private var readyView: some View {
@@ -523,23 +593,35 @@ struct FilesHomeView: View {
     private var resolvedState: CapabilityUIState {
         switch facade.state {
         case .idle:
-            .stopped
+            return .stopped
         case .starting:
-            .starting
+            return .starting
         case .error(let msg):
-            .error(msg)
+            return .error(msg)
         case .degraded:
-            .error("Files is running with issues")
+            return .error("Files is running with issues")
         case .ready:
+            if let phase = facade.setupPhase {
+                return .setupWizard(phase)
+            }
+
+            if facade.isManagedByHaven,
+               (facade.isAutoConnecting || facade.connectionState == .connecting) {
+                return .settingUp
+            }
+            if facade.isManagedByHaven, facade.autoConnectExhausted {
+                return .error("Couldn’t connect automatically — try signing in manually")
+            }
+
             switch facade.setupState {
             case .ready:
-                facade.folderState.items.isEmpty ? .empty : .ready
+                return facade.folderState.items.isEmpty ? .empty : .ready
             case .settingUp:
-                .settingUp
+                return .settingUp
             case .needsSetup:
-                .needsSetup
+                return .needsSetup
             case .failed(let msg):
-                .error(msg)
+                return .error(msg)
             }
         }
     }
