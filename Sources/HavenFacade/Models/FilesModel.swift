@@ -18,6 +18,57 @@ public struct FilesRoot: Sendable, Equatable, Identifiable {
     }
 }
 
+/// A user-facing file or folder item inside a configured Files root.
+public struct FilesItem: Sendable, Equatable, Identifiable {
+    public enum Kind: String, Sendable, Equatable {
+        case folder
+        case file
+    }
+
+    public let id: String
+    public let name: String
+    public let path: String
+    public let kind: Kind
+    public let byteCount: Int64?
+    public let modifiedAt: Date?
+
+    public init(
+        id: String? = nil,
+        name: String,
+        path: String,
+        kind: Kind,
+        byteCount: Int64? = nil,
+        modifiedAt: Date? = nil
+    ) {
+        self.id = id ?? path
+        self.name = name
+        self.path = path
+        self.kind = kind
+        self.byteCount = byteCount
+        self.modifiedAt = modifiedAt
+    }
+}
+
+/// Current native browsing state for a Files capability.
+public struct FilesFolderState: Sendable, Equatable {
+    public let root: FilesRoot?
+    public let currentPath: String?
+    public let items: [FilesItem]
+    public let errorMessage: String?
+
+    public init(
+        root: FilesRoot?,
+        currentPath: String?,
+        items: [FilesItem] = [],
+        errorMessage: String? = nil
+    ) {
+        self.root = root
+        self.currentPath = currentPath
+        self.items = items
+        self.errorMessage = errorMessage
+    }
+}
+
 // MARK: - Facade Protocol
 
 /// Facade for file management capabilities.
@@ -26,10 +77,31 @@ public struct FilesRoot: Sendable, Equatable, Identifiable {
 /// (e.g. FileBrowser). The UI programs against this protocol
 /// and never references the backend directly.
 @MainActor
-public protocol FilesFacade: CapabilityFacade {
+public protocol FilesFacade: ConnectableFacade {
     /// Configured root directories.
     var roots: [FilesRoot] { get }
 
-    /// Set the root directory for file browsing.
-    func setRoot(_ path: String) async throws
+    /// Current native browsing state.
+    var folderState: FilesFolderState { get }
+
+    /// Open the given root in the native browser.
+    func openRoot(_ root: FilesRoot) async
+
+    /// Open a child folder in the native browser.
+    func openFolder(_ item: FilesItem) async
+
+    /// Navigate to the parent folder, if still inside the selected root.
+    func navigateUp() async
+
+    /// Refresh the current folder listing.
+    func refreshItems() async
+
+    /// Create a folder in the current directory.
+    func createFolder(named name: String) async throws
+
+    /// Rename a file or folder in place.
+    func rename(_ item: FilesItem, to newName: String) async throws
+
+    /// Move a file or folder to the macOS Trash.
+    func moveToTrash(_ item: FilesItem) async throws
 }

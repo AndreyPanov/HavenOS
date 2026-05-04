@@ -130,6 +130,7 @@ package final class ServiceManager {
             if f is any BooksFacade { return "Books" }
             if f is any MusicFacade { return "Music" }
             if f is any MoviesFacade { return "Movies" }
+            if f is any FilesFacade { return "Files" }
         }
         return service.name
     }
@@ -323,6 +324,8 @@ package final class ServiceManager {
             "haven.navidrome."
         case "haven.capability.jellyfin":
             "haven.jellyfin."
+        case "haven.capability.filebrowser":
+            "haven.filebrowser."
         default:
             nil
         }
@@ -354,6 +357,9 @@ package final class ServiceManager {
         }
         adapterRegistry.register(capabilityID: "haven.capability.jellyfin") { capID, sm in
             JellyfinMoviesFacade(capabilityID: capID, serviceManager: sm)
+        }
+        adapterRegistry.register(capabilityID: "haven.capability.filebrowser") { capID, sm in
+            FileBrowserFilesFacade(capabilityID: capID, serviceManager: sm)
         }
 
         log.info("Initialized with base path: \(basePath.path)")
@@ -418,6 +424,47 @@ package final class ServiceManager {
 
     // MARK: - Lifecycle Actions
 
+    private func installSettings(for capabilityID: String) -> [String: String] {
+        guard capabilityID == "haven.capability.filebrowser" else { return [:] }
+
+        let username = UserDefaults.standard.string(
+            forKey: "haven.filebrowser.managedUser.\(capabilityID)"
+        ) ?? "haven"
+        let password = UserDefaults.standard.string(
+            forKey: "haven.filebrowser.managedPass.\(capabilityID)"
+        ) ?? Self.generateManagedPassword()
+
+        UserDefaults.standard.set(username, forKey: "haven.filebrowser.username.\(capabilityID)")
+        UserDefaults.standard.set(password, forKey: "haven.filebrowser.password.\(capabilityID)")
+        UserDefaults.standard.set(username, forKey: "haven.filebrowser.managedUser.\(capabilityID)")
+        UserDefaults.standard.set(password, forKey: "haven.filebrowser.managedPass.\(capabilityID)")
+        UserDefaults.standard.set(false, forKey: "haven.filebrowser.customAccount.\(capabilityID)")
+
+        return [
+            "files_username": username,
+            "files_password": password,
+        ]
+    }
+
+    private static func generateManagedPassword() -> String {
+        let letters = "abcdefghijklmnopqrstuvwxyz"
+        let upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let digits = "0123456789"
+        let special = "!@#$%^&*"
+        var chars: [Character] = [
+            letters.randomElement()!,
+            upper.randomElement()!,
+            digits.randomElement()!,
+            special.randomElement()!,
+        ]
+        let all = letters + upper + digits + special
+        for _ in 0..<16 {
+            chars.append(all.randomElement()!)
+        }
+        chars.shuffle()
+        return String(chars)
+    }
+
     /// Install a service by capability ID. Runs the executor on a background thread.
     func installService(capabilityID: String) async {
         guard let registry = self.registry else {
@@ -438,6 +485,7 @@ package final class ServiceManager {
         }
 
         let executor = self.executor
+        let installSettings = installSettings(for: capabilityID)
         let progressBox = Mutex<String?>(nil)
         let resultBox = Mutex<Result<StoredServiceState, Error>?>(nil)
 
@@ -446,6 +494,7 @@ package final class ServiceManager {
                 let state = try executor.install(
                     capabilityID: capabilityID,
                     registry: registry,
+                    settings: installSettings,
                     progress: { message in
                         progressBox.withLock { $0 = message }
                     }
@@ -477,6 +526,7 @@ package final class ServiceManager {
         case .failure(let error):
             log.error("Install failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
+            clearFacadeCredentials(for: capabilityID)
         }
     }
 
@@ -676,7 +726,8 @@ package final class ServiceManager {
     /// Remove all UserDefaults keys associated with a facade's credentials.
     private func clearFacadeCredentials(for capabilityID: String) {
         let prefixes = [
-            "haven.kavita.", "haven.navidrome.", "haven.jellyfin."
+            "haven.kavita.", "haven.navidrome.", "haven.jellyfin.",
+            "haven.filebrowser.",
         ]
         let defaults = UserDefaults.standard
         for prefix in prefixes {
@@ -936,11 +987,13 @@ package final class ServiceManager {
             "haven.capability.kavita",
             "haven.capability.navidrome",
             "haven.capability.jellyfin",
+            "haven.capability.filebrowser",
         ]
         let userFacingNames: [String: String] = [
             "haven.capability.kavita": "Books",
             "haven.capability.navidrome": "Music",
             "haven.capability.jellyfin": "Movies",
+            "haven.capability.filebrowser": "Files",
         ]
 
         discoverablePlugins = catalog

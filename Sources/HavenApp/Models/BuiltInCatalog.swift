@@ -12,6 +12,7 @@ enum BuiltInCatalog {
         kavita,
         navidrome,
         jellyfin,
+        filebrowser,
     ]
 
     /// Build a SpecRegistry from built-in entries alone.

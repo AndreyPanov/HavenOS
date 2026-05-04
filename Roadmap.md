@@ -1021,6 +1021,30 @@ Until then: keep scope intentionally small.
 	•	FileBrowserAdapter: config mapping, CLI/start control
 	•	Native file browsing UI, folder selection
 
+🛠️ Implementation Sub-phases
+
+21.1 — Secure File Browser Foundation 🔄
+	•	Built-in File Browser spec using GitHub release artifact
+	•	No unauthenticated LAN access — Haven provisions managed credentials
+	•	FilesFacade exposes roots, current folder, file items, and safe file actions
+	•	Native FilesHomeView: folder list, breadcrumb, open folder, new folder, rename, move to Trash
+	•	Device access section: server address, username, password copy/reveal, QR code
+	•	Backup scope includes the selected files root as user-visible content
+	•	Acceptance criteria:
+	  - User can add Files and get a native Files tab
+	  - User can browse the configured folder inside Haven
+	  - User can create folders, rename items, and move items to Trash
+	  - File Browser is available for browser/device access with Haven-managed credentials
+	  - No `--noauth`, no terminal steps, no access outside selected roots
+
+21.2 — Multi-Root Files Access ⬜
+	•	Add/remove additional roots with a clear served-folder model
+	•	Keep native UI, File Browser device access, and backup scope in sync
+
+21.3 — Sharing & Recovery ⬜
+	•	Explicit local-network sharing UX
+	•	Restore/rollback path once snapshot recovery exists
+
 ⸻
 
 🧠 Strategic Evolution

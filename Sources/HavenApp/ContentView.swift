@@ -113,6 +113,8 @@ package struct ContentView: View {
             MusicHomeView(facade: facade)
         } else if let facade = serviceManager.facade(for: id) as? any MoviesFacade {
             MoviesHomeView(facade: facade)
+        } else if let facade = serviceManager.facade(for: id) as? any FilesFacade {
+            FilesHomeView(facade: facade)
         } else if serviceManager.facade(for: id) != nil {
             ServiceDetailView(serviceID: id)
         } else {

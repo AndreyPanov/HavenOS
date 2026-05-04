@@ -58,6 +58,15 @@ struct SettingsView: View {
                 )
             }
 
+            if let filesFacade = filesFacade {
+                capabilityLibrarySection(
+                    title: "Files Access",
+                    facade: filesFacade,
+                    icon: "folder",
+                    libraryLabel: "file access"
+                )
+            }
+
             Section("Advanced") {
                 // Catalog
                 LabeledContent("Catalog Folder") {
@@ -161,6 +170,11 @@ struct SettingsView: View {
     /// Returns the Movies facade if installed.
     private var moviesFacade: (any MoviesFacade)? {
         serviceManager.facade(for: "haven.capability.jellyfin") as? any MoviesFacade
+    }
+
+    /// Returns the Files facade if installed.
+    private var filesFacade: (any FilesFacade)? {
+        serviceManager.facade(for: "haven.capability.filebrowser") as? any FilesFacade
     }
 
     private func capabilityLibrarySection(
