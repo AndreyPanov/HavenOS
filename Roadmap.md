@@ -87,10 +87,11 @@ Phase	Focus	Outcome	Status
 14.5	Platform Hardening	Shared protocols, zero downcasts, lifecycle tests	✅ DONE
 15	Movies (Jellyfin)	Third capability — video streaming	✅ DONE
 16	Backup & Sync	Trust milestone — capability-aware backup	✅ DONE
-17	Smart Home (Home Assistant)	Expand to home automation	⬜ Not started
-18	Service Updates	Version discovery + safe atomic updates	⬜ Not started
-19	macOS Topbar Menu	Always-present menu bar control surface	🔶 In progress
-20	Files	Basic file access (deferred)	⬜ Not started
+17	Consistency	Unified setup, folder, and UI patterns	🔄 Shared components remaining
+18	Service Updates	Version discovery + safe atomic updates	✅ DONE
+19	Haven App Updates	Sparkle-based app update path	✅ DONE
+20	macOS Topbar Menu	Always-present menu bar control surface	✅ DONE
+21	Files	Basic file access capability	⬜ NEXT
 
 
 ⸻
@@ -959,7 +960,7 @@ Critical rule: Never leave partial state.
 
 ⸻
 
-🚀 Phase 19 — Haven App Updates
+✅ Phase 19 — Haven App Updates
 
 🎯 Goal
 
@@ -982,7 +983,7 @@ Let installed users receive new Haven releases from inside the app instead of ma
 
 ⸻
 
-🖥️ Phase 20 — macOS Topbar Menu
+✅ Phase 20 — macOS Topbar Menu
 
 🎯 Goal
 
@@ -1008,7 +1009,7 @@ Make Haven feel resident on macOS: closing the main window should not stop Haven
 
 ⸻
 
-📁 Phase 21 — Files
+📁 Phase 21 — Files ⬜ NEXT
 
 🎯 Goal
 
@@ -1034,17 +1035,18 @@ Capability	Engine	Protocol	Status
 Books	Kavita	OPDS	✅ Complete
 Music	Navidrome	Subsonic	✅ Complete
 Movies	Jellyfin	DLNA / HTTP	✅ Complete
-Files	File Browser	HTTP	⬜ Deferred
+Files	File Browser	HTTP	⬜ Next
 
 Execution Strategy
 
-Books → Music → Movies → Backup → Service Updates → App Updates → Topbar → Files
+Completed: Books → Music → Movies → Backup → Service Updates → App Updates → Topbar
+Next: Files
 Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
 Music validated: Haven can scale the pattern.
 Movies validated: Haven is a media platform.
-Backup will validate: Haven can be trusted long-term.
+Backup validated: Haven can be trusted long-term.
 
 ⸻
 
@@ -1062,3 +1064,4 @@ Install → Start → Use (inside Haven)
 
 ⸻
 UPDATED 03.05.26 (Phase 19 App Updates added; Topbar moved to 20; Files moved to 21)
+UPDATED 04.05.26 (Phase 19 App Updates and Phase 20 Topbar complete; Phase 21 Files is next)
