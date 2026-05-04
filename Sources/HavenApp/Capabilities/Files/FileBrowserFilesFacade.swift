@@ -120,6 +120,8 @@ package final class FileBrowserFilesFacade: FilesFacade {
         advancedURL = result.advancedURL
         port = result.service?.port
         roots = loadRoots()
+        persistRootPathsIfNeeded(roots.map(\.path))
+        syncServedRoots()
 
         if UserDefaults.standard.string(forKey: usernameKey) != nil,
            UserDefaults.standard.string(forKey: passwordKey) != nil {
@@ -129,10 +131,13 @@ package final class FileBrowserFilesFacade: FilesFacade {
             connectionState = .disconnected
         }
 
-        if folderState.root == nil || folderState.currentPath == nil {
-            setFolder(root: roots.first, path: roots.first?.path)
+        if let currentRoot = folderState.root,
+           let refreshedRoot = roots.first(where: { $0.path == currentRoot.path }),
+           let currentPath = folderState.currentPath,
+           isPath(currentPath, inside: refreshedRoot.path) {
+            setFolder(root: refreshedRoot, path: currentPath)
         } else {
-            reloadCurrentFolder()
+            setFolder(root: roots.first, path: roots.first?.path)
         }
     }
 
@@ -140,6 +145,42 @@ package final class FileBrowserFilesFacade: FilesFacade {
 
     package func openRoot(_ root: FilesRoot) async {
         setFolder(root: root, path: root.path)
+    }
+
+    package func addRoot(path: String) async throws {
+        let normalizedPath = try normalizedDirectoryPath(path)
+        var paths = roots.map(\.path)
+        guard !paths.contains(normalizedPath) else {
+            throw FilesFacadeError.duplicateRoot
+        }
+        paths.append(normalizedPath)
+        persistRootPaths(paths)
+        roots = makeRoots(from: paths)
+        syncServedRoots()
+
+        if let root = roots.first(where: { $0.path == normalizedPath }) {
+            setFolder(root: root, path: root.path)
+        }
+    }
+
+    package func removeRoot(_ root: FilesRoot) async throws {
+        guard roots.count > 1 else {
+            throw FilesFacadeError.lastRoot
+        }
+        let normalizedPath = URL(fileURLWithPath: root.path).standardizedFileURL.path
+        let paths = roots.map(\.path).filter { $0 != normalizedPath }
+        guard paths.count != roots.count else { return }
+
+        persistRootPaths(paths)
+        roots = makeRoots(from: paths)
+        syncServedRoots()
+
+        if folderState.root?.path == normalizedPath {
+            setFolder(root: roots.first, path: roots.first?.path)
+        } else if let currentRoot = folderState.root,
+                  let refreshedRoot = roots.first(where: { $0.path == currentRoot.path }) {
+            setFolder(root: refreshedRoot, path: folderState.currentPath)
+        }
     }
 
     package func openFolder(_ item: FilesItem) async {
@@ -264,12 +305,170 @@ package final class FileBrowserFilesFacade: FilesFacade {
             return []
         }
 
-        let rawPath = state.resolvedSettings["root_path"]
-            ?? state.resolvedSettings["content_paths"]?.split(separator: ";").first.map(String.init)
-            ?? "~/Documents"
-        let path = NSString(string: rawPath).expandingTildeInPath
-        let label = URL(fileURLWithPath: path).lastPathComponent
-        return [FilesRoot(id: "primary", path: path, label: label.isEmpty ? "Files" : label)]
+        let paths: [String]
+        if let unified = state.resolvedSettings["content_paths"], !unified.isEmpty {
+            paths = parseRootPaths(unified)
+        } else if let rootPath = state.resolvedSettings["root_path"], !rootPath.isEmpty {
+            paths = [rootPath]
+        } else {
+            paths = ["~/Documents"]
+        }
+        return makeRoots(from: paths)
+    }
+
+    private func parseRootPaths(_ rawValue: String) -> [String] {
+        rawValue.split(separator: ";")
+            .map(String.init)
+            .map(expandAndStandardize)
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { paths, path in
+                if !paths.contains(path) {
+                    paths.append(path)
+                }
+            }
+    }
+
+    private func makeRoots(from paths: [String]) -> [FilesRoot] {
+        var usedLabels: [String: Int] = [:]
+        return paths
+            .map(expandAndStandardize)
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { uniquePaths, path in
+                if !uniquePaths.contains(path) {
+                    uniquePaths.append(path)
+                }
+            }
+            .map { path in
+                let label = uniqueLabel(for: path, usedLabels: &usedLabels)
+                return FilesRoot(id: path, path: path, label: label)
+            }
+    }
+
+    private func uniqueLabel(
+        for path: String,
+        usedLabels: inout [String: Int]
+    ) -> String {
+        let base = URL(fileURLWithPath: path).lastPathComponent
+        let fallback = path == "/" ? "Macintosh HD" : "Files"
+        let label = base.isEmpty ? fallback : base
+        let count = usedLabels[label, default: 0] + 1
+        usedLabels[label] = count
+        return count == 1 ? label : "\(label) \(count)"
+    }
+
+    private func expandAndStandardize(_ path: String) -> String {
+        let expanded = NSString(string: path).expandingTildeInPath
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+
+    private func normalizedDirectoryPath(_ path: String) throws -> String {
+        guard !path.contains(";") else {
+            throw FilesFacadeError.invalidRoot
+        }
+        let normalizedPath = expandAndStandardize(path)
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: normalizedPath, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw FilesFacadeError.rootNotFound
+        }
+        return normalizedPath
+    }
+
+    private func persistRootPathsIfNeeded(_ paths: [String]) {
+        guard let state = serviceManager?.storedState(for: capabilityID) else { return }
+        let joined = paths.joined(separator: ";")
+        if state.resolvedSettings["content_paths"] != joined {
+            persistRootPaths(paths)
+        }
+    }
+
+    private func persistRootPaths(_ paths: [String]) {
+        let normalizedPaths = paths
+            .map(expandAndStandardize)
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { result, path in
+                if !result.contains(path) {
+                    result.append(path)
+                }
+            }
+        guard !normalizedPaths.isEmpty else { return }
+
+        serviceManager?.updateResolvedSetting(
+            for: capabilityID,
+            key: "root_path",
+            value: normalizedPaths[0]
+        )
+        serviceManager?.updateResolvedSetting(
+            for: capabilityID,
+            key: "content_paths",
+            value: normalizedPaths.joined(separator: ";")
+        )
+    }
+
+    private func syncServedRoots() {
+        guard let servedDirectory = servedRootsDirectory else { return }
+
+        do {
+            try fileManager.createDirectory(
+                at: servedDirectory,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            log.warning("Failed to create served roots directory: \(error.localizedDescription)")
+            return
+        }
+
+        let desiredLabels = Set(roots.map(\.label))
+        if let existing = try? fileManager.contentsOfDirectory(
+            at: servedDirectory,
+            includingPropertiesForKeys: [.isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for url in existing where !desiredLabels.contains(url.lastPathComponent) {
+                if isSymbolicLink(url) {
+                    do {
+                        try fileManager.removeItem(at: url)
+                    } catch {
+                        log.warning("Failed to remove stale served root \(url.path): \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+
+        for root in roots {
+            let link = servedDirectory.appendingPathComponent(root.label)
+            if isSymbolicLink(link),
+               (try? fileManager.destinationOfSymbolicLink(atPath: link.path)) == root.path {
+                continue
+            }
+            if fileManager.fileExists(atPath: link.path) {
+                if isSymbolicLink(link) {
+                    try? fileManager.removeItem(at: link)
+                } else {
+                    log.warning("Cannot expose root \(root.path); served label already exists: \(link.path)")
+                    continue
+                }
+            }
+            do {
+                try fileManager.createSymbolicLink(
+                    atPath: link.path,
+                    withDestinationPath: root.path
+                )
+            } catch {
+                log.warning("Failed to expose root \(root.path): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func isSymbolicLink(_ url: URL) -> Bool {
+        (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil
+    }
+
+    private var servedRootsDirectory: URL? {
+        serviceManager?.storedState(for: capabilityID)?
+            .directoryLayout
+            .data
+            .appendingPathComponent("served-roots")
     }
 
     private func setFolder(root: FilesRoot?, path: String?) {
@@ -374,6 +573,10 @@ package final class FileBrowserFilesFacade: FilesFacade {
 private enum FilesFacadeError: LocalizedError {
     case noFolderSelected
     case invalidName
+    case invalidRoot
+    case rootNotFound
+    case duplicateRoot
+    case lastRoot
     case outsideRoot
 
     var errorDescription: String? {
@@ -382,6 +585,14 @@ private enum FilesFacadeError: LocalizedError {
             "No folder is selected."
         case .invalidName:
             "Use a name without slashes or reserved path segments."
+        case .invalidRoot:
+            "Choose a folder path that does not contain reserved separators."
+        case .rootNotFound:
+            "That folder does not exist."
+        case .duplicateRoot:
+            "That folder is already in Files."
+        case .lastRoot:
+            "Files needs at least one folder."
         case .outsideRoot:
             "That item is outside the selected Files folder."
         }

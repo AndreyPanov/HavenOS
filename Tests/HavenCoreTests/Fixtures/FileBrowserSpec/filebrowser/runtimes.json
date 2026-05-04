@@ -29,12 +29,19 @@
         ],
         "directories": {
             "data":    "data",
-            "content": "${root_path}"
+            "content": "${data_dir}/served-roots"
         },
         "install": {
             "steps": [
                 { "action": "mkdir", "path": "${data_dir}" },
                 { "action": "mkdir", "path": "${content_dir}" },
+                { "action": "mkdir", "path": "${root_path}" },
+                {
+                    "action": "symlink",
+                    "path": "${content_dir}/Files",
+                    "source": "${root_path}",
+                    "ifNotExists": true
+                },
                 {
                     "action": "exec",
                     "path": "${executable_path}",

@@ -87,6 +87,12 @@ public protocol FilesFacade: ConnectableFacade {
     /// Open the given root in the native browser.
     func openRoot(_ root: FilesRoot) async
 
+    /// Add another root directory to the native and device-access file set.
+    func addRoot(path: String) async throws
+
+    /// Remove a configured root directory. Implementations should keep at least one root.
+    func removeRoot(_ root: FilesRoot) async throws
+
     /// Open a child folder in the native browser.
     func openFolder(_ item: FilesItem) async
 

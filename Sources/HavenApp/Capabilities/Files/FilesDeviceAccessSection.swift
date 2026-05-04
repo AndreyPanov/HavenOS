@@ -5,6 +5,19 @@ struct FilesDeviceAccessSection: View {
     let serverAddress: String
     let username: String?
     let password: String?
+    let folderLabels: [String]
+
+    init(
+        serverAddress: String,
+        username: String?,
+        password: String?,
+        folderLabels: [String] = []
+    ) {
+        self.serverAddress = serverAddress
+        self.username = username
+        self.password = password
+        self.folderLabels = folderLabels
+    }
 
     @State private var copiedField: CopiedField?
     @State private var showingQRPopover = false
@@ -76,6 +89,27 @@ struct FilesDeviceAccessSection: View {
                                 .buttonStyle(.borderless)
                                 .foregroundStyle(.secondary)
                                 .help(showPassword ? "Hide password" : "Show password")
+                            }
+                        }
+                    }
+                }
+
+                if folderLabels.count > 1 {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Folders")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .textCase(.uppercase)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(folderLabels, id: \.self) { label in
+                                    Text(label)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(.quaternary.opacity(0.5), in: Capsule())
+                                }
                             }
                         }
                     }

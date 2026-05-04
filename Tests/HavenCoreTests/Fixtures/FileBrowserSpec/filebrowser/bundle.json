@@ -34,8 +34,7 @@
         }
     ],
     "storage": {
-        "data":    { "persistent": true,  "userVisible": false },
-        "content": { "persistent": true,  "userVisible": true }
+        "data":    { "persistent": true,  "userVisible": false }
     },
     "onboarding": {
         "steps": [

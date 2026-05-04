@@ -91,7 +91,7 @@ Phase	Focus	Outcome	Status
 18	Service Updates	Version discovery + safe atomic updates	✅ DONE
 19	Haven App Updates	Sparkle-based app update path	✅ DONE
 20	macOS Topbar Menu	Always-present menu bar control surface	✅ DONE
-21	Files	Basic file access capability	⬜ NEXT
+21	Files	Basic file access capability	🔄 ACTIVE
 
 
 ⸻
@@ -1040,11 +1040,16 @@ Until then: keep scope intentionally small.
 	  - File Browser is available for browser/device access with Haven-managed credentials
 	  - No `--noauth`, no terminal steps, no access outside selected roots
 
-21.2 — Multi-Root Files Access ⬜ NEXT
+21.2 — Multi-Root Files Access ✅ COMPLETE
 	•	Add/remove additional roots with a clear served-folder model
 	•	Keep native UI, File Browser device access, and backup scope in sync
+	•	FilesFacade supports addRoot/removeRoot and persists the unified `content_paths` list
+	•	Native Files UI exposes root switching, add-folder, and remove-folder actions
+	•	File Browser serves a Haven-managed `data/served-roots` directory with one symlink per selected root
+	•	Backup scope follows all selected roots through `content_paths`
+	•	Verified File Browser v2.63.2 lists multiple served roots through `/api/resources/`
 
-21.3 — Sharing & Recovery ⬜
+21.3 — Sharing & Recovery ⬜ NEXT
 	•	Explicit local-network sharing UX
 	•	Restore/rollback path once snapshot recovery exists
 
@@ -1093,3 +1098,4 @@ Install → Start → Use (inside Haven)
 UPDATED 03.05.26 (Phase 19 App Updates added; Topbar moved to 20; Files moved to 21)
 UPDATED 04.05.26 (Phase 19 App Updates and Phase 20 Topbar complete; Phase 21 Files is next)
 UPDATED 04.05.26 (Phase 21.1 Secure File Browser Foundation complete; Phase 21.2 Multi-Root Files Access is next)
+UPDATED 04.05.26 (Phase 21.2 Multi-Root Files Access complete; Phase 21.3 Sharing & Recovery is next)

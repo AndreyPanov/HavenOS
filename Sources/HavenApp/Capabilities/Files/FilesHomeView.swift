@@ -215,7 +215,8 @@ struct FilesHomeView: View {
                 FilesDeviceAccessSection(
                     serverAddress: access.serverAddress,
                     username: access.username,
-                    password: access.password
+                    password: access.password,
+                    folderLabels: facade.roots.map(\.label)
                 )
             }
         }
@@ -309,6 +310,7 @@ struct FilesHomeView: View {
                 .buttonStyle(.glass)
                 .controlSize(.small)
                 .help("New Folder")
+                .disabled(facade.folderState.root == nil)
 
                 Button {
                     Task { await facade.refreshItems() }
@@ -329,11 +331,20 @@ struct FilesHomeView: View {
                 .help("Open in Finder")
             }
 
-            if facade.roots.count > 1 {
+            if !facade.roots.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(facade.roots) { root in
                         rootSelectionButton(root)
                     }
+
+                    Button {
+                        addRootFolder()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .help("Add Folder")
                 }
             }
         }
@@ -348,12 +359,38 @@ struct FilesHomeView: View {
             }
             .buttonStyle(.glassProminent)
             .controlSize(.small)
+            .contextMenu { rootContextMenu(root) }
         } else {
             Button(root.label) {
                 Task { await facade.openRoot(root) }
             }
             .buttonStyle(.glass)
             .controlSize(.small)
+            .contextMenu { rootContextMenu(root) }
+        }
+    }
+
+    @ViewBuilder
+    private func rootContextMenu(_ root: FilesRoot) -> some View {
+        Button("Open", systemImage: "folder") {
+            Task { await facade.openRoot(root) }
+        }
+
+        Button("Reveal in Finder", systemImage: "finder") {
+            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: root.path)
+        }
+
+        if facade.roots.count > 1 {
+            Divider()
+            Button("Remove Folder", systemImage: "minus.circle", role: .destructive) {
+                Task {
+                    do {
+                        try await facade.removeRoot(root)
+                    } catch {
+                        lastError = error.localizedDescription
+                    }
+                }
+            }
         }
     }
 
@@ -456,6 +493,10 @@ struct FilesHomeView: View {
                 Task { await facade.refreshItems() }
             }
 
+            Button("Add Folder", systemImage: "plus") {
+                addRootFolder()
+            }
+
             Button("Open Folder in Finder", systemImage: "folder") {
                 openCurrentFolderInFinder()
             }
@@ -529,6 +570,27 @@ struct FilesHomeView: View {
     private func openCurrentFolderInFinder() {
         guard let path = facade.folderState.currentPath else { return }
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+    }
+
+    private func addRootFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add"
+        panel.message = "Choose a folder to add to Files"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            Task {
+                do {
+                    try await facade.addRoot(path: url.path)
+                    lastError = nil
+                } catch {
+                    lastError = error.localizedDescription
+                }
+            }
+        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

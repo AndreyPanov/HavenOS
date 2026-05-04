@@ -92,7 +92,6 @@ extension BuiltInCatalog {
             ]),
             storage: [
                 "data": StoragePolicy(persistent: true, userVisible: false),
-                "content": StoragePolicy(persistent: true, userVisible: true),
             ]
         )
 
@@ -129,11 +128,18 @@ extension BuiltInCatalog {
             ),
             directories: [
                 "data": "data",
-                "content": "${root_path}",
+                "content": "${data_dir}/served-roots",
             ],
             install: InstallBlock(steps: [
                 InstallStep(action: .mkdir, path: "${data_dir}"),
                 InstallStep(action: .mkdir, path: "${content_dir}"),
+                InstallStep(action: .mkdir, path: "${root_path}"),
+                InstallStep(
+                    action: .symlink,
+                    path: "${content_dir}/Files",
+                    source: "${root_path}",
+                    ifNotExists: true
+                ),
                 InstallStep(
                     action: .exec,
                     path: "${executable_path}",

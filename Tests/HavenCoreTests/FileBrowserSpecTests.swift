@@ -82,8 +82,7 @@ final class FileBrowserSpecTests: XCTestCase {
         // Storage
         XCTAssertEqual(bundle.storage["data"]?.persistent, true)
         XCTAssertEqual(bundle.storage["data"]?.userVisible, false)
-        XCTAssertEqual(bundle.storage["content"]?.persistent, true)
-        XCTAssertEqual(bundle.storage["content"]?.userVisible, true)
+        XCTAssertNil(bundle.storage["content"])
 
         // Onboarding
         XCTAssertEqual(bundle.onboarding?.steps.count, 3)
@@ -110,14 +109,16 @@ final class FileBrowserSpecTests: XCTestCase {
 
         // Directories
         XCTAssertEqual(unit.directories["data"], "data")
-        XCTAssertEqual(unit.directories["content"], "${root_path}")
+        XCTAssertEqual(unit.directories["content"], "${data_dir}/served-roots")
 
         // Install steps initialize the database and managed account.
-        XCTAssertEqual(unit.install?.steps.count, 4)
+        XCTAssertEqual(unit.install?.steps.count, 6)
         XCTAssertEqual(unit.install?.steps[0].action, .mkdir)
         XCTAssertEqual(unit.install?.steps[1].action, .mkdir)
-        XCTAssertEqual(unit.install?.steps[2].action, .exec)
-        XCTAssertEqual(unit.install?.steps[3].action, .exec)
+        XCTAssertEqual(unit.install?.steps[2].action, .mkdir)
+        XCTAssertEqual(unit.install?.steps[3].action, .symlink)
+        XCTAssertEqual(unit.install?.steps[4].action, .exec)
+        XCTAssertEqual(unit.install?.steps[5].action, .exec)
 
         // No dependencies
         XCTAssertTrue(unit.dependencies.isEmpty)
@@ -154,7 +155,7 @@ final class FileBrowserSpecTests: XCTestCase {
         XCTAssertEqual(planned.resolvedLaunchArguments, [
             "--address", "0.0.0.0",
             "--port", "8080",
-            "--root", "/Volumes/Files",
+            "--root", "\(serviceRoot)/data/served-roots",
             "--database", "\(serviceRoot)/data/filebrowser.db",
             "--disableExec"
         ])
@@ -162,7 +163,7 @@ final class FileBrowserSpecTests: XCTestCase {
 
         // Directories resolved
         XCTAssertEqual(planned.resolvedDirectories["data"], "\(serviceRoot)/data")
-        XCTAssertEqual(planned.resolvedDirectories["content"], "/Volumes/Files")
+        XCTAssertEqual(planned.resolvedDirectories["content"], "\(serviceRoot)/data/served-roots")
 
         // Healthcheck expanded
         XCTAssertEqual(planned.resolvedHealthcheck?.target, "http://localhost:8080/health")
@@ -181,15 +182,19 @@ final class FileBrowserSpecTests: XCTestCase {
         let install = try XCTUnwrap(plan.service.units[0].resolvedInstall)
         let serviceRoot = "/tmp/haven-test/Services/haven.capability.filebrowser"
 
-        XCTAssertEqual(install.steps.count, 4)
+        XCTAssertEqual(install.steps.count, 6)
         XCTAssertEqual(install.steps[0].path, "\(serviceRoot)/data")
-        XCTAssertEqual(install.steps[1].path, "/Volumes/Files")
-        XCTAssertEqual(install.steps[2].path, "${executable_path}")
-        XCTAssertEqual(install.steps[2].arguments?[0], "config")
-        XCTAssertEqual(install.steps[2].arguments?[1], "init")
-        XCTAssertEqual(install.steps[2].arguments?.contains("\(serviceRoot)/data/filebrowser.db"), true)
-        XCTAssertEqual(install.steps[3].arguments?.contains("haven"), true)
-        XCTAssertEqual(install.steps[3].arguments?.contains("secret-pass"), true)
+        XCTAssertEqual(install.steps[1].path, "\(serviceRoot)/data/served-roots")
+        XCTAssertEqual(install.steps[2].path, "/Volumes/Files")
+        XCTAssertEqual(install.steps[3].path, "\(serviceRoot)/data/served-roots/Files")
+        XCTAssertEqual(install.steps[3].source, "/Volumes/Files")
+        XCTAssertEqual(install.steps[4].path, "${executable_path}")
+        XCTAssertEqual(install.steps[4].arguments?[0], "config")
+        XCTAssertEqual(install.steps[4].arguments?[1], "init")
+        XCTAssertEqual(install.steps[4].arguments?.contains("\(serviceRoot)/data/filebrowser.db"), true)
+        XCTAssertEqual(install.steps[4].arguments?.contains("\(serviceRoot)/data/served-roots"), true)
+        XCTAssertEqual(install.steps[5].arguments?.contains("haven"), true)
+        XCTAssertEqual(install.steps[5].arguments?.contains("secret-pass"), true)
     }
 
     func testDefaultRootPathExpandsTilde() throws {
@@ -203,8 +208,9 @@ final class FileBrowserSpecTests: XCTestCase {
         )
 
         let planned = plan.service.units[0]
-        let expandedDocs = NSString(string: "~/Documents").expandingTildeInPath
-        XCTAssertEqual(planned.resolvedDirectories["content"], expandedDocs)
+        let serviceRoot = "/tmp/haven-test/Services/haven.capability.filebrowser"
+        XCTAssertEqual(planned.resolvedDirectories["content"], "\(serviceRoot)/data/served-roots")
+        XCTAssertEqual(planned.resolvedInstall?.steps[2].path, NSString(string: "~/Documents").expandingTildeInPath)
     }
 
     func testOnboardingExpanded() throws {
