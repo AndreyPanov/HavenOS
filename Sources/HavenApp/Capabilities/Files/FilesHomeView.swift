@@ -284,6 +284,7 @@ struct FilesHomeView: View {
             if let access = facade.deviceAccessInfo {
                 FilesDeviceAccessSection(
                     serverAddress: access.serverAddress,
+                    localAddress: access.localAddress,
                     username: access.username,
                     password: access.password,
                     folderLabels: facade.roots.map(\.label)

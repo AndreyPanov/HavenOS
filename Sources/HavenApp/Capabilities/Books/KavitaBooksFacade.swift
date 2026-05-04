@@ -65,12 +65,12 @@ package final class KavitaBooksFacade: BooksFacade {
 
     package var connectedUsername: String? {
         guard connectionState == .connected else { return nil }
-        return UserDefaults.standard.string(forKey: usernameKey)
+        return credential(.username)
     }
 
     /// True if Haven has a stored password it can use to re-login.
     package var hasSavedCredentials: Bool {
-        UserDefaults.standard.string(forKey: passwordKey) != nil
+        credential(.password) != nil
     }
 
     // MARK: - ConnectableFacade
@@ -82,7 +82,11 @@ package final class KavitaBooksFacade: BooksFacade {
         let hostname = ProcessInfo.processInfo.hostName
         let address = "http://\(hostname):\(p)"
         let tokenURL: String? = apiKey.map { "http://\(hostname):\(p)/api/opds/\($0)" }
-        return DeviceAccessInfo(serverAddress: address, tokenURL: tokenURL)
+        return DeviceAccessInfo(
+            serverAddress: address,
+            localAddress: "http://localhost:\(p)",
+            tokenURL: tokenURL
+        )
     }
 
     // MARK: - Device Access
@@ -119,6 +123,10 @@ package final class KavitaBooksFacade: BooksFacade {
         self.capabilityID = capabilityID
         self.serviceManager = serviceManager
         self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
+        HavenCredentialStore.shared.migrateLegacyCredentials(
+            for: .kavita,
+            capabilityID: capabilityID
+        )
         refresh()
     }
 
@@ -428,15 +436,15 @@ package final class KavitaBooksFacade: BooksFacade {
                 apiKey = response.apiKey
                 connectionState = .connected
                 saveCredentials(response.token, username: username, apiKey: response.apiKey)
-                UserDefaults.standard.set(password, forKey: passwordKey)
-                UserDefaults.standard.set(username, forKey: managedUsernameKey)
-                UserDefaults.standard.set(password, forKey: managedPasswordKey)
+                setCredential(password, .password)
+                setCredential(username, .managedUser)
+                setCredential(password, .managedPass)
                 log.info("Setup wizard: registered managed account")
             } catch {
                 log.info("Setup wizard: registration failed, trying login: \(error.localizedDescription)")
                 // Account may already exist from a previous install — try managed creds
-                if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
-                   let mPass = UserDefaults.standard.string(forKey: managedPasswordKey),
+                if let mUser = credential(.managedUser),
+                   let mPass = credential(.managedPass),
                    let response = try? await client.login(username: mUser, password: mPass) {
                     authToken = response.token
                     apiKey = response.apiKey
@@ -496,8 +504,8 @@ package final class KavitaBooksFacade: BooksFacade {
             authToken = nil
         }
 
-        if let username = UserDefaults.standard.string(forKey: usernameKey),
-           let password = UserDefaults.standard.string(forKey: passwordKey) {
+        if let username = credential(.username),
+           let password = credential(.password) {
             log.info("Auto-connect: re-login with saved credentials")
             if let response = try? await client.login(username: username, password: password) {
                 authToken = response.token
@@ -510,15 +518,15 @@ package final class KavitaBooksFacade: BooksFacade {
             }
         }
 
-        if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
-           let mPass = UserDefaults.standard.string(forKey: managedPasswordKey) {
+        if let mUser = credential(.managedUser),
+           let mPass = credential(.managedPass) {
             log.info("Auto-connect: trying managed credentials")
             if let response = try? await client.login(username: mUser, password: mPass) {
                 authToken = response.token
                 apiKey = response.apiKey
                 connectionState = .connected
                 saveCredentials(response.token, username: mUser, apiKey: response.apiKey)
-                UserDefaults.standard.set(mPass, forKey: passwordKey)
+                setCredential(mPass, .password)
                 log.info("Auto-connect: managed credentials valid")
                 await fetchLibraryData()
                 return true
@@ -584,6 +592,7 @@ package final class KavitaBooksFacade: BooksFacade {
             apiKey = response.apiKey
             connectionState = .connected
             saveCredentials(response.token, username: username, apiKey: response.apiKey)
+            setCredential(password, .password)
             log.info("Created Kavita admin account: \(username)")
             await fetchLibraryData()
         } catch {
@@ -605,9 +614,9 @@ package final class KavitaBooksFacade: BooksFacade {
             apiKey = loginResponse.apiKey
             connectionState = .connected
             saveCredentials(loginResponse.token, username: username, apiKey: loginResponse.apiKey)
-            // Custom account: clear Haven password, mark as not managed
+            setCredential(password, .password)
+            // Custom account: keep the supplied password for reconnect.
             isManagedByHaven = false
-            UserDefaults.standard.removeObject(forKey: passwordKey)
             log.info("Connected to Kavita as \(username)")
             await fetchLibraryData()
         } catch {
@@ -631,7 +640,7 @@ package final class KavitaBooksFacade: BooksFacade {
         itemCount = nil
         currentScanStatus = .idle
         setupPhase = nil
-        UserDefaults.standard.removeObject(forKey: tokenKey)
+        removeCredential(.token)
         updateLibrary()
     }
 
@@ -804,26 +813,20 @@ package final class KavitaBooksFacade: BooksFacade {
 
     // MARK: - Token Persistence
 
-    private var tokenKey: String { "haven.kavita.token.\(capabilityID)" }
-    private var usernameKey: String { "haven.kavita.username.\(capabilityID)" }
-    private var passwordKey: String { "haven.kavita.password.\(capabilityID)" }
-    private var managedUsernameKey: String { "haven.kavita.managedUser.\(capabilityID)" }
-    private var managedPasswordKey: String { "haven.kavita.managedPass.\(capabilityID)" }
-    private var apiKeyKey: String { "haven.kavita.apiKey.\(capabilityID)" }
     private var customAccountKey: String { "haven.kavita.customAccount.\(capabilityID)" }
     private var libraryPathOverrideKey: String { "haven.kavita.libraryPath.\(capabilityID)" }
     private var libraryPathsKey: String { "haven.kavita.libraryPaths.\(capabilityID)" }
     private var dailyScanDefaultsPrefix: String { "haven.kavita.dailyScan.\(capabilityID)" }
 
     private func saveCredentials(_ token: String, username: String, apiKey: String?) {
-        UserDefaults.standard.set(token, forKey: tokenKey)
-        UserDefaults.standard.set(username, forKey: usernameKey)
-        if let apiKey { UserDefaults.standard.set(apiKey, forKey: apiKeyKey) }
+        setCredential(token, .token)
+        setCredential(username, .username)
+        if let apiKey { setCredential(apiKey, .apiKey) }
     }
 
     private func loadSavedCredentials() {
-        authToken = UserDefaults.standard.string(forKey: tokenKey)
-        apiKey = UserDefaults.standard.string(forKey: apiKeyKey)
+        authToken = credential(.token)
+        apiKey = credential(.apiKey)
     }
 
     /// All resolved library paths: multi-path key > single-path override > stored settings > default.
@@ -859,16 +862,36 @@ package final class KavitaBooksFacade: BooksFacade {
     }
 
     private func clearAllCredentials() {
-        UserDefaults.standard.removeObject(forKey: tokenKey)
-        UserDefaults.standard.removeObject(forKey: usernameKey)
-        UserDefaults.standard.removeObject(forKey: passwordKey)
-        UserDefaults.standard.removeObject(forKey: managedUsernameKey)
-        UserDefaults.standard.removeObject(forKey: managedPasswordKey)
-        UserDefaults.standard.removeObject(forKey: apiKeyKey)
+        HavenCredentialStore.shared.removeAll(for: .kavita, capabilityID: capabilityID)
         UserDefaults.standard.removeObject(forKey: customAccountKey)
         UserDefaults.standard.removeObject(forKey: libraryPathOverrideKey)
         UserDefaults.standard.removeObject(forKey: libraryPathsKey)
         LibraryChangeScanner.clear(keyPrefix: dailyScanDefaultsPrefix)
+    }
+
+    private func credential(_ purpose: HavenCredentialPurpose) -> String? {
+        HavenCredentialStore.shared.string(
+            for: .kavita,
+            purpose,
+            capabilityID: capabilityID
+        )
+    }
+
+    private func setCredential(_ value: String, _ purpose: HavenCredentialPurpose) {
+        HavenCredentialStore.shared.set(
+            value,
+            for: .kavita,
+            purpose,
+            capabilityID: capabilityID
+        )
+    }
+
+    private func removeCredential(_ purpose: HavenCredentialPurpose) {
+        HavenCredentialStore.shared.remove(
+            for: .kavita,
+            purpose,
+            capabilityID: capabilityID
+        )
     }
 }
 

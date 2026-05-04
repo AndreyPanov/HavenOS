@@ -54,12 +54,12 @@ package final class FileBrowserFilesFacade: FilesFacade {
 
     package var connectedUsername: String? {
         guard connectionState == .connected else { return nil }
-        return UserDefaults.standard.string(forKey: usernameKey)
+        return credential(.username)
     }
 
     package var connectedPassword: String? {
         guard connectionState == .connected else { return nil }
-        return UserDefaults.standard.string(forKey: passwordKey)
+        return credential(.password)
     }
 
     package var deviceAccessInfo: DeviceAccessInfo? {
@@ -67,6 +67,7 @@ package final class FileBrowserFilesFacade: FilesFacade {
         let hostname = ProcessInfo.processInfo.hostName
         return DeviceAccessInfo(
             serverAddress: "http://\(hostname):\(port)",
+            localAddress: "http://localhost:\(port)",
             username: connectedUsername,
             password: connectedPassword
         )
@@ -88,6 +89,10 @@ package final class FileBrowserFilesFacade: FilesFacade {
         self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
         self.serviceManager = serviceManager
         self.fileManager = fileManager
+        HavenCredentialStore.shared.migrateLegacyCredentials(
+            for: .filebrowser,
+            capabilityID: capabilityID
+        )
         refresh()
     }
 
@@ -128,8 +133,8 @@ package final class FileBrowserFilesFacade: FilesFacade {
             setupPhase = .awaitingAccountChoice
         }
 
-        let hasCredentials = UserDefaults.standard.string(forKey: usernameKey) != nil
-            && UserDefaults.standard.string(forKey: passwordKey) != nil
+        let hasCredentials = credential(.username) != nil
+            && credential(.password) != nil
         if hasCredentials && (isSetupComplete || setupPhase == .awaitingLibraryPath) {
             connectionState = .connected
             autoConnectExhausted = false
@@ -268,8 +273,8 @@ package final class FileBrowserFilesFacade: FilesFacade {
         isManagedByHaven = true
         setupPhase = .creatingAccount
 
-        let username = UserDefaults.standard.string(forKey: managedUserKey) ?? "haven"
-        let password = UserDefaults.standard.string(forKey: managedPassKey)
+        let username = credential(.managedUser) ?? "haven"
+        let password = credential(.managedPass)
             ?? Self.generatePassword()
         saveCredentials(username: username, password: password, managed: true)
         connectionState = .connected
@@ -310,17 +315,14 @@ package final class FileBrowserFilesFacade: FilesFacade {
     }
 
     package func signOut() {
-        UserDefaults.standard.removeObject(forKey: usernameKey)
-        UserDefaults.standard.removeObject(forKey: passwordKey)
-        UserDefaults.standard.removeObject(forKey: managedUserKey)
-        UserDefaults.standard.removeObject(forKey: managedPassKey)
+        HavenCredentialStore.shared.removeAll(for: .filebrowser, capabilityID: capabilityID)
         connectionState = .disconnected
     }
 
     package func switchToManaged() {
         isManagedByHaven = true
-        if let username = UserDefaults.standard.string(forKey: managedUserKey),
-           let password = UserDefaults.standard.string(forKey: managedPassKey) {
+        if let username = credential(.managedUser),
+           let password = credential(.managedPass) {
             saveCredentials(username: username, password: password, managed: true)
             connectionState = .connected
         } else {
@@ -337,8 +339,8 @@ package final class FileBrowserFilesFacade: FilesFacade {
         isAutoConnecting = true
         defer { isAutoConnecting = false }
 
-        if UserDefaults.standard.string(forKey: usernameKey) != nil,
-           UserDefaults.standard.string(forKey: passwordKey) != nil {
+        if credential(.username) != nil,
+           credential(.password) != nil {
             connectionState = .connected
             autoConnectExhausted = false
         } else {
@@ -603,13 +605,30 @@ package final class FileBrowserFilesFacade: FilesFacade {
     }
 
     private func saveCredentials(username: String, password: String, managed: Bool) {
-        UserDefaults.standard.set(username, forKey: usernameKey)
-        UserDefaults.standard.set(password, forKey: passwordKey)
+        setCredential(username, .username)
+        setCredential(password, .password)
         UserDefaults.standard.set(!managed, forKey: customAccountKey)
         if managed {
-            UserDefaults.standard.set(username, forKey: managedUserKey)
-            UserDefaults.standard.set(password, forKey: managedPassKey)
+            setCredential(username, .managedUser)
+            setCredential(password, .managedPass)
         }
+    }
+
+    private func credential(_ purpose: HavenCredentialPurpose) -> String? {
+        HavenCredentialStore.shared.string(
+            for: .filebrowser,
+            purpose,
+            capabilityID: capabilityID
+        )
+    }
+
+    private func setCredential(_ value: String, _ purpose: HavenCredentialPurpose) {
+        HavenCredentialStore.shared.set(
+            value,
+            for: .filebrowser,
+            purpose,
+            capabilityID: capabilityID
+        )
     }
 
     private func addBackendUser(username: String, password: String) async throws {
@@ -675,10 +694,6 @@ package final class FileBrowserFilesFacade: FilesFacade {
         UserDefaults.standard.bool(forKey: setupCompleteKey)
     }
 
-    private var usernameKey: String { "haven.filebrowser.username.\(capabilityID)" }
-    private var passwordKey: String { "haven.filebrowser.password.\(capabilityID)" }
-    private var managedUserKey: String { "haven.filebrowser.managedUser.\(capabilityID)" }
-    private var managedPassKey: String { "haven.filebrowser.managedPass.\(capabilityID)" }
     private var customAccountKey: String { "haven.filebrowser.customAccount.\(capabilityID)" }
     private var setupCompleteKey: String { "haven.filebrowser.setupComplete.\(capabilityID)" }
 

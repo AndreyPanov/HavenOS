@@ -4,6 +4,7 @@ import SwiftUI
 /// "Watch on your devices" section — server address + credentials for Jellyfin clients.
 struct MoviesDeviceAccessSection: View {
     let serverAddress: String
+    let localAddress: String?
     let username: String?
     let password: String?
 
@@ -89,6 +90,14 @@ struct MoviesDeviceAccessSection: View {
                             }
                         }
                     }
+
+                    DeviceCredentialActionsView(
+                        serverAddress: serverAddress,
+                        localAddress: localAddress,
+                        username: username,
+                        password: password,
+                        tokenURL: nil
+                    )
                 }
 
                 // Player guides

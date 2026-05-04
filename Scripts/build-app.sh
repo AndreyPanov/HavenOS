@@ -38,6 +38,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+FINAL_APP_BUNDLE="$APP_BUNDLE"
+FINAL_BUILD_DIR="$(dirname "$FINAL_APP_BUNDLE")"
+STAGING_ROOT="$(mktemp -d /private/tmp/haven-app-build.XXXXXX)"
+trap 'rm -rf "$STAGING_ROOT"' EXIT
+APP_BUNDLE="$STAGING_ROOT/Haven.app"
+
 NORMALIZED_CONFIGURATION="$(printf '%s' "$CONFIGURATION" | tr '[:upper:]' '[:lower:]')"
 
 case "$NORMALIZED_CONFIGURATION" in
@@ -50,7 +56,7 @@ case "$NORMALIZED_CONFIGURATION" in
         ;;
 esac
 
-BUILD_DIR="$(dirname "$APP_BUNDLE")"
+BUILD_DIR="$STAGING_ROOT"
 CONTENTS="$APP_BUNDLE/Contents"
 MACOS="$CONTENTS/MacOS"
 FRAMEWORKS="$CONTENTS/Frameworks"
@@ -68,7 +74,7 @@ fi
 
 echo "==> Creating Haven.app bundle..."
 rm -rf "$APP_BUNDLE"
-mkdir -p "$BUILD_DIR"
+mkdir -p "$FINAL_BUILD_DIR"
 mkdir -p "$MACOS"
 mkdir -p "$CONTENTS/Resources"
 
@@ -89,15 +95,18 @@ if otool -L "$BINARY" | grep -q "Sparkle.framework"; then
 
     echo "==> Copying Sparkle.framework..."
     mkdir -p "$FRAMEWORKS"
-    ditto --norsrc "$SPARKLE_FRAMEWORK" "$FRAMEWORKS/Sparkle.framework"
+    ditto --norsrc --noextattr --noqtn --noacl --noclone "$SPARKLE_FRAMEWORK" "$FRAMEWORKS/Sparkle.framework"
     xattr -cr "$FRAMEWORKS/Sparkle.framework"
+    find "$FRAMEWORKS/Sparkle.framework" -exec xattr -d com.apple.FinderInfo {} \; 2>/dev/null || true
+    find "$FRAMEWORKS/Sparkle.framework" -exec xattr -d com.apple.ResourceFork {} \; 2>/dev/null || true
+    find "$FRAMEWORKS/Sparkle.framework" -exec xattr -d 'com.apple.fileprovider.fpfs#P' {} \; 2>/dev/null || true
 
     if ! otool -l "$MACOS/Haven" | grep -q "@executable_path/../Frameworks"; then
         install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/Haven"
     fi
 fi
 
-# Create minimal entitlements (network client for API calls)
+# Create minimal entitlements.
 cat > "$BUILD_DIR/Haven.entitlements" <<'ENTITLEMENTS'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -112,10 +121,15 @@ cat > "$BUILD_DIR/Haven.entitlements" <<'ENTITLEMENTS'
 ENTITLEMENTS
 
 # Sign if requested
+xattr -cr "$APP_BUNDLE"
+find "$APP_BUNDLE" -exec xattr -d com.apple.FinderInfo {} \; 2>/dev/null || true
+find "$APP_BUNDLE" -exec xattr -d com.apple.ResourceFork {} \; 2>/dev/null || true
+find "$APP_BUNDLE" -exec xattr -d 'com.apple.fileprovider.fpfs#P' {} \; 2>/dev/null || true
+
 if [ "$SHOULD_SIGN" = true ]; then
     echo "==> Signing with $SIGN_IDENTITY (Team: $TEAM_ID)..."
     if [ -d "$FRAMEWORKS/Sparkle.framework" ]; then
-        codesign --force --deep --sign "$SIGN_IDENTITY" \
+        codesign --force --sign "$SIGN_IDENTITY" \
             --options runtime \
             "$FRAMEWORKS/Sparkle.framework"
     fi
@@ -128,7 +142,7 @@ if [ "$SHOULD_SIGN" = true ]; then
 else
     echo "==> Ad-hoc signing..."
     if [ -d "$FRAMEWORKS/Sparkle.framework" ]; then
-        codesign --force --deep --sign - \
+        codesign --force --sign - \
             "$FRAMEWORKS/Sparkle.framework"
     fi
     codesign --force --sign - \
@@ -136,9 +150,13 @@ else
         "$APP_BUNDLE"
 fi
 
+echo "==> Copying signed bundle to output..."
+rm -rf "$FINAL_APP_BUNDLE"
+ditto --norsrc --noextattr --noqtn --noacl --noclone "$APP_BUNDLE" "$FINAL_APP_BUNDLE"
+
 echo ""
 echo "==> Done! Haven.app is at:"
-echo "    $APP_BUNDLE"
+echo "    $FINAL_APP_BUNDLE"
 echo ""
-echo "    To open:  open $APP_BUNDLE"
-echo "    To copy:  cp -R $APP_BUNDLE /Applications/"
+echo "    To open:  open $FINAL_APP_BUNDLE"
+echo "    To copy:  cp -R $FINAL_APP_BUNDLE /Applications/"

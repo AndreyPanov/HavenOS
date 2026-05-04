@@ -289,10 +289,19 @@ package final class ServiceManager {
         guard let prefix = credentialDefaultsPrefix(for: capabilityID) else {
             return BackupCredentialSnapshot(values: [:])
         }
+        let backend = credentialBackend(for: capabilityID)
 
-        let values = UserDefaults.standard.dictionaryRepresentation()
+        var values = UserDefaults.standard.dictionaryRepresentation()
             .filter { key, _ in
                 key.hasPrefix(prefix) && key.contains(capabilityID)
+            }
+            .filter { key, _ in
+                guard let backend else { return true }
+                return !isCredentialStoreDefaultsKey(
+                    key,
+                    backend: backend,
+                    capabilityID: capabilityID
+                )
             }
             .compactMapValues { value -> BackupCredentialValue? in
                 if let value = value as? String {
@@ -313,7 +322,29 @@ package final class ServiceManager {
                 return nil
             }
 
+        if let backend {
+            let credentialValues = HavenCredentialStore.shared.backupSnapshot(
+                for: backend,
+                capabilityID: capabilityID
+            ).values
+            values.merge(credentialValues) { _, stored in stored }
+        }
+
         return BackupCredentialSnapshot(values: values)
+    }
+
+    private func isCredentialStoreDefaultsKey(
+        _ key: String,
+        backend: HavenCredentialBackend,
+        capabilityID: String
+    ) -> Bool {
+        HavenCredentialPurpose.allCases.contains { purpose in
+            HavenCredentialStore.shared.legacyKey(
+                backend: backend,
+                purpose: purpose,
+                capabilityID: capabilityID
+            ) == key
+        }
     }
 
     private func credentialDefaultsPrefix(for capabilityID: String) -> String? {
@@ -326,6 +357,21 @@ package final class ServiceManager {
             "haven.jellyfin."
         case "haven.capability.filebrowser":
             "haven.filebrowser."
+        default:
+            nil
+        }
+    }
+
+    private func credentialBackend(for capabilityID: String) -> HavenCredentialBackend? {
+        switch capabilityID {
+        case "haven.capability.kavita":
+            .kavita
+        case "haven.capability.navidrome":
+            .navidrome
+        case "haven.capability.jellyfin":
+            .jellyfin
+        case "haven.capability.filebrowser":
+            .filebrowser
         default:
             nil
         }
@@ -427,17 +473,22 @@ package final class ServiceManager {
     private func installSettings(for capabilityID: String) -> [String: String] {
         guard capabilityID == "haven.capability.filebrowser" else { return [:] }
 
-        let username = UserDefaults.standard.string(
-            forKey: "haven.filebrowser.managedUser.\(capabilityID)"
+        let credentials = HavenCredentialStore.shared
+        let username = credentials.string(
+            for: .filebrowser,
+            .managedUser,
+            capabilityID: capabilityID
         ) ?? "haven"
-        let password = UserDefaults.standard.string(
-            forKey: "haven.filebrowser.managedPass.\(capabilityID)"
+        let password = credentials.string(
+            for: .filebrowser,
+            .managedPass,
+            capabilityID: capabilityID
         ) ?? Self.generateManagedPassword()
 
-        UserDefaults.standard.set(username, forKey: "haven.filebrowser.username.\(capabilityID)")
-        UserDefaults.standard.set(password, forKey: "haven.filebrowser.password.\(capabilityID)")
-        UserDefaults.standard.set(username, forKey: "haven.filebrowser.managedUser.\(capabilityID)")
-        UserDefaults.standard.set(password, forKey: "haven.filebrowser.managedPass.\(capabilityID)")
+        credentials.set(username, for: .filebrowser, .username, capabilityID: capabilityID)
+        credentials.set(password, for: .filebrowser, .password, capabilityID: capabilityID)
+        credentials.set(username, for: .filebrowser, .managedUser, capabilityID: capabilityID)
+        credentials.set(password, for: .filebrowser, .managedPass, capabilityID: capabilityID)
         UserDefaults.standard.set(false, forKey: "haven.filebrowser.customAccount.\(capabilityID)")
 
         return [
@@ -725,6 +776,8 @@ package final class ServiceManager {
 
     /// Remove all UserDefaults keys associated with a facade's credentials.
     private func clearFacadeCredentials(for capabilityID: String) {
+        HavenCredentialStore.shared.removeAll(for: capabilityID)
+
         let prefixes = [
             "haven.kavita.", "haven.navidrome.", "haven.jellyfin.",
             "haven.filebrowser.",

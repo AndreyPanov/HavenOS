@@ -439,6 +439,7 @@ struct MoviesHomeView: View {
         if let access = facade.deviceAccessInfo {
             MoviesDeviceAccessSection(
                 serverAddress: access.serverAddress,
+                localAddress: access.localAddress,
                 username: access.username,
                 password: access.password
             )

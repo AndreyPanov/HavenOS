@@ -31,6 +31,8 @@ public enum SetupPhase: Sendable, Equatable {
 public struct DeviceAccessInfo: Sendable, Equatable {
     /// LAN-accessible server address (e.g. `http://MacBook-Pro.local:4533`).
     public let serverAddress: String
+    /// Mac-local server address (e.g. `http://localhost:4533`).
+    public let localAddress: String?
     /// Username for authentication (if required by the protocol).
     public let username: String?
     /// Password for authentication (if required by the protocol).
@@ -40,11 +42,13 @@ public struct DeviceAccessInfo: Sendable, Equatable {
 
     public init(
         serverAddress: String,
+        localAddress: String? = nil,
         username: String? = nil,
         password: String? = nil,
         tokenURL: String? = nil
     ) {
         self.serverAddress = serverAddress
+        self.localAddress = localAddress
         self.username = username
         self.password = password
         self.tokenURL = tokenURL

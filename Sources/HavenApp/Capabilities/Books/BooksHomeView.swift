@@ -469,6 +469,7 @@ struct BooksHomeView: View {
             if let tokenURL = access.tokenURL {
                 DeviceAccessSection(
                     serverAddress: access.serverAddress,
+                    localAddress: access.localAddress,
                     opdsURL: tokenURL
                 )
             }

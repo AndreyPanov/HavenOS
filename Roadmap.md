@@ -92,6 +92,7 @@ Phase	Focus	Outcome	Status
 19	Haven App Updates	Sparkle-based app update path	✅ DONE
 20	macOS Topbar Menu	Always-present menu bar control surface	✅ DONE
 21	Files	Basic file access capability	🔄 ACTIVE
+22	Credential Convenience & Passwords Bridge	Prompt-free local credentials + simpler cross-device login	✅ DONE
 
 
 ⸻
@@ -592,7 +593,7 @@ All deliverables implemented:
 
 ⚠️ Known Limitations
 	•	Music folder path is immutable after initial install (Navidrome DB constraint — library ID 1 path cannot be changed via API)
-	•	No Passwords app integration (Associated Domains requires HTTPS + static domain)
+	•	Passwords app integration is not direct for local URLs; Phase 22 defines the secure local-storage and user-friendly bridge
 	•	Navidrome multi-library API (POST /api/library) could enable adding folders in the future
 
 ⸻
@@ -1056,6 +1057,71 @@ Until then: keep scope intentionally small.
 
 ⸻
 
+🔐 Phase 22 — Credential Convenience & Passwords Bridge ✅ COMPLETE
+
+🎯 Goal
+
+Make Haven-managed local service credentials understandable and easy to use across devices without overpromising direct Apple Passwords app insertion or showing macOS Keychain permission dialogs.
+
+Context:
+Apple Passwords / AutoFill integration is built around verified web domains, associated domains, user consent, and credential-provider extensions. Haven services usually run at local, dynamic addresses such as `http://MacBook.local:4533`, `localhost`, or LAN IPs. That makes silent Passwords app insertion the wrong primary path.
+
+🔧 Deliverables
+	•	Keep managed credentials in `UserDefaults` behind a shared credential-store boundary
+	•	Defer Keychain storage after launch-blocking entitlements and repeated permission prompts proved too disruptive
+	•	Create a shared credential store boundary for Books, Music, Movies, and Files
+	•	Keep credential records typed by capability, backend, service URL, username, and credential purpose
+	•	Keep existing saved credentials at the current `UserDefaults` keys
+	•	Update backup export to read credentials through the shared credential boundary
+	•	Add a unified Credentials panel/action for device access sections
+	•	Panel shows local URL, LAN URL, username, password, and token URL when available
+	•	Add per-field copy, copy-all, password reveal, QR code, and Open in Browser actions
+	•	Add an optional "Open Passwords" helper action with clear manual-save guidance
+	•	Prefer Safari/browser save-password prompts as the practical Apple Passwords bridge for local service URLs
+	•	Document why Associated Domains / Shared Web Credentials require a stable HTTPS domain and are deferred
+	•	Document why an AutoFill Credential Provider extension is deferred unless Haven becomes a credential provider
+
+🛠️ Implementation Sub-phases
+
+22.1 — UserDefaults Credential Store ✅
+	•	Add a small HavenCredentialStore abstraction in a shared module
+	•	Use `UserDefaults` for username/password/session values for now
+	•	Preserve current facade APIs while replacing direct credential reads/writes internally
+	•	Avoid runtime Keychain reads/writes so setup, refresh, reconnect, and device access never trigger macOS credential prompts
+	•	Add tests for save, read, update, delete, migration no-op, and backup snapshots
+
+22.2 — Migration & Backup Alignment ✅
+	•	Keep Kavita, Navidrome, Jellyfin, and File Browser credential keys stable in `UserDefaults`
+	•	Update uninstall/sign-out paths to clear credential-store records
+	•	Update BackupCredentials to export through the credential store instead of raw defaults keys
+
+22.3 — Credentials Convenience UI ✅
+	•	Extract shared credential actions used by Books, Music, Movies, and Files
+	•	Add Copy All as a single action for manual setup in mobile/TV/reader apps
+	•	Add Open in Browser to encourage Safari/Passwords save prompts where available
+	•	Keep passwords hidden by default and require explicit reveal/copy intent
+	•	Make the local URL vs LAN URL distinction clear without exposing implementation details
+
+22.4 — Apple Passwords Integration Gate ✅
+	•	Do not build direct Passwords insertion for `localhost`, `.local`, or dynamic LAN URLs
+	•	Re-evaluate Shared Web Credentials only if Haven ships a stable HTTPS domain model
+	•	Re-evaluate AutoFill Credential Provider only if Haven should act as a password provider
+	•	If a stable domain exists later, require Associated Domains entitlement, AASA hosting, signing/notarization validation, and user-consent testing
+	•	Re-evaluate Keychain storage only with a signed build path and explicit no-prompt acceptance testing
+
+✅ Acceptance Criteria
+	•	No macOS Keychain dialogs appear during setup, refresh, reconnect, backup, or device access
+	•	Existing users keep working with the current `UserDefaults` credential keys
+	•	Books, Music, Movies, and Files can reconnect after app restart using stored credentials
+	•	Sign out and uninstall clear the correct credential-store records
+	•	Backup still includes the expected credential snapshot through the new boundary
+	•	Device access UI gives users one place to copy or reveal all connection details
+	•	Browser/Safari handoff path is documented and easy to find
+	•	Roadmap explicitly records that true Apple Passwords integration is gated by stable HTTPS domains or a credential-provider strategy
+	•	Roadmap explicitly records that Keychain storage is deferred until the UX is proven prompt-free
+
+⸻
+
 🧠 Strategic Evolution
 
 Proven Pattern
@@ -1072,8 +1138,8 @@ Files	File Browser	HTTP	⬜ Next
 
 Execution Strategy
 
-Completed: Books → Music → Movies → Backup → Service Updates → App Updates → Topbar
-Next: Files
+Completed: Books → Music → Movies → Backup → Service Updates → App Updates → Topbar → Credential Convenience
+Next: Files Sharing & Recovery
 Each: full vertical slice, real usability, repeatable capability pattern.
 
 Books validated: Haven can wrap a backend.
@@ -1101,3 +1167,5 @@ UPDATED 04.05.26 (Phase 19 App Updates and Phase 20 Topbar complete; Phase 21 Fi
 UPDATED 04.05.26 (Phase 21.1 Secure File Browser Foundation complete; Phase 21.2 Multi-Root Files Access is next)
 UPDATED 04.05.26 (Phase 21.2 Multi-Root Files Access complete; Phase 21.3 Sharing & Recovery is next)
 UPDATED 04.05.26 (Files and Music folder/account setup aligned with the shared setup wizard; Phase 21.3 remains next)
+UPDATED 04.05.26 (Phase 22 Credential Convenience & Passwords Bridge implemented: shared UserDefaults-backed credential store, backup alignment, copy-all/Open/Passwords actions)
+UPDATED 04.05.26 (Keychain storage rolled back after prompt-storm and launch-risk validation; UserDefaults remains the current credential storage path)

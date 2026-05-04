@@ -54,12 +54,12 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
     package var connectedUsername: String? {
         guard connectionState == .connected else { return nil }
-        return UserDefaults.standard.string(forKey: usernameKey)
+        return credential(.username)
     }
 
     private var connectedPassword: String? {
         guard connectionState == .connected else { return nil }
-        return UserDefaults.standard.string(forKey: passwordKey)
+        return credential(.password)
     }
 
     // MARK: - ConnectableFacade
@@ -73,6 +73,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         let address = "http://\(hostname):\(p)"
         return DeviceAccessInfo(
             serverAddress: address,
+            localAddress: "http://localhost:\(p)",
             username: connectedUsername,
             password: connectedPassword
         )
@@ -101,6 +102,10 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         self.capabilityID = capabilityID
         self.serviceManager = serviceManager
         self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
+        HavenCredentialStore.shared.migrateLegacyCredentials(
+            for: .jellyfin,
+            capabilityID: capabilityID
+        )
         refresh()
     }
 
@@ -507,9 +512,9 @@ package final class JellyfinMoviesFacade: MoviesFacade {
                 authToken = response.AccessToken
                 connectionState = .connected
                 saveCredentials(response.AccessToken, username: username)
-                UserDefaults.standard.set(password, forKey: passwordKey)
-                UserDefaults.standard.set(username, forKey: managedUsernameKey)
-                UserDefaults.standard.set(password, forKey: managedPasswordKey)
+                setCredential(password, .password)
+                setCredential(username, .managedUser)
+                setCredential(password, .managedPass)
                 log.info("Setup wizard: authenticated as \(username)")
             } catch {
                 log.error("Setup wizard: login failed: \(error.localizedDescription)")
@@ -589,8 +594,8 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
         // Step 2: Check if this is a fresh install (setup wizard needed)
         // If we have saved managed credentials, setup was already done — skip wizard.
-        let hasManagedCreds = UserDefaults.standard.string(forKey: managedUsernameKey) != nil
-            && UserDefaults.standard.string(forKey: managedPasswordKey) != nil
+        let hasManagedCreds = credential(.managedUser) != nil
+            && credential(.managedPass) != nil
         let isFirstRun: Bool
         if hasManagedCreds {
             isFirstRun = false
@@ -629,8 +634,8 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         }
 
         // Step 4: Try saved password
-        if let username = UserDefaults.standard.string(forKey: usernameKey),
-           let password = UserDefaults.standard.string(forKey: passwordKey) {
+        if let username = credential(.username),
+           let password = credential(.password) {
             log.info("Auto-connect: re-login with saved credentials")
             do {
                 let response = try await client.login(username: username, password: password)
@@ -647,15 +652,15 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         }
 
         // Step 4b: Try managed credentials
-        if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
-           let mPass = UserDefaults.standard.string(forKey: managedPasswordKey) {
+        if let mUser = credential(.managedUser),
+           let mPass = credential(.managedPass) {
             log.info("Auto-connect: trying managed credentials")
             do {
                 let response = try await client.login(username: mUser, password: mPass)
                 authToken = response.AccessToken
                 connectionState = .connected
                 saveCredentials(response.AccessToken, username: mUser)
-                UserDefaults.standard.set(mPass, forKey: passwordKey)
+                setCredential(mPass, .password)
                 isAutoConnecting = false
                 log.info("Auto-connect: managed credentials valid")
                 await fetchItemCounts()
@@ -718,8 +723,8 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             authToken = response.AccessToken
             connectionState = .connected
             saveCredentials(response.AccessToken, username: username)
+            setCredential(password, .password)
             isManagedByHaven = false
-            UserDefaults.standard.removeObject(forKey: passwordKey)
             log.info("Connected to Jellyfin as \(username)")
             await fetchItemCounts()
         } catch {
@@ -739,8 +744,8 @@ package final class JellyfinMoviesFacade: MoviesFacade {
             authToken = response.AccessToken
             connectionState = .connected
             saveCredentials(response.AccessToken, username: username)
+            setCredential(password, .password)
             isManagedByHaven = false
-            UserDefaults.standard.removeObject(forKey: passwordKey)
             log.info("Connected to Jellyfin as \(username)")
             await fetchItemCounts()
         } catch {
@@ -763,7 +768,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
         showCount = nil
         currentScanStatus = .idle
         setupPhase = nil
-        UserDefaults.standard.removeObject(forKey: tokenKey)
+        removeCredential(.token)
         updateLibrary()
     }
 
@@ -893,7 +898,7 @@ package final class JellyfinMoviesFacade: MoviesFacade {
                 if is401 {
                     connectionState = .failed("Session expired — reconnect")
                     authToken = nil
-                    UserDefaults.standard.removeObject(forKey: tokenKey)
+                    removeCredential(.token)
                 }
                 return
             }
@@ -911,11 +916,6 @@ package final class JellyfinMoviesFacade: MoviesFacade {
 
     // MARK: - Credential Persistence
 
-    private var tokenKey: String { "haven.jellyfin.token.\(capabilityID)" }
-    private var usernameKey: String { "haven.jellyfin.username.\(capabilityID)" }
-    private var passwordKey: String { "haven.jellyfin.password.\(capabilityID)" }
-    private var managedUsernameKey: String { "haven.jellyfin.managedUser.\(capabilityID)" }
-    private var managedPasswordKey: String { "haven.jellyfin.managedPass.\(capabilityID)" }
     private var customAccountKey: String { "haven.jellyfin.customAccount.\(capabilityID)" }
     private var libraryPathKey: String { "haven.jellyfin.libraryPath.\(capabilityID)" }
     private var libraryPathsKey: String { "haven.jellyfin.libraryPaths.\(capabilityID)" }
@@ -948,23 +948,44 @@ package final class JellyfinMoviesFacade: MoviesFacade {
     }
 
     private func saveCredentials(_ token: String, username: String) {
-        UserDefaults.standard.set(token, forKey: tokenKey)
-        UserDefaults.standard.set(username, forKey: usernameKey)
+        setCredential(token, .token)
+        setCredential(username, .username)
     }
 
     private func loadSavedCredentials() {
-        authToken = UserDefaults.standard.string(forKey: tokenKey)
+        authToken = credential(.token)
     }
 
     private func clearAllCredentials() {
-        UserDefaults.standard.removeObject(forKey: tokenKey)
-        UserDefaults.standard.removeObject(forKey: usernameKey)
-        UserDefaults.standard.removeObject(forKey: passwordKey)
-        UserDefaults.standard.removeObject(forKey: managedUsernameKey)
-        UserDefaults.standard.removeObject(forKey: managedPasswordKey)
+        HavenCredentialStore.shared.removeAll(for: .jellyfin, capabilityID: capabilityID)
         UserDefaults.standard.removeObject(forKey: customAccountKey)
         UserDefaults.standard.removeObject(forKey: libraryPathKey)
         UserDefaults.standard.removeObject(forKey: libraryPathsKey)
         LibraryChangeScanner.clear(keyPrefix: dailyScanDefaultsPrefix)
+    }
+
+    private func credential(_ purpose: HavenCredentialPurpose) -> String? {
+        HavenCredentialStore.shared.string(
+            for: .jellyfin,
+            purpose,
+            capabilityID: capabilityID
+        )
+    }
+
+    private func setCredential(_ value: String, _ purpose: HavenCredentialPurpose) {
+        HavenCredentialStore.shared.set(
+            value,
+            for: .jellyfin,
+            purpose,
+            capabilityID: capabilityID
+        )
+    }
+
+    private func removeCredential(_ purpose: HavenCredentialPurpose) {
+        HavenCredentialStore.shared.remove(
+            for: .jellyfin,
+            purpose,
+            capabilityID: capabilityID
+        )
     }
 }

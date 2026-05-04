@@ -7,6 +7,7 @@ import SwiftUI
 /// paste into their e-reader app. No login needed on the device.
 struct DeviceAccessSection: View {
     let serverAddress: String
+    let localAddress: String?
     let opdsURL: String?
 
     @State private var copied = false
@@ -45,6 +46,14 @@ struct DeviceAccessSection: View {
                                     qrPopoverContent(link: opds)
                                 }
                             }
+
+                            DeviceCredentialActionsView(
+                                serverAddress: serverAddress,
+                                localAddress: localAddress,
+                                username: nil,
+                                password: nil,
+                                tokenURL: opds
+                            )
                         }
                     }
 

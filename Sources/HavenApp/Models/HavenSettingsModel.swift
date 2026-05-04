@@ -9,8 +9,8 @@ package class HavenSettingsModel {
     var dataDirectory = "~/.haven"
     var baseDirectory = "~/.haven"
 
-    let version = "0.1.0"
-    let buildNumber = "1"
+    let version = "0.1.1"
+    let buildNumber = "2"
 
     // MARK: - Catalog
 

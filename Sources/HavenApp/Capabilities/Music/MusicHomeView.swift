@@ -424,6 +424,7 @@ struct MusicHomeView: View {
         if let access = facade.deviceAccessInfo {
             MusicDeviceAccessSection(
                 serverAddress: access.serverAddress,
+                localAddress: access.localAddress,
                 username: access.username,
                 password: access.password
             )

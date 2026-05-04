@@ -55,16 +55,16 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     package var connectedUsername: String? {
         guard connectionState == .connected else { return nil }
-        return UserDefaults.standard.string(forKey: usernameKey)
+        return credential(.username)
     }
 
     package var connectedPassword: String? {
         guard connectionState == .connected else { return nil }
-        return UserDefaults.standard.string(forKey: passwordKey)
+        return credential(.password)
     }
 
     package var hasSavedCredentials: Bool {
-        UserDefaults.standard.string(forKey: tokenKey) != nil
+        credential(.token) != nil
     }
 
     // MARK: - ConnectableFacade
@@ -79,6 +79,7 @@ package final class NavidromeMusicFacade: MusicFacade {
         let address = "http://\(hostname):\(p)"
         return DeviceAccessInfo(
             serverAddress: address,
+            localAddress: "http://localhost:\(p)",
             username: connectedUsername,
             password: connectedPassword
         )
@@ -116,6 +117,10 @@ package final class NavidromeMusicFacade: MusicFacade {
         self.capabilityID = capabilityID
         self.serviceManager = serviceManager
         self.lifecycle = FacadeLifecycle(serviceManager: serviceManager)
+        HavenCredentialStore.shared.migrateLegacyCredentials(
+            for: .navidrome,
+            capabilityID: capabilityID
+        )
         refresh()
     }
 
@@ -219,8 +224,8 @@ package final class NavidromeMusicFacade: MusicFacade {
         guard let client = apiClient else {
             throw FacadeError.adapterError("Not connected")
         }
-        guard let username = UserDefaults.standard.string(forKey: usernameKey),
-              let password = UserDefaults.standard.string(forKey: passwordKey) else {
+        guard let username = credential(.username),
+              let password = credential(.password) else {
             throw FacadeError.adapterError("No credentials for scan")
         }
         guard currentScanStatus != .scanning else { return }
@@ -323,14 +328,14 @@ package final class NavidromeMusicFacade: MusicFacade {
                 authToken = response.token
                 connectionState = .connected
                 saveCredentials(response.token, username: username)
-                UserDefaults.standard.set(password, forKey: passwordKey)
-                UserDefaults.standard.set(username, forKey: managedUsernameKey)
-                UserDefaults.standard.set(password, forKey: managedPasswordKey)
+                setCredential(password, .password)
+                setCredential(username, .managedUser)
+                setCredential(password, .managedPass)
                 log.info("Setup wizard: created managed account")
             } catch {
                 log.info("Setup wizard: admin creation failed, trying login: \(error.localizedDescription)")
-                if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
-                   let mPass = UserDefaults.standard.string(forKey: managedPasswordKey),
+                if let mUser = credential(.managedUser),
+                   let mPass = credential(.managedPass),
                    let response = try? await client.login(username: mUser, password: mPass) {
                     authToken = response.token
                     connectionState = .connected
@@ -419,8 +424,8 @@ package final class NavidromeMusicFacade: MusicFacade {
             authToken = nil
         }
 
-        if let username = UserDefaults.standard.string(forKey: usernameKey),
-           let password = UserDefaults.standard.string(forKey: passwordKey),
+        if let username = credential(.username),
+           let password = credential(.password),
            let response = try? await client.login(username: username, password: password) {
             authToken = response.token
             connectionState = .connected
@@ -429,13 +434,13 @@ package final class NavidromeMusicFacade: MusicFacade {
             return true
         }
 
-        if let mUser = UserDefaults.standard.string(forKey: managedUsernameKey),
-           let mPass = UserDefaults.standard.string(forKey: managedPasswordKey),
+        if let mUser = credential(.managedUser),
+           let mPass = credential(.managedPass),
            let response = try? await client.login(username: mUser, password: mPass) {
             authToken = response.token
             connectionState = .connected
             saveCredentials(response.token, username: mUser)
-            UserDefaults.standard.set(mPass, forKey: passwordKey)
+            setCredential(mPass, .password)
             await fetchLibraryStats()
             return true
         }
@@ -514,8 +519,8 @@ package final class NavidromeMusicFacade: MusicFacade {
             authToken = response.token
             connectionState = .connected
             saveCredentials(response.token, username: username)
+            setCredential(password, .password)
             isManagedByHaven = false
-            UserDefaults.standard.removeObject(forKey: passwordKey)
             log.info("Created Navidrome admin account: \(username)")
             await fetchLibraryStats()
         } catch {
@@ -536,8 +541,8 @@ package final class NavidromeMusicFacade: MusicFacade {
             authToken = response.token
             connectionState = .connected
             saveCredentials(response.token, username: username)
+            setCredential(password, .password)
             isManagedByHaven = false
-            UserDefaults.standard.removeObject(forKey: passwordKey)
             log.info("Connected to Navidrome as \(username)")
             await fetchLibraryStats()
         } catch {
@@ -560,7 +565,7 @@ package final class NavidromeMusicFacade: MusicFacade {
         trackCount = nil
         currentScanStatus = .idle
         setupPhase = nil
-        UserDefaults.standard.removeObject(forKey: tokenKey)
+        removeCredential(.token)
         updateLibrary()
     }
 
@@ -689,7 +694,7 @@ package final class NavidromeMusicFacade: MusicFacade {
                 if is401 {
                     connectionState = .failed("Session expired — reconnect")
                     authToken = nil
-                    UserDefaults.standard.removeObject(forKey: tokenKey)
+                    removeCredential(.token)
                 }
                 return
             }
@@ -711,11 +716,6 @@ package final class NavidromeMusicFacade: MusicFacade {
 
     // MARK: - Credential Persistence
 
-    private var tokenKey: String { "haven.navidrome.token.\(capabilityID)" }
-    private var usernameKey: String { "haven.navidrome.username.\(capabilityID)" }
-    private var passwordKey: String { "haven.navidrome.password.\(capabilityID)" }
-    private var managedUsernameKey: String { "haven.navidrome.managedUser.\(capabilityID)" }
-    private var managedPasswordKey: String { "haven.navidrome.managedPass.\(capabilityID)" }
     private var customAccountKey: String { "haven.navidrome.customAccount.\(capabilityID)" }
     private var libraryPathKey: String { "haven.navidrome.libraryPath.\(capabilityID)" }
     private var libraryPathsKey: String { "haven.navidrome.libraryPaths.\(capabilityID)" }
@@ -759,22 +759,43 @@ package final class NavidromeMusicFacade: MusicFacade {
     }
 
     private func saveCredentials(_ token: String, username: String) {
-        UserDefaults.standard.set(token, forKey: tokenKey)
-        UserDefaults.standard.set(username, forKey: usernameKey)
+        setCredential(token, .token)
+        setCredential(username, .username)
     }
 
     private func loadSavedCredentials() {
-        authToken = UserDefaults.standard.string(forKey: tokenKey)
+        authToken = credential(.token)
     }
 
     private func clearAllCredentials() {
-        UserDefaults.standard.removeObject(forKey: tokenKey)
-        UserDefaults.standard.removeObject(forKey: usernameKey)
-        UserDefaults.standard.removeObject(forKey: passwordKey)
-        UserDefaults.standard.removeObject(forKey: managedUsernameKey)
-        UserDefaults.standard.removeObject(forKey: managedPasswordKey)
+        HavenCredentialStore.shared.removeAll(for: .navidrome, capabilityID: capabilityID)
         UserDefaults.standard.removeObject(forKey: customAccountKey)
         UserDefaults.standard.removeObject(forKey: libraryPathKey)
         UserDefaults.standard.removeObject(forKey: libraryPathsKey)
+    }
+
+    private func credential(_ purpose: HavenCredentialPurpose) -> String? {
+        HavenCredentialStore.shared.string(
+            for: .navidrome,
+            purpose,
+            capabilityID: capabilityID
+        )
+    }
+
+    private func setCredential(_ value: String, _ purpose: HavenCredentialPurpose) {
+        HavenCredentialStore.shared.set(
+            value,
+            for: .navidrome,
+            purpose,
+            capabilityID: capabilityID
+        )
+    }
+
+    private func removeCredential(_ purpose: HavenCredentialPurpose) {
+        HavenCredentialStore.shared.remove(
+            for: .navidrome,
+            purpose,
+            capabilityID: capabilityID
+        )
     }
 }

@@ -3,17 +3,20 @@ import SwiftUI
 
 struct FilesDeviceAccessSection: View {
     let serverAddress: String
+    let localAddress: String?
     let username: String?
     let password: String?
     let folderLabels: [String]
 
     init(
         serverAddress: String,
+        localAddress: String?,
         username: String?,
         password: String?,
         folderLabels: [String] = []
     ) {
         self.serverAddress = serverAddress
+        self.localAddress = localAddress
         self.username = username
         self.password = password
         self.folderLabels = folderLabels
@@ -93,6 +96,14 @@ struct FilesDeviceAccessSection: View {
                         }
                     }
                 }
+
+                DeviceCredentialActionsView(
+                    serverAddress: serverAddress,
+                    localAddress: localAddress,
+                    username: username,
+                    password: password,
+                    tokenURL: nil
+                )
 
                 if folderLabels.count > 1 {
                     VStack(alignment: .leading, spacing: 6) {
