@@ -59,6 +59,14 @@ You can also build the app wrapper from the command line:
 
 The command-line bundle is written to `.build/app/Haven.app` by default.
 
+To build a drag-to-Applications installer image:
+
+```bash
+./Scripts/build-dmg.sh --configuration release
+```
+
+The DMG is written to `.build/app/Haven.dmg` by default.
+
 ### App Updates
 
 Haven uses Sparkle 2 for updating `Haven.app` itself. This is separate from Haven's service update system, which updates managed services such as Kavita, Navidrome, and Jellyfin.
@@ -70,8 +78,9 @@ Development builds leave `SUFeedURL` and `SUPublicEDKey` empty in `Sources/Haven
 3. Add the public EdDSA key to `SUPublicEDKey`.
 4. Increment both `CFBundleShortVersionString` and `CFBundleVersion`.
 5. Build, Developer ID sign, notarize, and staple `Haven.app`.
-6. Archive the app with `ditto -c -k --sequesterRsrc --keepParent Haven.app Haven.zip`.
-7. Run Sparkle's `generate_appcast` over the release folder and upload the archive, deltas, release notes, and appcast.
+6. Package the app with `./Scripts/build-dmg.sh --configuration release --sign --sign-identity "Developer ID Application: ..."` for manual downloads.
+7. Archive the app with `ditto -c -k --sequesterRsrc --keepParent Haven.app Haven.zip` for Sparkle.
+8. Run Sparkle's `generate_appcast` over the release folder and upload the archive, deltas, release notes, and appcast.
 
 Users on builds before Sparkle integration need one manual update to a Sparkle-enabled `Haven.app`; later releases can update from Settings.
 
