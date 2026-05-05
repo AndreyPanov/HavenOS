@@ -1,0 +1,163 @@
+import SwiftUI
+
+struct AboutView: View {
+    @Environment(HavenSettingsModel.self) private var settings
+    @Environment(AppUpdateModel.self) private var appUpdateModel
+
+    var body: some View {
+        Form {
+            Section("Haven") {
+                LabeledContent("Version") {
+                    Text("\(settings.version) (\(settings.buildNumber))")
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("License") {
+                    Text("MIT License")
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Updates") {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Button {
+                            appUpdateModel.checkForUpdates()
+                        } label: {
+                            Label("Check for Updates", systemImage: "arrow.down.circle")
+                        }
+                        .disabled(!appUpdateModel.canCheckForUpdates)
+
+                        if let message = appUpdateModel.configurationMessage {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                }
+
+                Text("Haven is a local service manager for macOS. It installs and manages self-hosted services on your Mac.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Section("Open Source Libraries and Services") {
+                ForEach(openSourceNotices) { notice in
+                    OpenSourceNoticeRow(notice: notice)
+                }
+
+                Text("Each project is governed by its own license and upstream terms. Haven uses or manages these projects to provide updates, CLI parsing, books, music, movies, files, and media transcoding.")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("About")
+        .frame(maxWidth: 720)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct OpenSourceNotice: Identifiable {
+    let name: String
+    let version: String
+    let license: String
+    let role: String
+    let url: URL
+
+    var id: String { name }
+}
+
+private struct OpenSourceNoticeRow: View {
+    let notice: OpenSourceNotice
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(notice.name)
+                        .font(.headline)
+                    Text(notice.version)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(notice.role)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                Text(notice.license)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 12)
+
+            Link(destination: notice.url) {
+                Image(systemName: "arrow.up.right.square")
+                    .imageScale(.medium)
+            }
+            .buttonStyle(.borderless)
+            .help("Open upstream project")
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private let openSourceNotices: [OpenSourceNotice] = [
+    OpenSourceNotice(
+        name: "Sparkle",
+        version: "2.9.1",
+        license: "MIT License",
+        role: "Software update framework for Haven.",
+        url: URL(string: "https://github.com/sparkle-project/Sparkle")!
+    ),
+    OpenSourceNotice(
+        name: "Swift Argument Parser",
+        version: "1.7.1",
+        license: "Apache License 2.0",
+        role: "Command-line parsing for havenctl.",
+        url: URL(string: "https://github.com/apple/swift-argument-parser")!
+    ),
+    OpenSourceNotice(
+        name: "Kavita",
+        version: "0.8.9.1",
+        license: "GNU GPL v3",
+        role: "Managed books, comics, and manga service.",
+        url: URL(string: "https://github.com/Kareadita/Kavita")!
+    ),
+    OpenSourceNotice(
+        name: "Navidrome",
+        version: "0.61.2",
+        license: "GNU GPL v3",
+        role: "Managed music streaming service.",
+        url: URL(string: "https://github.com/navidrome/navidrome")!
+    ),
+    OpenSourceNotice(
+        name: "Jellyfin",
+        version: "10.10.7",
+        license: "GNU GPL v2",
+        role: "Managed movies and TV streaming service.",
+        url: URL(string: "https://github.com/jellyfin/jellyfin")!
+    ),
+    OpenSourceNotice(
+        name: "Jellyfin FFmpeg / FFmpeg",
+        version: "7.1.3-5",
+        license: "LGPL/GPL (Jellyfin GPL build)",
+        role: "Media playback and transcoding helper for Jellyfin.",
+        url: URL(string: "https://github.com/jellyfin/jellyfin-ffmpeg")!
+    ),
+    OpenSourceNotice(
+        name: "File Browser",
+        version: "2.63.2",
+        license: "Apache License 2.0",
+        role: "Managed browser-based file access service.",
+        url: URL(string: "https://github.com/filebrowser/filebrowser")!
+    ),
+]
+
+#Preview {
+    AboutView()
+        .environment(HavenSettingsModel())
+        .environment(AppUpdateModel())
+        .frame(width: 700, height: 640)
+}

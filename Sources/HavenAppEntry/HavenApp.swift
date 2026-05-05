@@ -53,11 +53,14 @@ struct HavenApp: App {
         }
         .defaultSize(width: 1100, height: 700)
 
-        MenuBarExtra("Haven", systemImage: "house") {
+        MenuBarExtra {
             HavenStatusMenu()
                 .environment(settings)
                 .environment(serviceManager)
                 .environment(loginItemManager)
+        } label: {
+            HavenIconProvider.menuBarIcon
+                .accessibilityLabel("Haven")
         }
         .menuBarExtraStyle(.window)
     }

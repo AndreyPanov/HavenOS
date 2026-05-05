@@ -115,7 +115,11 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/HavenApp",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist", "Resources/HavenIcon.icns"],
+            resources: [
+                .process("Resources/HavenMenuTemplate.png"),
+                .process("Resources/HavenMenuTemplate@2x.png"),
+            ]
         ),
 
         /// Thin entry point — creates the SwiftUI App.

@@ -84,6 +84,11 @@ cp "$BINARY" "$MACOS/Haven"
 # Copy Info.plist
 cp "$REPO_ROOT/Sources/HavenApp/Info.plist" "$CONTENTS/Info.plist"
 
+# Copy app resources used by Info.plist and Bundle.module lookups.
+cp "$REPO_ROOT/Sources/HavenApp/Resources/HavenIcon.icns" "$CONTENTS/Resources/HavenIcon.icns"
+BIN_DIR="$(dirname "$BINARY")"
+find "$BIN_DIR" -maxdepth 1 \( -name "*.bundle" -o -name "*.resources" \) -exec cp -R {} "$CONTENTS/Resources/" \;
+
 # Copy Sparkle if the executable links against it. SwiftPM keeps binary
 # artifacts under .build, and ditto preserves the framework symlinks.
 if otool -L "$BINARY" | grep -q "Sparkle.framework"; then

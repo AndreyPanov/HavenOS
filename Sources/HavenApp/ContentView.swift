@@ -7,6 +7,7 @@ enum SidebarItem: Hashable {
     case capability(String) // capability ID
     case backup
     case settings
+    case about
 }
 
 package struct ContentView: View {
@@ -44,6 +45,8 @@ package struct ContentView: View {
                         .tag(SidebarItem.backup)
                     Label("Settings", systemImage: "gearshape")
                         .tag(SidebarItem.settings)
+                    Label("About", systemImage: "info.circle")
+                        .tag(SidebarItem.about)
                 }
             }
             .animation(.default, value: capabilityTabs.map(\.id))
@@ -60,6 +63,8 @@ package struct ContentView: View {
                     BackupView()
                 case .settings:
                     SettingsView()
+                case .about:
+                    AboutView()
                 case nil:
                     Text("Select a section")
                         .font(.title3)

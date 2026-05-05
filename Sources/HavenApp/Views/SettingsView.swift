@@ -7,7 +7,6 @@ import HavenFacade
 struct SettingsView: View {
     @Environment(HavenSettingsModel.self) private var settings
     @Environment(ServiceManager.self) private var serviceManager
-    @Environment(AppUpdateModel.self) private var appUpdateModel
     @State private var showFolderPicker = false
     @State private var activeSheet: SettingsSheet?
 
@@ -112,32 +111,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section("About") {
-                LabeledContent("Version") {
-                    Text("\(settings.version) (\(settings.buildNumber))")
-                        .foregroundStyle(.secondary)
-                }
-                LabeledContent("Updates") {
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Button {
-                            appUpdateModel.checkForUpdates()
-                        } label: {
-                            Label("Check for Updates", systemImage: "arrow.down.circle")
-                        }
-                        .disabled(!appUpdateModel.canCheckForUpdates)
-
-                        if let message = appUpdateModel.configurationMessage {
-                            Text(message)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.trailing)
-                        }
-                    }
-                }
-                Text("Haven is a local service manager for macOS. It installs and manages self-hosted services on your Mac.")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-            }
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
@@ -319,6 +292,5 @@ struct SettingsView: View {
     SettingsView()
         .environment(HavenSettingsModel())
         .environment(ServiceManager())
-        .environment(AppUpdateModel())
         .frame(width: 600, height: 500)
 }
