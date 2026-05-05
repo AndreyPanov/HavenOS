@@ -25,28 +25,6 @@ func color(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
     )
 }
 
-func drawText(
-    _ text: String,
-    at point: CGPoint,
-    font: NSFont,
-    color textColor: NSColor,
-    alignment: NSTextAlignment = .center,
-    width: CGFloat = 220
-) {
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = alignment
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: font,
-        .foregroundColor: textColor,
-        .paragraphStyle: paragraph,
-    ]
-    let string = NSString(string: text)
-    string.draw(
-        in: CGRect(x: point.x - width / 2, y: point.y, width: width, height: 32),
-        withAttributes: attributes
-    )
-}
-
 func drawGrid(in rect: CGRect) {
     let context = NSGraphicsContext.current!.cgContext
     context.saveGState()
@@ -92,28 +70,6 @@ func drawGrid(in rect: CGRect) {
         }
     }
 
-    context.restoreGState()
-}
-
-func drawApplicationFolder(in rect: CGRect) {
-    let folderIcon = NSWorkspace.shared.icon(forFile: "/Applications")
-    folderIcon.size = rect.size
-
-    let context = NSGraphicsContext.current!.cgContext
-    context.saveGState()
-    context.setShadow(offset: CGSize(width: 0, height: -8), blur: 20, color: NSColor.black.withAlphaComponent(0.16).cgColor)
-    folderIcon.draw(in: rect)
-    context.restoreGState()
-}
-
-func drawHavenIcon(in rect: CGRect) {
-    guard let image = NSImage(contentsOf: iconURL) else { return }
-    image.size = rect.size
-
-    let context = NSGraphicsContext.current!.cgContext
-    context.saveGState()
-    context.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: NSColor.black.withAlphaComponent(0.18).cgColor)
-    image.draw(in: rect)
     context.restoreGState()
 }
 
@@ -187,24 +143,9 @@ contentPath.stroke()
 
 drawGrid(in: contentRect.insetBy(dx: 1, dy: 1))
 
-let appIconRect = CGRect(x: 224, y: 262, width: 126, height: 126)
-let applicationsRect = CGRect(x: 574, y: 258, width: 152, height: 124)
-drawHavenIcon(in: appIconRect)
-drawApplicationFolder(in: applicationsRect)
+// Finder renders the actual app and Applications icons plus their labels.
+// The background owns only the instruction arrow and decorative frame.
 drawArrowTrail(centerY: 322)
-
-drawText(
-    "Haven",
-    at: CGPoint(x: appIconRect.midX, y: 216),
-    font: .systemFont(ofSize: 21, weight: .regular),
-    color: .black
-)
-drawText(
-    "Applications",
-    at: CGPoint(x: applicationsRect.midX, y: 216),
-    font: .systemFont(ofSize: 21, weight: .regular),
-    color: .black
-)
 
 let footerRect = CGRect(x: 24, y: 36, width: 872, height: 72)
 color(0xffffff, alpha: 0.92).setFill()
