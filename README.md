@@ -49,7 +49,7 @@ swift build
 
 ### Build the macOS App
 
-Open `HavenOS.xcodeproj` and build the `HavenOS` scheme to produce a normal `HavenOS.app` bundle.
+Open `Haven.xcodeproj` and build the `Haven` scheme to produce a normal `HavenOS.app` bundle.
 
 You can also build the app wrapper from the command line:
 

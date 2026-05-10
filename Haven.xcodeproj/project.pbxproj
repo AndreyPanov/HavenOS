@@ -41,9 +41,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7B0000030000000000000001 /* HavenOS */ = {
+		7B0000030000000000000001 /* Haven */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "HavenOS" */;
+			buildConfigurationList = 7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "Haven" */;
 			buildPhases = (
 				7B0000040000000000000001 /* Build Swift Package App */,
 			);
@@ -51,7 +51,7 @@
 			);
 			dependencies = (
 			);
-			name = HavenOS;
+			name = Haven;
 			productName = HavenOS;
 			productReference = 7B0000010000000000000001 /* HavenOS.app */;
 			productType = "com.apple.product-type.application";
@@ -70,7 +70,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 7B0000060000000000000001 /* Build configuration list for PBXProject "HavenOS" */;
+			buildConfigurationList = 7B0000060000000000000001 /* Build configuration list for PBXProject "Haven" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -83,7 +83,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				7B0000030000000000000001 /* HavenOS */,
+				7B0000030000000000000001 /* Haven */,
 			);
 		};
 /* End PBXProject section */
@@ -272,7 +272,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		7B0000060000000000000001 /* Build configuration list for PBXProject "HavenOS" */ = {
+		7B0000060000000000000001 /* Build configuration list for PBXProject "Haven" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7B0000070000000000000001 /* Debug */,
@@ -281,7 +281,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "HavenOS" */ = {
+		7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "Haven" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7B0000070000000000000003 /* Debug */,
