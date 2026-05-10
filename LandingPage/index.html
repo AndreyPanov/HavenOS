@@ -1434,7 +1434,7 @@
           <article class="legal-item">
             <h3>Contact</h3>
             <p>Developed by <strong>com///place</strong>.</p>
-            <p>For support, legal notices, license questions, and EU user enquiries, contact <a href="mailto:atlas-stoker.4s@icloud.com">atlas-stoker.4s@icloud.com</a>.</p>
+            <p>For support, legal notices, license questions, and EU user enquiries, use the <a href="#" data-contact-user="atlas-stoker.4s" data-contact-domain="icloud.com">contact link</a>.</p>
           </article>
         </div>
       </section>
@@ -1455,5 +1455,15 @@
       <span><a href="#credits">Open-source credits</a> &middot; <a href="#legal">Terms, license, and contact</a></span>
     </footer>
   </div>
+  <script>
+    for (const link of document.querySelectorAll("[data-contact-user][data-contact-domain]")) {
+      const user = link.getAttribute("data-contact-user");
+      const domain = link.getAttribute("data-contact-domain");
+
+      if (user && domain) {
+        link.href = `mailto:${user}@${domain}`;
+      }
+    }
+  </script>
 </body>
 </html>
