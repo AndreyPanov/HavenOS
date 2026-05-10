@@ -1,16 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build a drag-to-Applications DMG installer for Haven.
-# Usage: ./Scripts/build-dmg.sh [--configuration debug|release] [--output /path/Haven.dmg] [--app /path/Haven.app] [--sign] [--sign-identity "Developer ID Application: ..."]
+# Build a drag-to-Applications DMG installer for HavenOS.
+# Usage: ./Scripts/build-dmg.sh [--configuration debug|release] [--output /path/HavenOS.dmg] [--app /path/HavenOS.app] [--sign] [--sign-identity "Developer ID Application: ..."] [--notarize --notary-profile PROFILE]
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 CONFIGURATION="release"
-OUTPUT_DMG="$REPO_ROOT/.build/app/Haven.dmg"
+APP_NAME="HavenOS"
+OUTPUT_DMG="$REPO_ROOT/.build/app/$APP_NAME.dmg"
 APP_BUNDLE=""
 SIGN_ARGS=()
-VOLUME_NAME="Haven"
+SIGN_IDENTITY=""
+SHOULD_SIGN=false
+SHOULD_NOTARIZE=false
+NOTARY_PROFILE=""
+VOLUME_NAME="$APP_NAME"
+
+usage() {
+    echo "Usage: $0 [--configuration debug|release] [--output /path/HavenOS.dmg] [--app /path/HavenOS.app] [--sign] [--sign-identity \"Developer ID Application: ...\"] [--notarize --notary-profile PROFILE]"
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -28,10 +37,20 @@ while [[ $# -gt 0 ]]; do
             ;;
         --sign)
             SIGN_ARGS+=("--sign")
+            SHOULD_SIGN=true
             shift
             ;;
         --sign-identity)
-            SIGN_ARGS+=("--sign-identity" "${2:-}")
+            SIGN_IDENTITY="${2:-}"
+            SIGN_ARGS+=("--sign-identity" "$SIGN_IDENTITY")
+            shift 2
+            ;;
+        --notarize)
+            SHOULD_NOTARIZE=true
+            shift
+            ;;
+        --notary-profile)
+            NOTARY_PROFILE="${2:-}"
             shift 2
             ;;
         --volume-name)
@@ -40,16 +59,30 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "ERROR: Unknown argument: $1"
-            echo "Usage: $0 [--configuration debug|release] [--output /path/Haven.dmg] [--app /path/Haven.app] [--sign] [--sign-identity \"Developer ID Application: ...\"]"
+            usage
             exit 1
             ;;
     esac
 done
 
+if [[ "$SHOULD_NOTARIZE" = true ]]; then
+    if [[ "$SHOULD_SIGN" != true ]]; then
+        echo "ERROR: --notarize requires --sign with a Developer ID Application identity."
+        usage
+        exit 1
+    fi
+
+    if [[ -z "$NOTARY_PROFILE" ]]; then
+        echo "ERROR: --notarize requires --notary-profile PROFILE."
+        echo "Create one with: xcrun notarytool store-credentials PROFILE"
+        exit 1
+    fi
+fi
+
 STAGING_ROOT="$(mktemp -d /private/tmp/haven-dmg-build.XXXXXX)"
 MOUNT_DIR="$STAGING_ROOT/mount"
-RW_DMG="$STAGING_ROOT/Haven-rw.dmg"
-BACKGROUND="$STAGING_ROOT/HavenDmgBackground.png"
+RW_DMG="$STAGING_ROOT/$APP_NAME-rw.dmg"
+BACKGROUND="$STAGING_ROOT/${APP_NAME}DmgBackground.png"
 DEVICE=""
 
 cleanup() {
@@ -61,11 +94,12 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -z "$APP_BUNDLE" ]]; then
-    APP_BUNDLE="$REPO_ROOT/.build/app/Haven.app"
+    APP_BUNDLE="$REPO_ROOT/.build/app/$APP_NAME.app"
     BUILD_APP_COMMAND=(
         "$REPO_ROOT/Scripts/build-app.sh"
         --configuration "$CONFIGURATION"
         --output "$APP_BUNDLE"
+        --bundle-identifier "app.haven.HavenOS"
     )
     if [[ ${#SIGN_ARGS[@]} -gt 0 ]]; then
         BUILD_APP_COMMAND+=("${SIGN_ARGS[@]}")
@@ -74,8 +108,36 @@ if [[ -z "$APP_BUNDLE" ]]; then
 fi
 
 if [[ ! -d "$APP_BUNDLE" ]]; then
-    echo "ERROR: Haven.app not found at $APP_BUNDLE"
+    echo "ERROR: $APP_NAME.app not found at $APP_BUNDLE"
     exit 1
+fi
+
+if [[ "$SHOULD_NOTARIZE" = true ]]; then
+    echo "==> Checking app signature for Developer ID notarization..."
+    APP_SIGNATURE="$(codesign -dv --verbose=4 "$APP_BUNDLE" 2>&1 || true)"
+    if ! printf '%s\n' "$APP_SIGNATURE" | grep -q "Authority=Developer ID Application"; then
+        echo "ERROR: Notarization requires $APP_NAME.app to be signed with a Developer ID Application certificate."
+        echo "Current signature authorities:"
+        printf '%s\n' "$APP_SIGNATURE" | grep "Authority=" || true
+        exit 1
+    fi
+
+    echo "==> Submitting app for notarization..."
+    APP_NOTARY_ZIP="$STAGING_ROOT/$APP_NAME-app-notary.zip"
+    APP_NOTARY_PARENT="$(cd "$(dirname "$APP_BUNDLE")" && pwd)"
+    APP_NOTARY_NAME="$(basename "$APP_BUNDLE")"
+    pushd "$APP_NOTARY_PARENT" >/dev/null
+    ditto -c -k --sequesterRsrc --keepParent "$APP_NOTARY_NAME" "$APP_NOTARY_ZIP"
+    popd >/dev/null
+    xcrun notarytool submit "$APP_NOTARY_ZIP" \
+        --keychain-profile "$NOTARY_PROFILE" \
+        --wait
+
+    echo "==> Stapling notarization ticket to app..."
+    xcrun stapler staple "$APP_BUNDLE"
+
+    echo "==> Validating stapled app ticket..."
+    xcrun stapler validate "$APP_BUNDLE"
 fi
 
 echo "==> Generating DMG background..."
@@ -102,7 +164,7 @@ if [[ -z "$DEVICE" ]]; then
 fi
 
 echo "==> Copying installer contents..."
-ditto --norsrc --noextattr --noqtn --noacl --noclone "$APP_BUNDLE" "$MOUNT_DIR/Haven.app"
+ditto --norsrc --noextattr --noqtn --noacl --noclone "$APP_BUNDLE" "$MOUNT_DIR/$APP_NAME.app"
 ln -s /Applications "$MOUNT_DIR/Applications"
 mkdir -p "$MOUNT_DIR/.background"
 cp "$BACKGROUND" "$MOUNT_DIR/.background/background.png"
@@ -123,7 +185,7 @@ tell application "Finder"
     set icon size of theViewOptions to 128
     set background picture of theViewOptions to backgroundPicture
     delay 0.5
-    set position of item "Haven.app" of containerWindow to {287, 258}
+    set position of item "$APP_NAME.app" of containerWindow to {287, 258}
     set position of item "Applications" of containerWindow to {650, 258}
     update dmgFolder without registering applications
     delay 1
@@ -139,7 +201,7 @@ hdiutil detach "$DEVICE" -quiet
 DEVICE=""
 
 echo "==> Compressing DMG..."
-FINAL_STAGING_DMG="$STAGING_ROOT/Haven.dmg"
+FINAL_STAGING_DMG="$STAGING_ROOT/$APP_NAME.dmg"
 hdiutil convert "$RW_DMG" \
     -format UDZO \
     -imagekey zlib-level=9 \
@@ -149,6 +211,36 @@ mv "$FINAL_STAGING_DMG" "$OUTPUT_DMG"
 echo "==> Verifying DMG..."
 hdiutil verify "$OUTPUT_DMG" >/dev/null
 
+if [[ "$SHOULD_SIGN" = true ]]; then
+    if [[ -z "$SIGN_IDENTITY" ]]; then
+        SIGN_IDENTITY="Apple Development"
+    fi
+
+    echo "==> Signing DMG with $SIGN_IDENTITY..."
+    DMG_TIMESTAMP_ARGS=()
+    if [[ "$SIGN_IDENTITY" == Developer\ ID* || "$SIGN_IDENTITY" == Apple\ Distribution:* ]]; then
+        DMG_TIMESTAMP_ARGS+=("--timestamp")
+    fi
+    codesign --force --sign "$SIGN_IDENTITY" "${DMG_TIMESTAMP_ARGS[@]}" "$OUTPUT_DMG"
+    codesign --verify --verbose "$OUTPUT_DMG"
+fi
+
+if [[ "$SHOULD_NOTARIZE" = true ]]; then
+    echo "==> Submitting DMG for notarization..."
+    xcrun notarytool submit "$OUTPUT_DMG" \
+        --keychain-profile "$NOTARY_PROFILE" \
+        --wait
+
+    echo "==> Stapling notarization ticket..."
+    xcrun stapler staple "$OUTPUT_DMG"
+
+    echo "==> Validating stapled ticket..."
+    xcrun stapler validate "$OUTPUT_DMG"
+
+    echo "==> Assessing DMG with Gatekeeper..."
+    spctl -a -vv -t open --context context:primary-signature "$OUTPUT_DMG"
+fi
+
 echo ""
-echo "==> Done! Haven DMG is at:"
+echo "==> Done! $APP_NAME DMG is at:"
 echo "    $OUTPUT_DMG"

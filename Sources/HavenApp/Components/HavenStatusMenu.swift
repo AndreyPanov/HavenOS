@@ -15,7 +15,7 @@ package struct HavenStatusMenu: View {
             Button {
                 openHaven()
             } label: {
-                menuActionLabel("Open Haven", systemImage: "macwindow")
+                menuActionLabel("Open HavenOS", systemImage: "macwindow")
             }
             .buttonStyle(.plain)
 
@@ -97,7 +97,7 @@ package struct HavenStatusMenu: View {
             Button {
                 NSApplication.shared.terminate(nil)
             } label: {
-                menuActionLabel("Quit Haven", systemImage: "power.circle")
+                menuActionLabel("Quit HavenOS", systemImage: "power.circle")
             }
             .buttonStyle(.plain)
         }

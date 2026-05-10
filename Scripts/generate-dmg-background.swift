@@ -5,7 +5,7 @@ import Foundation
 let fileManager = FileManager.default
 let root = URL(fileURLWithPath: fileManager.currentDirectoryPath)
 let outputURL = CommandLine.arguments.dropFirst().first.map(URL.init(fileURLWithPath:))
-    ?? root.appendingPathComponent(".build/app/HavenDmgBackground.png")
+    ?? root.appendingPathComponent(".build/app/HavenOSDmgBackground.png")
 let iconURL = root.appendingPathComponent("Sources/HavenApp/Resources/HavenIcon.icns")
 
 try fileManager.createDirectory(
@@ -161,7 +161,7 @@ drawFooterIcon(in: CGRect(x: 46, y: 54, width: 34, height: 34))
 
 let mono = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
 let footerTitle = NSAttributedString(
-    string: "HAVEN",
+    string: "HAVENOS",
     attributes: [.font: mono, .foregroundColor: color(0x151515)]
 )
 footerTitle.draw(at: CGPoint(x: 92, y: 72))

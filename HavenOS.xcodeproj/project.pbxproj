@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		7B0000010000000000000001 /* Haven.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Haven.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B0000010000000000000001 /* HavenOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HavenOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B0000010000000000000002 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = text; path = Package.swift; sourceTree = "<group>"; };
 		7B0000010000000000000003 /* build-app.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-app.sh"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -33,7 +33,7 @@
 		7B0000020000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				7B0000010000000000000001 /* Haven.app */,
+				7B0000010000000000000001 /* HavenOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -41,9 +41,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7B0000030000000000000001 /* Haven */ = {
+		7B0000030000000000000001 /* HavenOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "Haven" */;
+			buildConfigurationList = 7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "HavenOS" */;
 			buildPhases = (
 				7B0000040000000000000001 /* Build Swift Package App */,
 			);
@@ -51,9 +51,9 @@
 			);
 			dependencies = (
 			);
-			name = Haven;
-			productName = Haven;
-			productReference = 7B0000010000000000000001 /* Haven.app */;
+			name = HavenOS;
+			productName = HavenOS;
+			productReference = 7B0000010000000000000001 /* HavenOS.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -70,7 +70,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 7B0000060000000000000001 /* Build configuration list for PBXProject "Haven" */;
+			buildConfigurationList = 7B0000060000000000000001 /* Build configuration list for PBXProject "HavenOS" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -83,7 +83,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				7B0000030000000000000001 /* Haven */,
+				7B0000030000000000000001 /* HavenOS */,
 			);
 		};
 /* End PBXProject section */
@@ -108,7 +108,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "\"$SRCROOT/Scripts/build-app.sh\" --configuration \"$CONFIGURATION\" --output \"$BUILT_PRODUCTS_DIR/Haven.app\"\n";
+			shellScript = "\"$SRCROOT/Scripts/build-app.sh\" --configuration \"$CONFIGURATION\" --output \"$BUILT_PRODUCTS_DIR/HavenOS.app\" --bundle-identifier \"app.haven.HavenOS\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -231,11 +231,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CURRENT_PROJECT_VERSION = 1.0.0;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = KS9Z78DCVM;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/HavenApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HavenOS;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.haven.Haven;
-				PRODUCT_NAME = Haven;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.haven.HavenOS;
+				PRODUCT_NAME = HavenOS;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
 				WRAPPER_EXTENSION = app;
@@ -246,11 +252,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CURRENT_PROJECT_VERSION = 1.0.0;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = KS9Z78DCVM;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/HavenApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HavenOS;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.haven.Haven;
-				PRODUCT_NAME = Haven;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.haven.HavenOS;
+				PRODUCT_NAME = HavenOS;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
 				WRAPPER_EXTENSION = app;
@@ -260,7 +272,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		7B0000060000000000000001 /* Build configuration list for PBXProject "Haven" */ = {
+		7B0000060000000000000001 /* Build configuration list for PBXProject "HavenOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7B0000070000000000000001 /* Debug */,
@@ -269,7 +281,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "Haven" */ = {
+		7B0000060000000000000002 /* Build configuration list for PBXNativeTarget "HavenOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7B0000070000000000000003 /* Debug */,

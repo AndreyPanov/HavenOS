@@ -1,10 +1,10 @@
-# Haven
+# HavenOS
 
-A macOS-first service management system built with Swift Package Manager. Haven lets users install, configure, start, stop, and monitor self-hosted services on their Mac — without ever needing to understand the underlying tooling, runtimes, or system plumbing.
+A macOS-first service management system built with Swift Package Manager. HavenOS lets users install, configure, start, stop, and monitor self-hosted services on their Mac — without ever needing to understand the underlying tooling, runtimes, or system plumbing.
 
 ## Architecture
 
-Haven organises services around three nested concepts:
+HavenOS organises services around three nested concepts:
 
 ```
 Capability → Bundle → RuntimeUnit
@@ -14,7 +14,7 @@ Capability → Bundle → RuntimeUnit
 - **Bundle** — a deployable implementation of exactly one capability. Groups settings and references to runtime units.
 - **RuntimeUnit** — a single launchable process (native binary or Python app). Owns lifecycle config, port, healthcheck, and dependencies.
 
-Users think in capabilities. Haven resolves everything else.
+Users think in capabilities. HavenOS resolves everything else.
 
 ### Execution flow
 
@@ -22,7 +22,7 @@ Users think in capabilities. Haven resolves everything else.
 Specs (JSON) → Planner → RuntimeAdapters → LaunchdJobs → launchd
 ```
 
-Haven does not run services directly. It plans desired state, prepares artifacts and environments, then delegates execution to the OS via launchd.
+HavenOS does not run services directly. It plans desired state, prepares artifacts and environments, then delegates execution to the OS via launchd.
 
 ## Modules
 
@@ -32,7 +32,7 @@ Haven does not run services directly. It plans desired state, prepares artifacts
 | `HavenExecutor` | End-to-end orchestrator: plan → prepare → install → start/stop/status |
 | `HavenRuntimes` | Runtime adapter protocol + built-in adapters (native, Python) |
 | `HavenLaunchd` | launchd job modeling, plist generation, lifecycle management via launchctl |
-| `HavenInstaller` | Artifact fetch, cache, and placement into Haven-managed directories |
+| `HavenInstaller` | Artifact fetch, cache, and placement into HavenOS-managed directories |
 | `HavenBackup` | Capability-aware backup, scheduling, health, and manifests |
 | `HavenAppKit` | SwiftUI app views, native capability facades, backup UI, and settings |
 | `HavenApp` | Thin SwiftUI app entry point |
@@ -49,7 +49,7 @@ swift build
 
 ### Build the macOS App
 
-Open `Haven.xcodeproj` and build the `Haven` scheme to produce a normal `Haven.app` bundle.
+Open `HavenOS.xcodeproj` and build the `HavenOS` scheme to produce a normal `HavenOS.app` bundle.
 
 You can also build the app wrapper from the command line:
 
@@ -57,7 +57,7 @@ You can also build the app wrapper from the command line:
 ./Scripts/build-app.sh --configuration release
 ```
 
-The command-line bundle is written to `.build/app/Haven.app` by default.
+The command-line bundle is written to `.build/app/HavenOS.app` by default.
 
 To build a drag-to-Applications installer image:
 
@@ -65,11 +65,23 @@ To build a drag-to-Applications installer image:
 ./Scripts/build-dmg.sh --configuration release
 ```
 
-The DMG is written to `.build/app/Haven.dmg` by default.
+The DMG is written to `.build/app/HavenOS.dmg` by default.
+
+For public GitHub downloads, use a Developer ID Application certificate and
+notarize the app and DMG:
+
+```bash
+xcrun notarytool store-credentials HavenNotary
+./Scripts/build-dmg.sh --configuration release --sign --sign-identity "Developer ID Application: Andrei Panov (KS9Z78DCVM)" --notarize --notary-profile HavenNotary
+```
+
+`Apple Distribution` certificates are for App Store distribution. Direct DMG
+downloads need Developer ID signing plus Apple's notarization ticket, otherwise
+Gatekeeper can show an "Apple could not verify" warning.
 
 ### App Updates
 
-Haven uses Sparkle 2 for updating `Haven.app` itself. This is separate from Haven's service update system, which updates managed services such as Kavita, Navidrome, and Jellyfin.
+HavenOS uses Sparkle 2 for updating `HavenOS.app` itself. This is separate from HavenOS's service update system, which updates managed services such as Kavita, Navidrome, and Jellyfin.
 
 Development builds leave `SUFeedURL` and `SUPublicEDKey` empty in `Sources/HavenApp/Info.plist`, so the Settings update button is disabled with an explanatory message. Before shipping a public update-enabled build:
 
@@ -77,12 +89,11 @@ Development builds leave `SUFeedURL` and `SUPublicEDKey` empty in `Sources/Haven
 2. Add the appcast URL to `SUFeedURL`.
 3. Add the public EdDSA key to `SUPublicEDKey`.
 4. Increment both `CFBundleShortVersionString` and `CFBundleVersion`.
-5. Build, Developer ID sign, notarize, and staple `Haven.app`.
-6. Package the app with `./Scripts/build-dmg.sh --configuration release --sign --sign-identity "Developer ID Application: ..."` for manual downloads.
-7. Archive the app with `ditto -c -k --sequesterRsrc --keepParent Haven.app Haven.zip` for Sparkle.
-8. Run Sparkle's `generate_appcast` over the release folder and upload the archive, deltas, release notes, and appcast.
+5. Build, Developer ID sign, notarize, and staple the app and DMG with `./Scripts/build-dmg.sh --configuration release --sign --sign-identity "Developer ID Application: ..." --notarize --notary-profile HavenNotary`.
+6. Package a Sparkle archive separately with `ditto -c -k --sequesterRsrc --keepParent HavenOS.app HavenOS.zip`.
+7. Run Sparkle's `generate_appcast` over the release folder and upload the archive, deltas, release notes, and appcast.
 
-Users on builds before Sparkle integration need one manual update to a Sparkle-enabled `Haven.app`; later releases can update from Settings.
+Users on builds before Sparkle integration need one manual update to a Sparkle-enabled `HavenOS.app`; later releases can update from Settings.
 
 ### Run the CLI
 

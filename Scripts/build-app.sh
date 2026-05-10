@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build Haven.app from Swift Package
-# Usage: ./Scripts/build-app.sh [--configuration debug|release] [--output /path/Haven.app] [--sign] [--sign-identity "Developer ID Application: ..."]
+# Build HavenOS.app from Swift Package
+# Usage: ./Scripts/build-app.sh [--configuration debug|release] [--output /path/HavenOS.app] [--bundle-identifier app.haven.HavenOS] [--sign] [--sign-identity "Developer ID Application: ..."]
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -10,7 +10,11 @@ SIGN_IDENTITY="Apple Development"
 TEAM_ID="KS9Z78DCVM"
 SHOULD_SIGN=false
 CONFIGURATION="release"
-APP_BUNDLE="$REPO_ROOT/.build/app/Haven.app"
+APP_NAME="HavenOS"
+SOURCE_PRODUCT="Haven"
+SOURCE_EXECUTABLE="Haven"
+APP_BUNDLE="$REPO_ROOT/.build/app/$APP_NAME.app"
+BUNDLE_IDENTIFIER="app.haven.HavenOS"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -30,9 +34,13 @@ while [[ $# -gt 0 ]]; do
             APP_BUNDLE="${2:-}"
             shift 2
             ;;
+        --bundle-identifier)
+            BUNDLE_IDENTIFIER="${2:-}"
+            shift 2
+            ;;
         *)
             echo "ERROR: Unknown argument: $1"
-            echo "Usage: $0 [--configuration debug|release] [--output /path/Haven.app] [--sign] [--sign-identity \"Developer ID Application: ...\"]"
+            echo "Usage: $0 [--configuration debug|release] [--output /path/HavenOS.app] [--bundle-identifier app.haven.HavenOS] [--sign] [--sign-identity \"Developer ID Application: ...\"]"
             exit 1
             ;;
     esac
@@ -42,7 +50,7 @@ FINAL_APP_BUNDLE="$APP_BUNDLE"
 FINAL_BUILD_DIR="$(dirname "$FINAL_APP_BUNDLE")"
 STAGING_ROOT="$(mktemp -d /private/tmp/haven-app-build.XXXXXX)"
 trap 'rm -rf "$STAGING_ROOT"' EXIT
-APP_BUNDLE="$STAGING_ROOT/Haven.app"
+APP_BUNDLE="$STAGING_ROOT/$APP_NAME.app"
 
 NORMALIZED_CONFIGURATION="$(printf '%s' "$CONFIGURATION" | tr '[:upper:]' '[:lower:]')"
 
@@ -61,28 +69,32 @@ CONTENTS="$APP_BUNDLE/Contents"
 MACOS="$CONTENTS/MacOS"
 FRAMEWORKS="$CONTENTS/Frameworks"
 
-echo "==> Building Haven ($SWIFT_CONFIGURATION)..."
+echo "==> Building $APP_NAME ($SWIFT_CONFIGURATION)..."
 cd "$REPO_ROOT"
-swift build -c "$SWIFT_CONFIGURATION" --product Haven 2>&1 | tail -5
+swift build -c "$SWIFT_CONFIGURATION" --product "$SOURCE_PRODUCT" 2>&1 | tail -5
 
-BINARY="$(swift build -c "$SWIFT_CONFIGURATION" --product Haven --show-bin-path)/Haven"
+BINARY="$(swift build -c "$SWIFT_CONFIGURATION" --product "$SOURCE_PRODUCT" --show-bin-path)/$SOURCE_EXECUTABLE"
 
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: Binary not found at $BINARY"
     exit 1
 fi
 
-echo "==> Creating Haven.app bundle..."
+echo "==> Creating $APP_NAME.app bundle..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "$FINAL_BUILD_DIR"
 mkdir -p "$MACOS"
 mkdir -p "$CONTENTS/Resources"
 
 # Copy binary
-cp "$BINARY" "$MACOS/Haven"
+cp "$BINARY" "$MACOS/$APP_NAME"
 
 # Copy Info.plist
 cp "$REPO_ROOT/Sources/HavenApp/Info.plist" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_IDENTIFIER" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$CONTENTS/Info.plist"
 
 # Copy app resources used by Info.plist and Bundle.module lookups.
 cp "$REPO_ROOT/Sources/HavenApp/Resources/HavenIcon.icns" "$CONTENTS/Resources/HavenIcon.icns"
@@ -94,7 +106,7 @@ find "$BIN_DIR" -maxdepth 1 \( -name "*.bundle" -o -name "*.resources" \) -exec 
 if otool -L "$BINARY" | grep -q "Sparkle.framework"; then
     SPARKLE_FRAMEWORK="$(find "$REPO_ROOT/.build" -name Sparkle.framework -type d -print -quit)"
     if [ -z "$SPARKLE_FRAMEWORK" ]; then
-        echo "ERROR: Haven links Sparkle, but Sparkle.framework was not found in .build"
+        echo "ERROR: $APP_NAME links Sparkle, but Sparkle.framework was not found in .build"
         exit 1
     fi
 
@@ -106,24 +118,10 @@ if otool -L "$BINARY" | grep -q "Sparkle.framework"; then
     find "$FRAMEWORKS/Sparkle.framework" -exec xattr -d com.apple.ResourceFork {} \; 2>/dev/null || true
     find "$FRAMEWORKS/Sparkle.framework" -exec xattr -d 'com.apple.fileprovider.fpfs#P' {} \; 2>/dev/null || true
 
-    if ! otool -l "$MACOS/Haven" | grep -q "@executable_path/../Frameworks"; then
-        install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/Haven"
+    if ! otool -l "$MACOS/$APP_NAME" | grep -q "@executable_path/../Frameworks"; then
+        install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/$APP_NAME"
     fi
 fi
-
-# Create minimal entitlements.
-cat > "$BUILD_DIR/Haven.entitlements" <<'ENTITLEMENTS'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.network.client</key>
-    <true/>
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-</dict>
-</plist>
-ENTITLEMENTS
 
 # Sign if requested
 xattr -cr "$APP_BUNDLE"
@@ -133,13 +131,19 @@ find "$APP_BUNDLE" -exec xattr -d 'com.apple.fileprovider.fpfs#P' {} \; 2>/dev/n
 
 if [ "$SHOULD_SIGN" = true ]; then
     echo "==> Signing with $SIGN_IDENTITY (Team: $TEAM_ID)..."
+    TIMESTAMP_ARGS=()
+    if [[ "$SIGN_IDENTITY" == Developer\ ID* || "$SIGN_IDENTITY" == Apple\ Distribution:* ]]; then
+        TIMESTAMP_ARGS+=("--timestamp")
+    fi
+
     if [ -d "$FRAMEWORKS/Sparkle.framework" ]; then
         codesign --force --sign "$SIGN_IDENTITY" \
+            "${TIMESTAMP_ARGS[@]}" \
             --options runtime \
             "$FRAMEWORKS/Sparkle.framework"
     fi
     codesign --force --sign "$SIGN_IDENTITY" \
-        --entitlements "$BUILD_DIR/Haven.entitlements" \
+        "${TIMESTAMP_ARGS[@]}" \
         --options runtime \
         "$APP_BUNDLE"
     echo "==> Verifying signature..."
@@ -151,7 +155,6 @@ else
             "$FRAMEWORKS/Sparkle.framework"
     fi
     codesign --force --sign - \
-        --entitlements "$BUILD_DIR/Haven.entitlements" \
         "$APP_BUNDLE"
 fi
 
@@ -160,7 +163,7 @@ rm -rf "$FINAL_APP_BUNDLE"
 ditto --norsrc --noextattr --noqtn --noacl --noclone "$APP_BUNDLE" "$FINAL_APP_BUNDLE"
 
 echo ""
-echo "==> Done! Haven.app is at:"
+echo "==> Done! $APP_NAME.app is at:"
 echo "    $FINAL_APP_BUNDLE"
 echo ""
 echo "    To open:  open $FINAL_APP_BUNDLE"
