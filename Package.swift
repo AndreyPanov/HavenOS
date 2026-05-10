@@ -115,7 +115,7 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/HavenApp",
-            exclude: ["Info.plist", "Resources/HavenIcon.icns"],
+            exclude: ["Info.plist", "Resources/HavenIcon.icns", "Resources/AppIcon.xcassets"],
             resources: [
                 .process("Resources/HavenMenuTemplate.png"),
                 .process("Resources/HavenMenuTemplate@2x.png"),

@@ -8,6 +8,8 @@
 	<string>HavenOS</string>
 	<key>CFBundleIconFile</key>
 	<string>HavenIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleName</key>

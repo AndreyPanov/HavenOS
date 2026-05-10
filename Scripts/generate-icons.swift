@@ -8,12 +8,30 @@ let resources = root.appendingPathComponent("Sources/HavenApp/Resources", isDire
 let temporaryIconset = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
     .appendingPathComponent("HavenIcon.iconset", isDirectory: true)
 let icnsURL = resources.appendingPathComponent("HavenIcon.icns")
+let assetCatalogURL = resources.appendingPathComponent("AppIcon.xcassets", isDirectory: true)
+let appIconSetURL = assetCatalogURL.appendingPathComponent("AppIcon.appiconset", isDirectory: true)
 let previewURL = URL(fileURLWithPath: NSTemporaryDirectory())
     .appendingPathComponent("haven-icon-preview.png")
 
 try fileManager.createDirectory(at: resources, withIntermediateDirectories: true)
 try? fileManager.removeItem(at: temporaryIconset)
 try fileManager.createDirectory(at: temporaryIconset, withIntermediateDirectories: true)
+try? fileManager.removeItem(at: appIconSetURL)
+try fileManager.createDirectory(at: appIconSetURL, withIntermediateDirectories: true)
+
+let assetCatalogContents = """
+{
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+"""
+try assetCatalogContents.write(
+    to: assetCatalogURL.appendingPathComponent("Contents.json"),
+    atomically: true,
+    encoding: .utf8
+)
 
 struct RGB {
     let red: CGFloat
@@ -196,24 +214,55 @@ func drawMenuTemplate(size: CGFloat) {
     context.restoreGState()
 }
 
-let iconFiles: [(name: String, size: CGFloat)] = [
-    ("icon_16x16.png", 16),
-    ("icon_16x16@2x.png", 32),
-    ("icon_32x32.png", 32),
-    ("icon_32x32@2x.png", 64),
-    ("icon_128x128.png", 128),
-    ("icon_128x128@2x.png", 256),
-    ("icon_256x256.png", 256),
-    ("icon_256x256@2x.png", 512),
-    ("icon_512x512.png", 512),
-    ("icon_512x512@2x.png", 1024),
+let iconFiles: [(name: String, size: CGFloat, pointSize: String, scale: String)] = [
+    ("icon_16x16.png", 16, "16x16", "1x"),
+    ("icon_16x16@2x.png", 32, "16x16", "2x"),
+    ("icon_32x32.png", 32, "32x32", "1x"),
+    ("icon_32x32@2x.png", 64, "32x32", "2x"),
+    ("icon_128x128.png", 128, "128x128", "1x"),
+    ("icon_128x128@2x.png", 256, "128x128", "2x"),
+    ("icon_256x256.png", 256, "256x256", "1x"),
+    ("icon_256x256@2x.png", 512, "256x256", "2x"),
+    ("icon_512x512.png", 512, "512x512", "1x"),
+    ("icon_512x512@2x.png", 1024, "512x512", "2x"),
 ]
 
 for file in iconFiles {
     try savePNG(size: Int(file.size), to: temporaryIconset.appendingPathComponent(file.name)) { size in
         drawAppIcon(size: size)
     }
+    try savePNG(size: Int(file.size), to: appIconSetURL.appendingPathComponent(file.name)) { size in
+        drawAppIcon(size: size)
+    }
 }
+
+let appIconImages = iconFiles.map { file in
+    """
+    {
+      "filename" : "\(file.name)",
+      "idiom" : "mac",
+      "scale" : "\(file.scale)",
+      "size" : "\(file.pointSize)"
+    }
+    """
+}.joined(separator: ",\n")
+
+let appIconContents = """
+{
+  "images" : [
+\(appIconImages)
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+"""
+try appIconContents.write(
+    to: appIconSetURL.appendingPathComponent("Contents.json"),
+    atomically: true,
+    encoding: .utf8
+)
 
 try savePNG(size: 1024, to: previewURL) { size in
     drawAppIcon(size: size)
@@ -240,5 +289,6 @@ guard process.terminationStatus == 0 else {
 }
 
 print("Generated \(icnsURL.path)")
+print("Generated \(appIconSetURL.path)")
 print("Generated \(resources.appendingPathComponent("HavenMenuTemplate@2x.png").path)")
 print("Preview \(previewURL.path)")

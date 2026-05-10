@@ -108,7 +108,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "\"$SRCROOT/Scripts/build-app.sh\" --configuration \"$CONFIGURATION\" --output \"$BUILT_PRODUCTS_DIR/HavenOS.app\" --bundle-identifier \"app.haven.HavenOS\"\n";
+			shellScript = "APP_OUTPUT=\"${TARGET_BUILD_DIR:-$BUILT_PRODUCTS_DIR}/${WRAPPER_NAME:-HavenOS.app}\"\n\"$SRCROOT/Scripts/build-app.sh\" --configuration \"$CONFIGURATION\" --output \"$APP_OUTPUT\" --bundle-identifier \"app.haven.HavenOS\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -238,11 +238,13 @@
 				INFOPLIST_FILE = Sources/HavenApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HavenOS;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INSTALL_PATH = /Applications;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.haven.HavenOS;
 				PRODUCT_NAME = HavenOS;
 				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
 				SUPPORTED_PLATFORMS = macosx;
 				WRAPPER_EXTENSION = app;
 			};
@@ -259,11 +261,13 @@
 				INFOPLIST_FILE = Sources/HavenApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HavenOS;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INSTALL_PATH = /Applications;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.haven.HavenOS;
 				PRODUCT_NAME = HavenOS;
 				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
 				SUPPORTED_PLATFORMS = macosx;
 				WRAPPER_EXTENSION = app;
 			};

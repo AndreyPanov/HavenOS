@@ -15,6 +15,7 @@ SOURCE_PRODUCT="Haven"
 SOURCE_EXECUTABLE="Haven"
 APP_BUNDLE="$REPO_ROOT/.build/app/$APP_NAME.app"
 BUNDLE_IDENTIFIER="app.haven.HavenOS"
+MINIMUM_DEPLOYMENT_TARGET="26.0"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -95,9 +96,20 @@ cp "$REPO_ROOT/Sources/HavenApp/Info.plist" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$CONTENTS/Info.plist"
 
 # Copy app resources used by Info.plist and Bundle.module lookups.
 cp "$REPO_ROOT/Sources/HavenApp/Resources/HavenIcon.icns" "$CONTENTS/Resources/HavenIcon.icns"
+ASSET_CATALOG="$REPO_ROOT/Sources/HavenApp/Resources/AppIcon.xcassets"
+if [ -d "$ASSET_CATALOG" ]; then
+    echo "==> Compiling app icon asset catalog..."
+    xcrun actool "$ASSET_CATALOG" \
+        --compile "$CONTENTS/Resources" \
+        --platform macosx \
+        --minimum-deployment-target "$MINIMUM_DEPLOYMENT_TARGET" \
+        --app-icon AppIcon \
+        --output-partial-info-plist "$BUILD_DIR/AppIcon-PartialInfo.plist" >/dev/null
+fi
 BIN_DIR="$(dirname "$BINARY")"
 find "$BIN_DIR" -maxdepth 1 \( -name "*.bundle" -o -name "*.resources" \) -exec cp -R {} "$CONTENTS/Resources/" \;
 

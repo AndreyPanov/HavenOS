@@ -6,7 +6,7 @@ struct AboutView: View {
 
     var body: some View {
         Form {
-            Section("Haven") {
+            Section("HavenOS") {
                 LabeledContent("Version") {
                     Text("\(settings.version) (\(settings.buildNumber))")
                         .foregroundStyle(.secondary)
@@ -35,8 +35,48 @@ struct AboutView: View {
                     }
                 }
 
-                Text("Haven is a local service manager for macOS. It installs and manages self-hosted services on your Mac.")
+                Text("HavenOS is a local service manager for macOS. It installs and manages self-hosted services on your Mac.")
                     .font(.callout)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Section("Terms and Conditions") {
+                LegalNote(
+                    title: "Use",
+                    text: "By downloading or using HavenOS, you agree to use it lawfully and only with services, media, and files that you are allowed to run, store, or access."
+                )
+                LegalNote(
+                    title: "Local services",
+                    text: "HavenOS installs and manages third-party open-source services on your Mac. Those services remain governed by their own licenses, documentation, and upstream terms."
+                )
+                LegalNote(
+                    title: "Data and backups",
+                    text: "You are responsible for your own content, service accounts, network exposure, and backups. Review settings before exposing any service outside your private network."
+                )
+                LegalNote(
+                    title: "No warranty",
+                    text: "HavenOS is provided as-is, without warranties or guarantees, to the fullest extent permitted by applicable law."
+                )
+            }
+
+            Section("License") {
+                Text("HavenOS is released under the MIT License. Open-source libraries and managed services listed below remain licensed by their respective authors.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Contact") {
+                LabeledContent("Developer") {
+                    Text("com///place")
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Email") {
+                    Link("atlas-stoker.4s@icloud.com", destination: legalContactEmailURL)
+                }
+
+                Text("Use this contact for support, legal notices, license questions, and EU user enquiries.")
+                    .font(.footnote)
                     .foregroundStyle(.tertiary)
             }
 
@@ -54,6 +94,22 @@ struct AboutView: View {
         .navigationTitle("About")
         .frame(maxWidth: 720)
         .frame(maxWidth: .infinity)
+    }
+}
+
+private struct LegalNote: View {
+    let title: String
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.headline)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -102,6 +158,8 @@ private struct OpenSourceNoticeRow: View {
         .padding(.vertical, 4)
     }
 }
+
+private let legalContactEmailURL = URL(string: "mailto:atlas-stoker.4s@icloud.com")!
 
 private let openSourceNotices: [OpenSourceNotice] = [
     OpenSourceNotice(
