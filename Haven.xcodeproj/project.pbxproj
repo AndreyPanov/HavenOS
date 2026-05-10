@@ -108,7 +108,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "APP_OUTPUT=\"${TARGET_BUILD_DIR:-$BUILT_PRODUCTS_DIR}/${WRAPPER_NAME:-HavenOS.app}\"\nBUILD_APP_ARGS=(\n  --configuration \"$CONFIGURATION\"\n  --output \"$APP_OUTPUT\"\n  --bundle-identifier \"app.haven.HavenOS\"\n)\nif [[ \"${ACTION:-}\" == \"install\" ]]; then\n  BUILD_APP_ARGS+=(\n    --sign\n    --sign-identity \"${HAVEN_ARCHIVE_SIGN_IDENTITY:-Developer ID Application: Andrei Panov (KS9Z78DCVM)}\"\n  )\nfi\n\"$SRCROOT/Scripts/build-app.sh\" \"${BUILD_APP_ARGS[@]}\"\n";
+			shellScript = "APP_OUTPUT=\"${TARGET_BUILD_DIR:-$BUILT_PRODUCTS_DIR}/${WRAPPER_NAME:-HavenOS.app}\"\nBUILD_APP_ARGS=(\n  --configuration \"$CONFIGURATION\"\n  --output \"$APP_OUTPUT\"\n  --bundle-identifier \"app.haven.HavenOS\"\n)\nif [[ \"${ACTION:-}\" == \"install\" ]]; then\n  ARCHIVE_SIGN_IDENTITY=\"${HAVEN_ARCHIVE_SIGN_IDENTITY:-}\"\n  if [[ -z \"$ARCHIVE_SIGN_IDENTITY\" ]]; then\n    if [[ \"${CODE_SIGN_IDENTITY:-}\" == \"-\" ]]; then\n      ARCHIVE_SIGN_IDENTITY=\"-\"\n    else\n      ARCHIVE_SIGN_IDENTITY=\"Developer ID Application: Andrei Panov (KS9Z78DCVM)\"\n    fi\n  fi\n  BUILD_APP_ARGS+=(\n    --sign\n    --sign-identity \"$ARCHIVE_SIGN_IDENTITY\"\n  )\nfi\n\"$SRCROOT/Scripts/build-app.sh\" \"${BUILD_APP_ARGS[@]}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

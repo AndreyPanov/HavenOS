@@ -143,21 +143,16 @@ find "$APP_BUNDLE" -exec xattr -d 'com.apple.fileprovider.fpfs#P' {} \; 2>/dev/n
 
 if [ "$SHOULD_SIGN" = true ]; then
     echo "==> Signing with $SIGN_IDENTITY (Team: $TEAM_ID)..."
-    TIMESTAMP_ARGS=()
+    CODESIGN_ARGS=(--force --sign "$SIGN_IDENTITY")
     if [[ "$SIGN_IDENTITY" == Developer\ ID* || "$SIGN_IDENTITY" == Apple\ Distribution:* ]]; then
-        TIMESTAMP_ARGS+=("--timestamp")
+        CODESIGN_ARGS+=(--timestamp)
     fi
+    CODESIGN_ARGS+=(--options runtime)
 
     if [ -d "$FRAMEWORKS/Sparkle.framework" ]; then
-        codesign --force --sign "$SIGN_IDENTITY" \
-            "${TIMESTAMP_ARGS[@]}" \
-            --options runtime \
-            "$FRAMEWORKS/Sparkle.framework"
+        codesign "${CODESIGN_ARGS[@]}" "$FRAMEWORKS/Sparkle.framework"
     fi
-    codesign --force --sign "$SIGN_IDENTITY" \
-        "${TIMESTAMP_ARGS[@]}" \
-        --options runtime \
-        "$APP_BUNDLE"
+    codesign "${CODESIGN_ARGS[@]}" "$APP_BUNDLE"
     echo "==> Verifying signature..."
     codesign --verify --verbose "$APP_BUNDLE"
 else
